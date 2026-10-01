@@ -965,10 +965,10 @@ def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool,
 # Alias untuk kompatibilitas
 validate_with_groq_vision = validate_onion_image
 
-def predict_image(image: Image.Image, model, class_names, target_size=(224, 224), enforce_verification: bool = True, norm_mode: str = "mobilenet_v2"):
+def predict_disease(image: Image.Image, model, class_names, target_size=(224, 224), enforce_verification: bool = True, norm_mode: str = "mobilenet_v2"):
     """
-    Inferensi MobileNetV2 presisi dengan Sistem Validasi Citra (OOD Guard),
-    Analisis Diferensial Diagnosis, dan Uji Coba Mode Normalisasi Piksel (A/B Testing).
+    Fungsi Inferensi & Kalibrasi Probabilitas Pasca-Prediksi (Post-Processing Bias Penalty)
+    untuk mengatasi bias prior model MobileNetV2 pada Xanthomonas Leaf Blight (Indeks 12).
     """
     # ==============================================================================
     # VALIDASI INPUT GAMBAR TEPAT SEBELUM PREDIKSI (OOD GUARD)
@@ -978,30 +978,54 @@ def predict_image(image: Image.Image, model, class_names, target_size=(224, 224)
         if not is_shallot:
             raise ValueError(f"OOD_GUARD_REJECTED: {reason_msg}")
 
+    # Verifikasi Pipeline Preprocessing Citra (RGB murni, resize 224x224, skala [0, 255])
     input_tensor, processed_preview, diag_info = preprocess_image_smart(image, target_size, norm_mode=norm_mode)
     
-    # Eksekusi MobileNetV2 setelah lolos verifikasi citra
+    # 1. Inferensi Model Keras (ambil salinan probabilitas mentah)
     raw_preds = model.predict(input_tensor, verbose=0)
-
     if len(raw_preds.shape) == 2:
-        score = raw_preds[0]
+        raw_probs = raw_preds[0].copy()
     else:
-        score = raw_preds.flatten()
+        raw_probs = raw_preds.flatten().copy()
 
-    top_indices = np.argsort(score)[::-1]
+    # 2. Kalibrasi Probabilitas Pasca-Prediksi (Post-Processing Bias Penalty)
+    # Reduksi bobot dominasi Xanthomonas Leaf Blight (Indeks 12) sebesar 45% (kalikan 0.55)
+    idx_xanthomonas = class_names.index("Xanthomonas Leaf Blight") if "Xanthomonas Leaf Blight" in class_names else 12
+    raw_probs[idx_xanthomonas] *= 0.55
+
+    # Normalisasi ulang agar total probabilitas kembali tepat 1.0 (100%)
+    calibrated_probs = raw_probs / np.sum(raw_probs)
+
+    # Gunakan calibrated_probs sebagai satu-satunya rujukan untuk mengurutkan Top-N dan diagnosis akhir
+    top_indices = np.argsort(calibrated_probs)[::-1]
     
     # Peringkat 1
     best_idx = int(top_indices[0])
     raw_class_name = class_names[best_idx]
-    top_confidence = float(score[best_idx]) * 100.0
+    top_confidence = float(calibrated_probs[best_idx]) * 100.0
 
     # Peringkat 2
     second_idx = int(top_indices[1]) if len(top_indices) > 1 else best_idx
     second_class_name = class_names[second_idx]
-    second_confidence = float(score[second_idx]) * 100.0
+    second_confidence = float(calibrated_probs[second_idx]) * 100.0
 
     # Margin selisih probabilitas peringkat 1 dan 2
     confidence_margin = top_confidence - second_confidence
+
+    # 3. Aturan Ambang Batas Diferensial (Mencegah Vonis Tunggal Saat Ragu)
+    # Aktifkan status Multidiagnosis jika:
+    # - conf_2 >= 15.0%, ATAU
+    # - conf_1 < 65.0%, ATAU
+    # - Selisih (conf_1 - conf_2) < 25.0%
+    is_healthy_1 = CLASS_METADATA.get(raw_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(raw_class_name, {}).get("status") == "healthy"
+    is_healthy_2 = CLASS_METADATA.get(second_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(second_class_name, {}).get("status") == "healthy"
+
+    is_differential = (
+        ((second_confidence >= 15.0) or (top_confidence < 65.0) or (confidence_margin < 25.0))
+        and (not is_healthy_1) 
+        and (not is_healthy_2) 
+        and (raw_class_name != second_class_name)
+    )
 
     metadata = CLASS_METADATA.get(raw_class_name, {
         "nama_id": raw_class_name,
@@ -1027,26 +1051,8 @@ def predict_image(image: Image.Image, model, class_names, target_size=(224, 224)
         "rekomendasi_singkat": "Lakukan sanitasi daun sakit."
     })
 
-    # Syarat Diferensial Diagnosis:
-    # 1. Selisih probabilitas peringkat 1 dan 2 < 20% (ambiguitas tinggi)
-    # 2. ATAU model memprediksi Xanthomonas Leaf Blight namun peringkat 2 adalah jamur bercak/karat (Rust, Alternaria, Purple blotch, Botrytis, Stemphylium) dengan margin < 28% (pencegahan bias over-prediksi Xanthomonas di server cloud)
-    is_healthy_1 = metadata.get("is_healthy", False) or metadata.get("status") == "healthy"
-    is_healthy_2 = second_metadata.get("is_healthy", False) or second_metadata.get("status") == "healthy"
-    
-    is_xanthomonas_ambiguity = (
-        raw_class_name == "Xanthomonas Leaf Blight" 
-        and second_class_name in ["Rust", "Alternaria_D", "Purple blotch", "Botrytis Leaf Blight", "stemphylium Leaf Blight"]
-        and confidence_margin < 28.0
-    )
-    is_differential = (
-        ((confidence_margin < 20.0) or is_xanthomonas_ambiguity) 
-        and (not is_healthy_1) 
-        and (not is_healthy_2) 
-        and (raw_class_name != second_class_name)
-    )
-
     return (
-        score,
+        calibrated_probs,
         top_indices,
         raw_class_name,
         top_confidence,
@@ -1059,6 +1065,9 @@ def predict_image(image: Image.Image, model, class_names, target_size=(224, 224)
         processed_preview,
         diag_info
     )
+
+# Alias untuk kompatibilitas fungsi lama
+predict_image = predict_disease
 
 def validate_onion_leaf(image: Image.Image, top_confidence: float, threshold: float = 40.0):
     """
@@ -1699,7 +1708,7 @@ if selected_image is not None:
                 st.markdown(f"""
                     <div style="background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border: 2px solid #F59E0B; border-radius: 18px; padding: 1.3rem; margin-bottom: 1.3rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
                         <div style="display: inline-block; background-color: #B45309; color: white; padding: 0.35rem 0.9rem; border-radius: 20px; font-weight: 800; font-size: 0.9rem; margin-bottom: 0.6rem; letter-spacing: 0.5px;">
-                            ⚠️ GEJALA MIRIP / MULTIDIAGNOSIS
+                            ⚠️ Gejala Ganda / Memerlukan Konfirmasi Fisik
                         </div>
                         <div style="font-size: 1.35rem; font-weight: 800; color: #78350F; margin-bottom: 0.35rem;">
                             Terdeteksi 2 Kemungkinan Penyakit Serupa
