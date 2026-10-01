@@ -763,28 +763,35 @@ def load_model_and_labels():
 def preprocess_image_smart(image: Image.Image, target_size=(224, 224)):
     """
     Standardisasi Pipeline Citra (Cloud vs Lokal Consistency):
-    Memastikan citra diproses seragam dan independen dari sistem operasi (Linux Cloud vs Windows Lokal):
-    1. EXIF Transpose: Mengoreksi rotasi orientasi dari kamera smartphone iOS/Android agar tidak terputar saat diproses di server Linux cloud.
-    2. Konversi aman ke RGB: Mencegah perbedaan penanganan channel warna BGR/RGBA di server cloud.
-    3. Resize ke target_size (224, 224) dengan interpolasi konsisten BILINEAR.
-    4. tf.keras.preprocessing.image.img_to_array(img_resized, dtype="float32").
-    5. np.expand_dims(img_array, axis=0).
-    6. tf.keras.applications.mobilenet_v2.preprocess_input(img_array) tanpa pembagian manual / 255.0 ganda.
+    Normalisasi Kanal Warna yang Aman dan Deterministik:
+    1. EXIF Transpose: Mengoreksi rotasi orientasi dari kamera smartphone iOS/Android.
+    2. Format RGB murni: Mengonversi format RGBA/PNG/palet agar tidak ada channel alpha yang menggeser nilai piksel.
+    3. Resize tepat target_size (224, 224).
+    4. Konversi ke NumPy array float32 murni: np.array(img_resized, dtype=np.float32).
+    5. Tambahkan dimensi batch: np.expand_dims(img_array, axis=0).
+    6. Preprocessing resmi MobileNetV2 rentang [-1, 1] tanpa pembagian manual / 255.0 ganda.
     """
     import tensorflow as tf
-    # 1. Normalisasi orientasi EXIF (kamera smartphone)
-    img_corrected = ImageOps.exif_transpose(image) if image is not None else image
-    # 2. Konversi aman ke RGB (cegah perbedaan channel BGR/RGBA di cloud)
-    img_rgb = img_corrected.convert("RGB")
-    # 3. Resize ke target_size (224, 224) dengan interpolasi konsisten
-    img_resized = img_rgb.resize(target_size, Image.Resampling.BILINEAR)
-    # 4. Konversi ke array numpy float32
-    img_array = tf.keras.preprocessing.image.img_to_array(img_resized, dtype="float32")
-    # 5. Expand dimensi batch
-    img_array = np.expand_dims(img_array, axis=0)
-    # 6. Gunakan fungsi bawaan MobileNetV2 tanpa pembagian / 255.0 ganda
-    img_preprocessed = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-    return img_preprocessed, img_resized
+    # Normalisasi orientasi EXIF (kamera smartphone)
+    cropped_img = ImageOps.exif_transpose(image) if image is not None else image
+
+    # Pastikan format RGB murni
+    if cropped_img.mode != "RGB":
+        cropped_img = cropped_img.convert("RGB")
+
+    # Resize tepat 224x224
+    img_resized = cropped_img.resize(target_size, Image.Resampling.BILINEAR)
+
+    # Konversi ke NumPy array float32
+    img_array = np.array(img_resized, dtype=np.float32)
+
+    # Tambahkan dimensi batch (1, 224, 224, 3)
+    img_batch = np.expand_dims(img_array, axis=0)
+
+    # Gunakan preprocessing resmi MobileNetV2 (rentang [-1, 1])
+    # JANGAN membagi manual dengan 255.0 lagi sebelum fungsi ini!
+    img_final = tf.keras.applications.mobilenet_v2.preprocess_input(img_batch)
+    return img_final, img_resized
 
 def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.12) -> tuple[bool, str, float]:
     """
