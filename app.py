@@ -543,6 +543,7 @@ CLASS_METADATA = {
         "latin": "Alternaria porri",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Bercak melekuk ke dalam berbentuk cincin konsentris bertepung keunguan/gelap di tengah helai daun, tepi menguning kering.",
         "gejala": "Potong atau pangkas daun yang terdapat bercak trotol ungu. Kumpulkan dan bakar di luar areal sawah agar spora jamur tidak terbang tertiup angin ke tanaman lain.",
         "pencegahan": "Bersihkan gulma dan rumput liar di sekitar parit. Buat bedengan lebih tinggi agar tidak tergenang air saat hujan lebat.",
         "solusi": "Semprot fungisida berbahan aktif Difenokonazol atau Mankozeb. Semprot pada pagi hari (pukul 06.00 - 08.30) atau sore (pukul 16.00) saat angin tenang.",
@@ -553,6 +554,7 @@ CLASS_METADATA = {
         "latin": "Botrytis squamosa",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Bintik-bintik putih kecil (1-2 mm) melekuk di helai daun, ujung daun memutih kering seperti terbakar tanpa lendir.",
         "gejala": "Pangkas ujung-ujung daun yang memutih atau mengering. Jangan biarkan sisa potongan membusuk di atas bedengan.",
         "pencegahan": "Hindari menyiram daun di sore/malam hari agar daun tidak basah semalaman. Perlebar jarak tanam agar angin leluasa masuk.",
         "solusi": "Semprot fungisida berbahan aktif Klorotalonil atau Fluazinam secara merata di permukaan dan sela daun.",
@@ -563,6 +565,7 @@ CLASS_METADATA = {
         "latin": "Aspergillus / Fusarium spp.",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Umbi lembek berair berbau busuk menyengat saat dipijit, lapisan kulit luar terkelupas busuk basah.",
         "gejala": "Segera cabut rumpun bawang yang umbinya lembek dan berbau busuk. Keluarkan dari lahan dan jangan buang di saluran air irigasi.",
         "pencegahan": "Gunakan bibit umbi yang benar-benar kering leher. Taburkan kapur pertanian (dolomit) jika tanah terlalu masam atau lembap becek.",
         "solusi": "Kocorkan fungisida Tembaga Oksiklorida di lubang tanam bekas cabutan dan taburkan agens hayati Trichoderma.",
@@ -573,6 +576,7 @@ CLASS_METADATA = {
         "latin": "Blight pathogen",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Pangkal leher umbi melembek kecokelatan di perbatasan tanah, daun atas rebah lunglai.",
         "gejala": "Cabut tanaman yang pangkal lehernya melembek kecokelatan sebelum busuk merambat ke umbi tetangga.",
         "pencegahan": "Pastikan saluran drainase parit lancar dan tidak ada air menggenang di sela bedengan.",
         "solusi": "Kocorkan fungisida berbahan aktif Mankozeb atau Tembaga Oksiklorida pada pangkal batang tanaman yang masih sehat.",
@@ -583,6 +587,7 @@ CLASS_METADATA = {
         "latin": "Spodoptera exigua",
         "status": "pest",
         "is_healthy": False,
+        "ciri_lapangan": "Helai daun transparan tipis berlubang dari dalam tabung daun, terdapat kotoran ulat hijau/hitam di sela daun.",
         "gejala": "Pencet atau kutip langsung kelompok ulat dan telur ulat di dalam tabung daun pada pagi hari saat ulat mulai aktif keluar.",
         "pencegahan": "Pasang lampu perangkap (light trap) atau feromon sex trap di sudut sawah untuk membasmi kupu-kupu ngengat sebelum bertelur.",
         "solusi": "Semprot insektisida berbahan aktif Emamektin Benzoat atau Klorantraniliprol pada sore menjelang petang hari saat ulat keluar makan.",
@@ -593,6 +598,7 @@ CLASS_METADATA = {
         "latin": "Peronospora destructor",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Permukaan daun dilapisi bulu/kapang halus keputihan hingga kelabu keunguan di pagi hari saat lembap berkabut.",
         "gejala": "Petik daun yang berbulu halus keputihan di pagi hari. Masukkan ke dalam kantong kresek tertutup dan bawa keluar dari areal sawah.",
         "pencegahan": "Hentikan pupuk Urea/Nitrogen berlebih selama musim penghujan. Berikan pupuk Kalium dan Silika untuk mempertebal kulit daun.",
         "solusi": "Semprot fungisida sistemik berbahan aktif Dimetomorf atau Simoksanil selang-seling dengan Mankozeb setiap 3-4 hari sekali.",
@@ -603,6 +609,7 @@ CLASS_METADATA = {
         "latin": "Fusarium oxysporum",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Daun melintir-lintir abnormal (moler), menguning pucat dari ujung, perakaran membusuk dan mudah dicabut.",
         "gejala": "Segera cabut tanaman yang daunnya melintir abnormal (moler) sampai ke perakarannya agar jamur tidak menular lewat parit.",
         "pencegahan": "Campurkan agens hayati Trichoderma dengan pupuk kandang matang saat olah tanah dasar bedengan.",
         "solusi": "Taburkan kapur dolomit pada lubang bekas cabutan dan semprot fungisida sistemik berbahan aktif Benomil atau Mankozeb.",
@@ -613,6 +620,7 @@ CLASS_METADATA = {
         "latin": "Kondisi Normal",
         "status": "healthy",
         "is_healthy": True,
+        "ciri_lapangan": "Daun hijau segar mengkilap, tegak berdiri kokoh tanpa bercak berlendir, luka gigitan, maupun tepung jamur.",
         "gejala": "Kondisi tanaman sangat baik! Daun hijau segar, tegak berdiri kokoh tanpa bercak jamur atau luka gigitan hama.",
         "pencegahan": "Lanjutkan pemantauan rutin 2-3 hari sekali. Pertahankan sanitasi gulma di pematang sawah.",
         "solusi": "Tidak memerlukan obat semprot kimia kuratif. Cukup semprotkan pupuk daun mikro dan asam amino untuk menjaga kesegaran.",
@@ -623,6 +631,7 @@ CLASS_METADATA = {
         "latin": "Iris yellow spot virus",
         "status": "virus",
         "is_healthy": False,
+        "ciri_lapangan": "Bercak klorotik khas berbentuk ketupat/belah ketupat warna kuning jerami di tengah helai daun.",
         "gejala": "Cabut dan musnahkan tanaman yang daunnya terdapat bercak kuning berbentuk ketupat agar tidak menjadi sumber virus di kebun.",
         "pencegahan": "Gunakan mulsa plastik perak untuk memantulkan sinar matahari dan menghalau datangnya hama trips pembawa virus.",
         "solusi": "Kendalikan serangga kutu trips penyebar virus dengan insektisida berbahan aktif Abamektin atau Spinetoram pada pagi hari.",
@@ -633,6 +642,7 @@ CLASS_METADATA = {
         "latin": "Alternaria porri",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Bercak trotol keunguan melekuk dengan cincin konsentris gelap dan tepi berwarna kuning klorotik, kering bertepung spora.",
         "gejala": "Potong helai daun yang terdapat cincin bercak ungu melekuk sebelum bercak melebar dan menyebabkan daun patah terkulai.",
         "pencegahan": "Jaga kelancaran parit bedengan, jangan biarkan air hujan menggenangi sela tanaman bawang.",
         "solusi": "Semprot fungisida berbahan aktif Difenokonazol, Propineb, atau Azoksistrobin secara bergiliran pada pagi hari.",
@@ -643,6 +653,7 @@ CLASS_METADATA = {
         "latin": "Puccinia allii",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Bintil-bintil melepuh berisi serbuk/tepung karat berwarna oranye kemerahan seperti serbuk besi berkarat.",
         "gejala": "Pangkas daun yang dipenuhi bintil debu karat warna oranye kemerahan. Masukkan ke wadah tertutup saat memotong agar serbuk karat tidak berhamburan.",
         "pencegahan": "Lakukan rotasi pergiliran tanaman dengan jagung atau palawija setelah panen bawang merah.",
         "solusi": "Semprot fungisida berbahan aktif Tebukonazol, Heksakonazol, atau Difenokonazol saat embun pagi mulai mengering (sekitar pukul 08.00).",
@@ -653,6 +664,7 @@ CLASS_METADATA = {
         "latin": "Onion yellow dwarf virus",
         "status": "virus",
         "is_healthy": False,
+        "ciri_lapangan": "Tanaman kerdil, helai daun belang bergaris-garis kuning kusam, berkerut kaku dan rapuh bila ditekuk.",
         "gejala": "Segera cabut rumpun tanaman yang kerdil dan daunnya belang kuning berkerut. Jangan biarkan tetap tumbuh di bedengan.",
         "pencegahan": "Gunakan bibit umbi sehat bersertifikat yang terbebas dari infeksi virus bawaan.",
         "solusi": "Semprot insektisida berbahan aktif Imidakloprid untuk menekan populasi kutu daun (aphid) yang menularkan virus.",
@@ -663,6 +675,7 @@ CLASS_METADATA = {
         "latin": "Xanthomonas axonopodis",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Bercak kebasah-basahan (water-soaked) seperti tersiram air mendidih, berlendir saat pagi lembap, bau langu/busuk, tidak bertepung spora.",
         "gejala": "Potong helai daun yang tampak berlendir kebasah-basahan seperti tersiram air panas sebelum mengering hangus.",
         "pencegahan": "Hindari menyiram daun menggunakan semprotan bertekanan kencang yang dapat memercikkan air bakteri ke daun sehat.",
         "solusi": "Semprot bakterisida/fungisida tembaga berbahan aktif Tembaga Hidroksida atau Kasugamisin pada pagi hari saat cuaca cerah.",
@@ -673,6 +686,7 @@ CLASS_METADATA = {
         "latin": "Kondisi Normal",
         "status": "healthy",
         "is_healthy": True,
+        "ciri_lapangan": "Daun bawang hijau mulus dan tegak berdiri tanpa tanda bercak basah maupun luka gigitan.",
         "gejala": "Daun bawang hijau mulus dan tegak berdiri tanpa tanda bercak penyakit maupun serangan ulat.",
         "pencegahan": "Pertahankan pasokan air yang cukup di parit tanpa membuat bedengan terlalu becek.",
         "solusi": "Tidak perlu obat kimia/fungisida semprot. Cukup berikan pupuk NPK dan pupuk daun mikro sesuai jadwal.",
@@ -683,6 +697,7 @@ CLASS_METADATA = {
         "latin": "Stemphylium vesicarium",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Ujung daun menguning kecokelatan kering memanjang ke bawah, terdapat bintik hitam kecil spora jamur saat kering.",
         "gejala": "Pangkas ujung daun yang menguning kecokelatan seperti terbakar. Buang sisa daun yang dipangkas keluar dari lahan.",
         "pencegahan": "Semprotkan pupuk Kalium (KNO3 putih) dan pupuk Silika cair untuk memperkokoh dinding sel helai daun.",
         "solusi": "Semprot fungisida berbahan aktif Iprodion, Klorotalonil, atau Tebukonazol secara bergiliran tiap 4-5 hari sekali.",
@@ -746,15 +761,23 @@ def load_model_and_labels():
     return model, class_names
 
 def preprocess_image_smart(image: Image.Image, target_size=(224, 224)):
-    """Preproses Citra Standar MobileNetV2 dengan Smart Center-Crop lanczos [-1, 1]."""
+    """
+    Audit & Prapemprosesan Citra MobileNetV2 Presisi [-1, 1]:
+    img = cropped_img.resize((224, 224))
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_preprocessed = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
+    (Tanpa pembagian manual / 255.0 ganda).
+    """
     import tensorflow as tf
     if image.mode != "RGB":
         image = image.convert("RGB")
-    fitted_img = ImageOps.fit(image, target_size, method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
-    img_array = tf.keras.preprocessing.image.img_to_array(fitted_img, dtype="float32")
+    
+    img = image.resize(target_size, Image.Resampling.BILINEAR)
+    img_array = tf.keras.preprocessing.image.img_to_array(img, dtype="float32")
     img_array = np.expand_dims(img_array, axis=0)
-    img_tensor = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-    return img_tensor, fitted_img
+    img_preprocessed = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
+    return img_preprocessed, img
 
 def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.12) -> tuple[bool, str, float]:
     """
@@ -886,7 +909,8 @@ def validate_with_groq_vision(image: Image.Image, api_key: str = None) -> tuple[
 
 def predict_image(image: Image.Image, model, class_names, target_size=(224, 224), enforce_verification: bool = True):
     """
-    Inferensi MobileNetV2 presisi dengan Sistem Validasi Citra (OOD Guard).
+    Inferensi MobileNetV2 presisi dengan Sistem Validasi Citra (OOD Guard)
+    dan Analisis Diferensial Diagnosis (Multidiagnosis jika selisih < 18%).
     """
     # ==============================================================================
     # VALIDASI INPUT GAMBAR TEPAT SEBELUM PREDIKSI (OOD GUARD)
@@ -906,23 +930,63 @@ def predict_image(image: Image.Image, model, class_names, target_size=(224, 224)
     else:
         score = raw_preds.flatten()
 
-    best_idx = int(np.argmax(score))
+    top_indices = np.argsort(score)[::-1]
+    
+    # Peringkat 1
+    best_idx = int(top_indices[0])
     raw_class_name = class_names[best_idx]
     top_confidence = float(score[best_idx]) * 100.0
-    top_indices = np.argsort(score)[::-1]
+
+    # Peringkat 2
+    second_idx = int(top_indices[1]) if len(top_indices) > 1 else best_idx
+    second_class_name = class_names[second_idx]
+    second_confidence = float(score[second_idx]) * 100.0
+
+    # Margin selisih probabilitas peringkat 1 dan 2
+    confidence_margin = top_confidence - second_confidence
 
     metadata = CLASS_METADATA.get(raw_class_name, {
         "nama_id": raw_class_name,
         "latin": "-",
         "status": "disease",
         "is_healthy": False,
+        "ciri_lapangan": "Periksa kondisi helai daun dan bercak secara teliti.",
         "gejala": "Pangkas daun yang bergejala dan keluarkan dari areal kebun.",
         "pencegahan": "Jaga kelancaran parit dan kebersihan gulma bedengan.",
         "solusi": "Gunakan fungisida atau bakterisida sesuai rekomendasi petugas penyuluh.",
         "rekomendasi_singkat": "Pangkas daun sakit dan lakukan penyemprotan obat yang sesuai."
     })
 
-    return score, top_indices, raw_class_name, top_confidence, metadata, processed_preview
+    second_metadata = CLASS_METADATA.get(second_class_name, {
+        "nama_id": second_class_name,
+        "latin": "-",
+        "status": "disease",
+        "is_healthy": False,
+        "ciri_lapangan": "Periksa kondisi helai daun dan bercak secara teliti.",
+        "gejala": "Pangkas daun yang bergejala dan bersihkan bedengan.",
+        "pencegahan": "Jaga drainase parit dan sanitasi pematang.",
+        "solusi": "Gunakan obat yang sesuai.",
+        "rekomendasi_singkat": "Lakukan sanitasi daun sakit."
+    })
+
+    # Syarat Diferensial Diagnosis: Selisih < 18% dan keduanya bukan daun sehat murni
+    is_healthy_1 = metadata.get("is_healthy", False) or metadata.get("status") == "healthy"
+    is_healthy_2 = second_metadata.get("is_healthy", False) or second_metadata.get("status") == "healthy"
+    is_differential = (confidence_margin < 18.0) and (not is_healthy_1) and (not is_healthy_2) and (raw_class_name != second_class_name)
+
+    return (
+        score,
+        top_indices,
+        raw_class_name,
+        top_confidence,
+        metadata,
+        second_class_name,
+        second_confidence,
+        second_metadata,
+        is_differential,
+        confidence_margin,
+        processed_preview
+    )
 
 def validate_onion_leaf(image: Image.Image, top_confidence: float, threshold: float = 40.0):
     """
@@ -972,50 +1036,85 @@ FOCUS_ANGLES = [
     )
 ]
 
-def get_groq_recommendation(disease_name, confidence, is_healthy=False, angle_idx=None):
+def get_groq_recommendation(
+    disease_name, 
+    confidence, 
+    is_healthy=False, 
+    angle_idx=None,
+    second_disease_name=None,
+    second_confidence=None,
+    is_differential=False
+):
     """
     Memanggil Groq API untuk menyusun petunjuk obat dan perawatan lahan yang panjang, mendalam,
-    namun disajikan dalam rangkuman praktis berbasis riset (Balitsa, BPTP Kementan, Jurnal Fitopatologi).
+    serta verifikasi karakteristik pembeda gejala (Diferensial Diagnosis) jika terdeteksi 2 kemungkinan mirip.
     """
     import requests
     import random
 
-    if angle_idx is None or angle_idx < 0 or angle_idx >= len(FOCUS_ANGLES):
-        angle_title, angle_desc = random.choice(FOCUS_ANGLES)
+    if is_differential and second_disease_name:
+        angle_title = "Diferensial Diagnosis & Perlindungan Spektrum Ganda"
+        user_prompt = (
+            f"Model visual mendeteksi dua kemungkinan teratas: {disease_name} ({confidence:.1f}%) dan {second_disease_name} ({second_confidence:.1f}%).\n\n"
+            "Anda bertindak sebagai Ahli Agronomi dan Konsultan Proteksi Tanaman Hortikultura Bawang Merah (merujuk pada riset Balitsa Lembang, BPTP Kementan, dan Jurnal Fitopatologi Indonesia).\n"
+            "Bantu petani membedakan kedua penyakit ini di lapangan dan berikan penanganan terpadu:\n"
+            "1. Ciri khas fisik pembeda yang paling mudah dilihat mata petani di lapangan (warna bercak, tekstur basah/kering, ada tidaknya tepung spora atau lendir).\n"
+            "2. Tindakan pengobatan yang aman mencakup kedua spektrum (kombinasi fungisida + bakterisida tembaga atau sanitasi umum).\n\n"
+            "WAJIB susun jawaban ke dalam 3 bagian persis dengan judul pemisah berikut:\n\n"
+            "=== TINDAKAN LANGSUNG DI KEBUN ===\n"
+            f"- Berikan langkah taktis darurat dalam 24 jam pertama di bedengan.\n"
+            f"- Jelaskan secara spesifik cara membedakan {disease_name} vs {second_disease_name} langsung dengan mata telanjang di sawah (misal: lendir busuk basah vs cincin konsentris tepung spora kering).\n"
+            "- Jelaskan teknik pemotongan daun bergejala dan sanitasi alat gunting/pisau agar spora atau bakteri tidak menyebar ke tanaman sekitar.\n\n"
+            "=== REKOMENDASI OBAT SEMPROT ===\n"
+            "- Berikan kombinasi obat semprot aman yang mencakup kedua spektrum patogen (kombinasi bakterisida tembaga seperti Tembaga Hidroksida / Kasugamisin dengan fungisida seperti Difenokonazol atau Mankozeb).\n"
+            "- Sebutkan takaran dosis realistis (misal: 1,5 - 2 sendok makan per tangki semprot 16 Liter).\n"
+            "- Sebutkan waktu semprot terbaik (pagi hari sebelum jam 09.00 saat embun mengering, atau sore setelah jam 16.00 saat angin tenang).\n"
+            "- Ingatkan penambahan perekat/perata (surfactant) agar obat tidak mudah luntur.\n\n"
+            "=== PERAWATAN LAHAN & PUPUK ===\n"
+            "Jelaskan bagian ini secara terstruktur dalam 4 poin praktis:\n"
+            "1. Pengaturan Parit & Tata Air: Atur muka air parit 20-25 cm di bawah bedengan, cegah genangan air hujan yang memicu penularan patogen.\n"
+            "2. Manajemen Pupuk Khusus Masalah: Wajib STOP pupuk Nitrogen tunggal (Urea/ZA) yang memicu daun lunak sukulen, gantikan dengan pupuk Kalium (KNO3 Putih / MKP).\n"
+            "3. Penguat Dinding Sel: Semprot pupuk Kalsium-Boron dan pupuk Silika cair untuk mempertebal lapisan lilin daun.\n"
+            "4. Perawatan Tanah & Agens Hayati: Tabur dolomit jika tanah masam (pH < 6), aplikasikan Trichoderma atau Bacillus subtilis pada pupuk kandang matang.\n"
+        )
     else:
-        angle_title, angle_desc = FOCUS_ANGLES[angle_idx]
+        if angle_idx is None or angle_idx < 0 or angle_idx >= len(FOCUS_ANGLES):
+            angle_title, angle_desc = random.choice(FOCUS_ANGLES)
+        else:
+            angle_title, angle_desc = FOCUS_ANGLES[angle_idx]
 
-    user_prompt = (
-        f"Kondisi Daun Bawang Merah: {disease_name}, Tingkat Keyakinan Model: {confidence:.1f}%.\n"
-        f"Status: {'Daun Sehat/Normal' if is_healthy else 'Terserang Penyakit/Hama Tanaman'}.\n"
-        f"Fokus Solusi Kali Ini: [{angle_title}] - {angle_desc}.\n\n"
-        "Anda bertindak sebagai Konsultan Ahli Perlindungan Tanaman Hortikultura Bawang Merah (merujuk pada riset Balitsa Lembang, BPTP Kementan, dan Jurnal Fitopatologi Indonesia).\n"
-        "Tolong berikan petunjuk obat dan perawatan lahan yang LENGKAP, MENDALAM, DAN DETAIL namun disajikan dalam BAHASA INDONESIA YANG LUGAS, JELAS, DAN SANGAT PRAKTIS UNTUK PETANI BAWANG MERAH (usia 30-50 tahun di sawah).\n"
-        "Rangkum intisari dari riset ilmiah dan pedoman teknis menjadi poin-poin langkah nyata yang siap diterapkan di kebun.\n\n"
-        "WAJIB susun jawaban ke dalam 3 bagian persis dengan judul pemisah berikut:\n\n"
-        "=== TINDAKAN LANGSUNG DI KEBUN ===\n"
-        "- Berikan langkah taktis darurat dalam 24-48 jam pertama di bedengan.\n"
-        "- Jelaskan teknik pemotongan daun yang benar (jangan sampai spora terbang/berhamburan tertiup angin).\n"
-        "- Jelaskan tindakan sanitasi alat gunting/pisau dan pemusnahan sisa pangkasan ke luar lahan (bakar/kubur jauh dari saluran air irigasi).\n\n"
-        "=== REKOMENDASI OBAT SEMPROT ===\n"
-        "- Berikan 2-3 pilihan kombinasi bahan aktif fungisida/insektisida/bakterisida yang lazim dan mudah dibeli di kios pertanian (sebutkan golongan kontak dan sistemik).\n"
-        "- Sebutkan takaran dosis realistis (misal: 1,5 - 2 sendok makan per tangki semprot 16 Liter).\n"
-        "- Sebutkan waktu semprot terbaik (pagi hari sebelum jam 09.00 saat embun mengering, atau sore setelah jam 16.00 saat angin tenang dan tidak terik).\n"
-        "- Ingatkan penggunaan perekat/perata/penembus (surfactant) terutama saat musim hujan agar obat tidak luntur.\n\n"
-        "=== PERAWATAN LAHAN & PUPUK ===\n"
-        "Jelaskan bagian ini secara PANJANG, MENDALAM, DAN DETAIL terbagi dalam 4 poin terstruktur:\n"
-        "1. Pengaturan Parit & Tata Air: Atur muka air parit sekitar 20-25 cm di bawah permukaan bedengan. Pastikan drainase lancar dan terapkan pengairan berselang (macak-macak), jangan biarkan air hujan menggenang di parit bedengan.\n"
-        "2. Manajemen Pupuk Khusus Masalah: Wajib STOP atau kurangi pupuk Nitrogen tunggal (Urea/ZA) karena menyebabkan jaringan daun sukulen (terlalu empuk berair) yang menjadi santapan empuk jamur/bakteri. Gantikan dengan pupuk Kalium (KNO3 putih atau MKP 2-3 sendok/tangki) untuk memperkokoh umbi dan helai daun.\n"
-        "3. Penguat Dinding Sel & Ketahanan Tanaman: Semprotkan pupuk Kalsium-Boron dan pupuk Silika cair secara rutin untuk melapisi dan mempertebal kutikula (lapisan lilin) daun sehingga spora patogen tidak bisa menembus masuk.\n"
-        "4. Perawatan Tanah & Agens Hayati: Jika tanah bedengan masam (pH < 6), taburkan kapur dolomit 1-2 genggam per meter bedengan untuk menetralkan pH. Campurkan agens hayati Trichoderma harzianum atau bakteri Bacillus subtilis dengan pupuk kandang matang untuk menekan jamur tular tanah.\n"
-    )
+        user_prompt = (
+            f"Kondisi Daun Bawang Merah: {disease_name}, Tingkat Keyakinan Model: {confidence:.1f}%.\n"
+            f"Status: {'Daun Sehat/Normal' if is_healthy else 'Terserang Penyakit/Hama Tanaman'}.\n"
+            f"Fokus Solusi Kali Ini: [{angle_title}] - {angle_desc}.\n\n"
+            "Anda bertindak sebagai Konsultan Ahli Perlindungan Tanaman Hortikultura Bawang Merah (merujuk pada riset Balitsa Lembang, BPTP Kementan, dan Jurnal Fitopatologi Indonesia).\n"
+            "Tolong berikan petunjuk obat dan perawatan lahan yang LENGKAP, MENDALAM, DAN DETAIL namun disajikan dalam BAHASA INDONESIA YANG LUGAS, JELAS, DAN SANGAT PRAKTIS UNTUK PETANI BAWANG MERAH (usia 30-50 tahun di sawah).\n"
+            "Rangkum intisari dari riset ilmiah dan pedoman teknis menjadi poin-poin langkah nyata yang siap diterapkan di kebun.\n\n"
+            "WAJIB susun jawaban ke dalam 3 bagian persis dengan judul pemisah berikut:\n\n"
+            "=== TINDAKAN LANGSUNG DI KEBUN ===\n"
+            "- Berikan langkah taktis darurat dalam 24-48 jam pertama di bedengan.\n"
+            "- Jelaskan teknik pemotongan daun yang benar (jangan sampai spora terbang/berhamburan tertiup angin).\n"
+            "- Jelaskan tindakan sanitasi alat gunting/pisau dan pemusnahan sisa pangkasan ke luar lahan (bakar/kubur jauh dari saluran air irigasi).\n\n"
+            "=== REKOMENDASI OBAT SEMPROT ===\n"
+            "- Berikan 2-3 pilihan kombinasi bahan aktif fungisida/insektisida/bakterisida yang lazim dan mudah dibeli di kios pertanian (sebutkan golongan kontak dan sistemik).\n"
+            "- Sebutkan takaran dosis realistis (misal: 1,5 - 2 sendok makan per tangki semprot 16 Liter).\n"
+            "- Sebutkan waktu semprot terbaik (pagi hari sebelum jam 09.00 saat embun mengering, atau sore setelah jam 16.00 saat angin tenang dan tidak terik).\n"
+            "- Ingatkan penggunaan perekat/perata/penembus (surfactant) terutama saat musim hujan agar obat tidak luntur.\n\n"
+            "=== PERAWATAN LAHAN & PUPUK ===\n"
+            "Jelaskan bagian ini secara PANJANG, MENDALAM, DAN DETAIL terbagi dalam 4 poin terstruktur:\n"
+            "1. Pengaturan Parit & Tata Air: Atur muka air parit sekitar 20-25 cm di bawah permukaan bedengan. Pastikan drainase lancar dan terapkan pengairan berselang (macak-macak), jangan biarkan air hujan menggenang di parit bedengan.\n"
+            "2. Manajemen Pupuk Khusus Masalah: Wajib STOP atau kurangi pupuk Nitrogen tunggal (Urea/ZA) karena menyebabkan jaringan daun sukulen (terlalu empuk berair) yang menjadi santapan empuk jamur/bakteri. Gantikan dengan pupuk Kalium (KNO3 putih atau MKP 2-3 sendok/tangki) untuk memperkokoh umbi dan helai daun.\n"
+            "3. Penguat Dinding Sel & Ketahanan Tanaman: Semprotkan pupuk Kalsium-Boron dan pupuk Silika cair secara rutin untuk melapisi dan mempertebal kutikula (lapisan lilin) daun sehingga spora patogen tidak bisa menembus masuk.\n"
+            "4. Perawatan Tanah & Agens Hayati: Jika tanah bedengan masam (pH < 6), taburkan kapur dolomit 1-2 genggam per meter bedengan untuk menetralkan pH. Campurkan agens hayati Trichoderma harzianum atau bakteri Bacillus subtilis dengan pupuk kandang matang untuk menekan jamur tular tanah.\n"
+        )
 
     headers = {
         "Authorization": f"Bearer {get_groq_api_key()}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "User-Agent": "AgroScan-Mobile/1.0"
     }
 
-    models_to_try = ["qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+    models_to_try = ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
     for model_name in models_to_try:
         payload = {
             "model": model_name,
@@ -1334,7 +1433,19 @@ if selected_image is not None:
         # TAHAP 2: PROSES DIAGNOSIS MOBILENETV2 (Hanya Berjalan Jika Lolos Validasi Citra)
         # ==============================================================================
         with st.spinner("🔍 Sedang menganalisis kondisi daun bawang merah dengan MobileNetV2..."):
-            score, top_indices, top_class_raw, top_confidence, info, preview_crop = predict_image(
+            (
+                score,
+                top_indices,
+                top_class_raw,
+                top_confidence,
+                info,
+                second_class_raw,
+                second_confidence,
+                second_info,
+                is_differential,
+                confidence_margin,
+                preview_crop
+            ) = predict_image(
                 selected_image, model, class_names, target_size=(224, 224), enforce_verification=False
             )
 
@@ -1373,15 +1484,16 @@ if selected_image is not None:
             diag_sig = f"{selected_image.size}_{top_class_raw}_{round(top_confidence, 1)}"
             if st.session_state.get("last_auto_recorded") != diag_sig:
                 st.session_state["last_auto_recorded"] = diag_sig
+                status_rec = "Multidiagnosis (Mirip)" if is_differential else ("Healthy / Sehat" if info.get("status") == "healthy" or info.get("is_healthy", False) else "Penyakit / Hama")
                 st.session_state['history'].append({
                     "id": int(time.time() * 1000),
                     "waktu": datetime.now().strftime("%H:%M:%S"),
-                    "penyakit": info["nama_id"],
+                    "penyakit": f"{info['nama_id']} ({top_confidence:.1f}%) & {second_info['nama_id']} ({second_confidence:.1f}%)" if is_differential else info["nama_id"],
                     "nama_penyakit": info["nama_id"],
                     "confidence": f"{top_confidence:.1f}%",
                     "keyakinan": f"{top_confidence:.1f}%",
                     "confidence_val": round(top_confidence, 2),
-                    "status": "Healthy / Sehat" if info.get("status") == "healthy" or info.get("is_healthy", False) else "Penyakit / Hama",
+                    "status": status_rec,
                     "kelas_model": top_class_raw,
                     "rekomendasi": info["rekomendasi_singkat"],
                     "lokasi": "Kebun Bawang",
@@ -1401,31 +1513,82 @@ if selected_image is not None:
             is_healthy = info.get("status") == "healthy" or info.get("is_healthy", False)
             is_pest = info.get("status") == "pest"
 
-            if is_healthy:
-                status_card_class = "status-card-healthy"
-                badge_class = "badge-healthy-tag"
-                badge_text = "✅ DAUN SEHAT & NORMAL"
-                conf_color = "#10b981"
-            elif is_pest:
-                status_card_class = "status-card-pest"
-                badge_class = "badge-pest-tag"
-                badge_text = "🐛 SERANGAN HAMA TANAMAN"
-                conf_color = "#ea580c"
-            else:
-                status_card_class = "status-card-disease"
-                badge_class = "badge-disease-tag"
-                badge_text = "🚨 DAUN TERSERANG PENYAKIT"
-                conf_color = "#dc2626"
-
-            st.markdown(f"""
-                <div class="{status_card_class}">
-                    <div class="status-badge {badge_class}">{badge_text}</div>
-                    <div class="status-disease-name">{info['nama_id']}</div>
-                    <div class="status-confidence-text">
-                        Tingkat Kepastian: <span style="color: {conf_color}; font-size: 1.4rem;">{top_confidence:.1f}%</span>
+            if is_differential:
+                # ------------------------------------------------------------------
+                # TAMPILAN DIFERENSIAL DIAGNOSIS (MULTIDIAGNOSIS KARENA GEJALA MIRIP)
+                # ------------------------------------------------------------------
+                st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border: 2px solid #F59E0B; border-radius: 18px; padding: 1.3rem; margin-bottom: 1.3rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+                        <div style="display: inline-block; background-color: #B45309; color: white; padding: 0.35rem 0.9rem; border-radius: 20px; font-weight: 800; font-size: 0.9rem; margin-bottom: 0.6rem; letter-spacing: 0.5px;">
+                            ⚠️ GEJALA MIRIP / MULTIDIAGNOSIS
+                        </div>
+                        <div style="font-size: 1.35rem; font-weight: 800; color: #78350F; margin-bottom: 0.35rem;">
+                            Terdeteksi 2 Kemungkinan Penyakit Serupa
+                        </div>
+                        <div style="font-size: 0.98rem; color: #92400E; margin-bottom: 1rem; line-height: 1.55;">
+                            Model visual menemukan kemiripan tinggi dengan selisih probabilitas sangat tipis (hanya <strong>{confidence_margin:.1f}%</strong>). Petani disarankan mencocokkan ciri fisik langsung di kebun:
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.9rem; margin-bottom: 0.85rem;">
+                            <!-- KEMUNGKINAN A (PERINGKAT 1) -->
+                            <div style="background: white; border-radius: 14px; padding: 1rem 1.1rem; border: 1.5px solid #FCD34D; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
+                                <div style="font-size: 0.82rem; font-weight: 800; color: #B45309; text-transform: uppercase; letter-spacing: 0.5px;">Kemungkinan A (Peringkat 1)</div>
+                                <div style="font-size: 1.25rem; font-weight: 800; color: #0F172A; margin: 0.25rem 0;">{info['nama_id']}</div>
+                                <div style="font-size: 1.2rem; font-weight: 800; color: #D97706; margin-bottom: 0.5rem;">{top_confidence:.1f}%</div>
+                                <div style="font-size: 0.9rem; color: #334155; line-height: 1.5;">
+                                    <strong>🔍 Ciri di Sawah:</strong> {info.get('ciri_lapangan', '-')}
+                                </div>
+                            </div>
+                            
+                            <!-- KEMUNGKINAN B (PERINGKAT 2) -->
+                            <div style="background: white; border-radius: 14px; padding: 1rem 1.1rem; border: 1.5px solid #FCD34D; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
+                                <div style="font-size: 0.82rem; font-weight: 800; color: #B45309; text-transform: uppercase; letter-spacing: 0.5px;">Kemungkinan B (Peringkat 2)</div>
+                                <div style="font-size: 1.25rem; font-weight: 800; color: #0F172A; margin: 0.25rem 0;">{second_info['nama_id']}</div>
+                                <div style="font-size: 1.2rem; font-weight: 800; color: #D97706; margin-bottom: 0.5rem;">{second_confidence:.1f}%</div>
+                                <div style="font-size: 0.9rem; color: #334155; line-height: 1.5;">
+                                    <strong>🔍 Ciri di Sawah:</strong> {second_info.get('ciri_lapangan', '-')}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="padding: 0.85rem 1rem; background: #FEF3C7; border-radius: 12px; border-left: 5px solid #D97706; font-size: 0.92rem; color: #78350F; line-height: 1.55;">
+                            💡 <strong>Kunci Pembeda Cepat di Lapangan:</strong><br>
+                            Periksa helai bercak daun secara teliti: <em>Bakteri (Hawar Daun)</em> biasanya tampak berlendir kebasah-basahan seperti tersiram air mendidih saat pagi hari lembap dan berbau busuk, sedangkan <em>Jamur (Bercak Ungu / Trotol / Stemphylium)</em> tampak bercak cincin konsentris kering dan bertepung spora.
+                        </div>
                     </div>
-                </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+            else:
+                # ------------------------------------------------------------------
+                # TAMPILAN SATU VONIS TUNGGAL (KEPASTIAN TINGGI)
+                # ------------------------------------------------------------------
+                if is_healthy:
+                    status_card_class = "status-card-healthy"
+                    badge_class = "badge-healthy-tag"
+                    badge_text = "✅ DAUN SEHAT & NORMAL"
+                    conf_color = "#10b981"
+                elif is_pest:
+                    status_card_class = "status-card-pest"
+                    badge_class = "badge-pest-tag"
+                    badge_text = "🐛 SERANGAN HAMA TANAMAN"
+                    conf_color = "#ea580c"
+                else:
+                    status_card_class = "status-card-disease"
+                    badge_class = "badge-disease-tag"
+                    badge_text = "🚨 DAUN TERSERANG PENYAKIT"
+                    conf_color = "#dc2626"
+
+                st.markdown(f"""
+                    <div class="{status_card_class}">
+                        <div class="status-badge {badge_class}">{badge_text}</div>
+                        <div class="status-disease-name">{info['nama_id']}</div>
+                        <div class="status-confidence-text">
+                            Tingkat Kepastian: <span style="color: {conf_color}; font-size: 1.4rem;">{top_confidence:.1f}%</span>
+                        </div>
+                        <div style="font-size: 0.92rem; color: #475569; margin-top: 0.6rem; line-height: 1.5;">
+                            🔍 <strong>Ciri Khas di Sawah:</strong> {info.get('ciri_lapangan', '-')}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
 
             # Kemungkinan Alternatif Lain (Top-3 Ringkas & Sederhana)
             with st.expander("📊 Kemungkinan Lainnya (Top-3)", expanded=False):
@@ -1448,13 +1611,16 @@ if selected_image is not None:
             """, unsafe_allow_html=True)
 
             # Logika Pengambilan Saran Groq AI
-            ai_token_now = f"{top_class_raw}_{round(top_confidence, 1)}"
+            ai_token_now = f"{top_class_raw}_{second_class_raw if is_differential else 'single'}_{round(top_confidence, 1)}"
             if st.session_state.get("ai_token_saved") != ai_token_now or "ai_text_saved" not in st.session_state:
                 with st.spinner("🤖 Dokter Tanaman AI sedang meracik resep obat dan panduan perawatan..."):
                     ai_text, ai_angle = get_groq_recommendation(
                         disease_name=info["nama_id"],
                         confidence=top_confidence,
-                        is_healthy=is_healthy
+                        is_healthy=is_healthy,
+                        second_disease_name=second_info["nama_id"] if is_differential else None,
+                        second_confidence=second_confidence if is_differential else None,
+                        is_differential=is_differential
                     )
                     st.session_state["ai_text_saved"] = ai_text
                     st.session_state["ai_angle_saved"] = ai_angle
