@@ -1636,6 +1636,9 @@ if selected_image is not None:
             ) = predict_image(
                 selected_image, model, class_names, target_size=(224, 224), enforce_verification=False, norm_mode=norm_mode
             )
+            # Selaraskan alias variabel agar konsisten (mencegah NameError)
+            metadata = info
+            second_metadata = second_info
 
         # ==============================================================================
         # TAHAP 3: VALIDASI AMBANG BATAS KEYAKINAN (CONFIDENCE THRESHOLD GUARD)
