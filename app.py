@@ -1114,50 +1114,6 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     annotated = (img_rgb * 0.62 + overlay_rgb * 0.38).astype(np.uint8)
     annotated_pil = Image.fromarray(annotated)
 
-    # Anotasi Simbol Lingkaran Keterdeteksi Penyakit (Lesion Detection Circles)
-    from PIL import ImageDraw
-    draw = ImageDraw.Draw(annotated_pil)
-
-    if rust_pct >= 1.2:
-        active_lesion_mask = (mask_rust_raw & mask_plant)
-        marker_color = (255, 69, 0)      # Oranye karat terang
-    elif purple_pct >= 2.0:
-        active_lesion_mask = (mask_purple_dark & mask_plant)
-        marker_color = (218, 112, 214)   # Magenta ungu trotol
-    elif xantho_pct >= 6.0:
-        active_lesion_mask = (mask_xantho_pale & mask_plant)
-        marker_color = (255, 215, 0)     # Emas hawar
-    else:
-        active_lesion_mask = (mask_rust_raw | mask_purple_dark | mask_xantho_pale) & mask_plant
-        marker_color = (239, 68, 68)     # Merah lesi
-
-    grid_sz = 30
-    h_img, w_img = img_rgb.shape[:2]
-    candidate_circles = []
-    for gy in range(0, h_img, grid_sz):
-        for gx in range(0, w_img, grid_sz):
-            cell = active_lesion_mask[gy:gy+grid_sz, gx:gx+grid_sz]
-            count_px = np.count_nonzero(cell)
-            if count_px >= 10:
-                ys, xs = np.nonzero(cell)
-                cy = int(gy + np.mean(ys))
-                cx = int(gx + np.mean(xs))
-                rad = int(np.clip(np.sqrt(count_px) * 3.5, 16, 30))
-                candidate_circles.append((cx, cy, rad, count_px))
-
-    candidate_circles.sort(key=lambda c: c[3], reverse=True)
-    merged_circles = []
-    for cx, cy, rad, _ in candidate_circles:
-        if not any((cx - mx)**2 + (cy - my)**2 < (rad + mrad + 8)**2 for mx, my, mrad in merged_circles):
-            merged_circles.append((cx, cy, rad))
-        if len(merged_circles) >= 8:
-            break
-
-    # Gambar lingkaran penanda dengan garis tebal & titik fokus tengah
-    for cx, cy, rad in merged_circles:
-        draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=marker_color, width=3)
-        draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=marker_color)
-
     evidence_disease = None
     has_strong_lesion = False
     evidence_desc = ""
@@ -1166,18 +1122,16 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     if rust_pct >= 1.6 or (rust_pixels >= 120 and rust_pct > purple_pct * 0.7):
         evidence_disease = "Rust"
         has_strong_lesion = True
-        num_circ = len(merged_circles)
         evidence_desc = (
             f"Ditemukan kluster bintil pustula serbuk berwarna jingga-karat khas jamur *Puccinia allii* "
-            f"seluas {rust_pct:.1f}% pada helai daun di foto ({num_circ} kluster bintil ditandai lingkaran, Tingkat Keparahan: {severity_level})."
+            f"seluas {rust_pct:.1f}% pada helai daun di foto (Tingkat Keparahan: {severity_level})."
         )
     elif purple_pct >= 2.5 and purple_pct > rust_pct:
         evidence_disease = "Purple blotch"
         has_strong_lesion = True
-        num_circ = len(merged_circles)
         evidence_desc = (
             f"Ditemukan lesi bercak trotol melekuk warna gelap keunguan dengan pola cincin konsentris "
-            f"khas jamur *Alternaria porri* seluas {purple_pct:.1f}% pada helai daun di foto ({num_circ} area lesi ditandai lingkaran, Tingkat Keparahan: {severity_level})."
+            f"khas jamur *Alternaria porri* seluas {purple_pct:.1f}% pada helai daun di foto (Tingkat Keparahan: {severity_level})."
         )
     elif healthy_pct >= 90.0 and severity_pct < 4.0:
         evidence_disease = "Healthy leaves"
@@ -1189,10 +1143,9 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     elif xantho_pct >= 12.0 and rust_pct < 0.8 and purple_pct < 1.2:
         evidence_disease = "Xanthomonas Leaf Blight"
         has_strong_lesion = True
-        num_circ = len(merged_circles)
         evidence_desc = (
             f"Ditemukan gejala hawar pucat memanjang kebasah-basahan ({xantho_pct:.1f}%) "
-            f"seperti tersiram air mendidih tanpa disertai bintil serbuk karat oranye maupun bercak trotol ungu ({num_circ} zona hawar ditandai lingkaran)."
+            f"seperti tersiram air mendidih tanpa disertai bintil serbuk karat oranye maupun bercak trotol ungu."
         )
     else:
         evidence_desc = (
@@ -1210,10 +1163,90 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
         "purple_pct": round(purple_pct, 1),
         "xantho_pct": round(xantho_pct, 1),
         "healthy_pct": round(healthy_pct, 1),
-        "num_spots_detected": len(merged_circles),
+        "num_spots_detected": 0,
         "evidence_desc": evidence_desc,
         "overlay_img": annotated_pil
     }
+
+def generate_keras_cam_map(image: Image.Image, model, target_class_idx: int, is_healthy: bool = False):
+    """
+    Menghasilkan Peta Deteksi Lesi Berbasis Pola Konvolusi Keras Asli (Class Activation Mapping / CAM):
+    1. Mengambil peta aktivasi layer konvolusi terakhir (mobilenetv2_1.00_224, shape 7x7x1280).
+    2. Menghitung dot product dengan vektor bobot dense layer untuk kelas yang didiagnosis.
+    3. Menghasilkan peta atensi neural tempat model Keras mendeteksi fitur bercak/penyakit.
+    4. Menggambar lingkaran penanda presisi HANYA di titik puncak aktivasi neural Keras (tidak asal melingkari).
+    5. Jika daun sehat, lingkaran tidak digambar untuk menjaga foto tetap bersih dan jernih.
+    """
+    img_rgb = image.convert("RGB")
+    w, h = img_rgb.size
+
+    if is_healthy:
+        return img_rgb, []
+
+    try:
+        dense_layer = model.get_layer("dense")
+        weights, _ = dense_layer.get_weights()  # shape (1280, 15)
+
+        # Siapkan input 224x224 skala alami [0, 255]
+        resized = img_rgb.resize((224, 224), Image.Resampling.LANCZOS)
+        arr = np.expand_dims(np.array(resized, dtype=np.float32), 0)
+
+        # Forward pass melalui layer augmentasi dan backbone MobileNetV2
+        x = model.layers[1](arr, training=False)
+        features = model.layers[2](x, training=False).numpy()[0]  # (7, 7, 1280)
+
+        # Hitung CAM (dot product feature map dengan bobot kelas target)
+        cam = np.dot(features, weights[:, target_class_idx])  # (7, 7)
+        cam = np.maximum(cam, 0)
+        max_val = np.max(cam)
+        if max_val > 1e-6:
+            cam = cam / max_val
+        else:
+            cam = np.zeros_like(cam)
+
+        # Resize CAM 7x7 ke ukuran foto asli
+        cam_pil = Image.fromarray((cam * 255).astype(np.uint8)).resize((w, h), Image.Resampling.BILINEAR)
+        cam_arr = np.array(cam_pil, dtype=np.float32) / 255.0
+
+        # Cari titik puncak aktivasi neural Keras
+        from PIL import ImageDraw
+        annotated = img_rgb.copy()
+        draw = ImageDraw.Draw(annotated)
+
+        grid_rows, grid_cols = 7, 7
+        cell_h = max(h // grid_rows, 1)
+        cell_w = max(w // grid_cols, 1)
+
+        peaks = []
+        for r in range(grid_rows):
+            for c in range(grid_cols):
+                y1, y2 = r * cell_h, min((r + 1) * cell_h, h)
+                x1, x2 = c * cell_w, min((c + 1) * cell_w, w)
+                patch = cam_arr[y1:y2, x1:x2]
+                max_p = float(np.max(patch))
+                if max_p >= 0.45:
+                    py, px = np.unravel_index(np.argmax(patch), patch.shape)
+                    peaks.append((int(x1 + px), int(y1 + py), max_p))
+
+        # Urutkan puncak aktivasi dari tertinggi dan hindari lingkaran tumpang tindih
+        peaks.sort(key=lambda p: p[2], reverse=True)
+        merged = []
+        base_rad = max(16, int(min(w, h) * 0.045))
+        for px, py, score in peaks:
+            if not any((px - mx)**2 + (py - my)**2 < (base_rad * 2.2)**2 for mx, my, _ in merged):
+                merged.append((px, py, base_rad))
+            if len(merged) >= 6:
+                break
+
+        # Gambar lingkaran penanda merah bergaris tegas di titik neural Keras
+        marker_color = (239, 68, 68)  # Merah deteksi presisi
+        for cx, cy, rad in merged:
+            draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=marker_color, width=3)
+            draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=marker_color)
+
+        return annotated, merged
+    except Exception:
+        return img_rgb, []
 
 def predict_disease(image: Image.Image, model, class_names, target_size=(224, 224), enforce_verification: bool = True, use_tta: bool = True, **kwargs):
     """
@@ -1316,6 +1349,16 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
         "solusi": "Gunakan obat yang sesuai.",
         "rekomendasi_singkat": "Lakukan sanitasi daun sakit."
     })
+
+    # 3. Peta Deteksi Lesi Berbasis Pola Keras Asli (Class Activation Mapping / CAM)
+    annotated_cam, cam_circles = generate_keras_cam_map(
+        image=image,
+        model=model,
+        target_class_idx=best_idx,
+        is_healthy=is_healthy_pred
+    )
+    visual_evidence["overlay_img"] = annotated_cam
+    visual_evidence["num_spots_detected"] = len(cam_circles)
 
     return (
         calibrated_probs,
@@ -2079,8 +2122,7 @@ if selected_image is not None:
                 if v_override:
                     st.success(
                         f"🛡️ **Vonis Diagnosis Dikonfirmasi Bukti Fisik Citra:**\n\n"
-                        f"{v_desc}\n\n"
-                        f"*(Sistem mendeteksi lesi fisik konkret pada foto ini, sehingga vonis penyakit tidak lagi bias terhadap dataset.)*"
+                        f"{v_desc}"
                     )
                 else:
                     st.info(
@@ -2089,15 +2131,15 @@ if selected_image is not None:
                     )
 
                 if visual_evidence.get("overlay_img") is not None:
-                    with st.expander("🖼️ Peta Deteksi Lesi pada Foto (Lingkaran Deteksi Penyakit)", expanded=True):
+                    with st.expander("🖼️ Peta Deteksi Lesi pada Foto (Titik Atensi Neural Model Keras)", expanded=True):
                         st.image(
                             visual_evidence["overlay_img"],
-                            caption="Peta Deteksi: Lingkaran berwarna menandai titik pusat sebaran bintil/bercak penyakit yang terdeteksi otomatis pada helai daun.",
+                            caption="Peta Atensi: Lingkaran merah menandai titik pusat atensi konvolusi (Class Activation Mapping) dari model Keras tempat pola penyakit terdeteksi.",
                             use_container_width=True
                         )
                         st.caption(
-                            "💡 **Petunjuk Deteksi Visual:** Area yang dilingkari merupakan kluster bintil/bercak aktif. "
-                            "Fokuskan pemangkasan sanitasi dan penyemprotan obat tepat pada zona daun yang dilingkari tersebut."
+                            "💡 **Petunjuk Deteksi:** Titik lingkaran di atas dihasilkan langsung dari aktivasi lapisan konvolusi model Keras pada foto helai daun Anda (mempelajari pola fitur neural asli, bukan penandaan acak). "
+                            "Fokuskan sanitasi dan penyemprotan obat pada area daun yang ditandai tersebut."
                         )
 
             # Distribusi Probabilitas Top-3 (Pola Model Keras 15 Kategori)
