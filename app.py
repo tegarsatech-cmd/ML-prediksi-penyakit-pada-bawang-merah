@@ -1086,6 +1086,50 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     annotated = (img_rgb * 0.62 + overlay_rgb * 0.38).astype(np.uint8)
     annotated_pil = Image.fromarray(annotated)
 
+    # Anotasi Simbol Lingkaran Keterdeteksi Penyakit (Lesion Detection Circles)
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(annotated_pil)
+
+    if rust_pct >= 1.2:
+        active_lesion_mask = (mask_rust_raw & mask_plant)
+        marker_color = (255, 69, 0)      # Oranye karat terang
+    elif purple_pct >= 2.0:
+        active_lesion_mask = (mask_purple_dark & mask_plant)
+        marker_color = (218, 112, 214)   # Magenta ungu trotol
+    elif xantho_pct >= 6.0:
+        active_lesion_mask = (mask_xantho_pale & mask_plant)
+        marker_color = (255, 215, 0)     # Emas hawar
+    else:
+        active_lesion_mask = (mask_rust_raw | mask_purple_dark | mask_xantho_pale) & mask_plant
+        marker_color = (239, 68, 68)     # Merah lesi
+
+    grid_sz = 30
+    h_img, w_img = img_rgb.shape[:2]
+    candidate_circles = []
+    for gy in range(0, h_img, grid_sz):
+        for gx in range(0, w_img, grid_sz):
+            cell = active_lesion_mask[gy:gy+grid_sz, gx:gx+grid_sz]
+            count_px = np.count_nonzero(cell)
+            if count_px >= 10:
+                ys, xs = np.nonzero(cell)
+                cy = int(gy + np.mean(ys))
+                cx = int(gx + np.mean(xs))
+                rad = int(np.clip(np.sqrt(count_px) * 3.5, 16, 30))
+                candidate_circles.append((cx, cy, rad, count_px))
+
+    candidate_circles.sort(key=lambda c: c[3], reverse=True)
+    merged_circles = []
+    for cx, cy, rad, _ in candidate_circles:
+        if not any((cx - mx)**2 + (cy - my)**2 < (rad + mrad + 8)**2 for mx, my, mrad in merged_circles):
+            merged_circles.append((cx, cy, rad))
+        if len(merged_circles) >= 8:
+            break
+
+    # Gambar lingkaran penanda dengan garis tebal & titik fokus tengah
+    for cx, cy, rad in merged_circles:
+        draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=marker_color, width=3)
+        draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=marker_color)
+
     evidence_disease = None
     override_applied = False
     evidence_desc = ""
@@ -1094,9 +1138,10 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     if rust_pct >= 1.6 or (rust_pixels >= 120 and rust_pct > purple_pct * 0.7):
         evidence_disease = "Rust"
         override_applied = True
+        num_circ = len(merged_circles)
         evidence_desc = (
             f"Ditemukan kluster bintil pustula serbuk berwarna jingga-karat khas jamur *Puccinia allii* "
-            f"seluas {rust_pct:.1f}% pada helai daun di foto (Tingkat Keparahan: {severity_level}). "
+            f"seluas {rust_pct:.1f}% pada helai daun di foto ({num_circ} kluster bintil ditandai lingkaran, Tingkat Keparahan: {severity_level}). "
             f"Bukti fisik bintil spora oranye ini mengonfirmasi penyakit Karat Daun secara definitif "
             f"dan membantah bias hawar daun bakteri (Xanthomonas)."
         )
@@ -1104,9 +1149,10 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     elif purple_pct >= 3.2 and purple_pct > rust_pct:
         evidence_disease = "Purple blotch"
         override_applied = True
+        num_circ = len(merged_circles)
         evidence_desc = (
             f"Ditemukan lesi bercak trotol melekuk warna gelap keunguan dengan pola cincin konsentris "
-            f"khas jamur *Alternaria porri* seluas {purple_pct:.1f}% pada helai daun di foto (Tingkat Keparahan: {severity_level})."
+            f"khas jamur *Alternaria porri* seluas {purple_pct:.1f}% pada helai daun di foto ({num_circ} area lesi ditandai lingkaran, Tingkat Keparahan: {severity_level})."
         )
     # KASUS 3: Daun Sehat & Segar
     elif healthy_pct >= 90.0 and severity_pct < 4.0:
@@ -1120,9 +1166,10 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     elif xantho_pct >= 12.0 and rust_pct < 0.8 and purple_pct < 1.2:
         evidence_disease = "Xanthomonas Leaf Blight"
         override_applied = True
+        num_circ = len(merged_circles)
         evidence_desc = (
             f"Ditemukan gejala hawar pucat memanjang kebasah-basahan ({xantho_pct:.1f}%) "
-            f"seperti tersiram air mendidih tanpa disertai bintil serbuk karat oranye maupun bercak trotol ungu."
+            f"seperti tersiram air mendidih tanpa disertai bintil serbuk karat oranye maupun bercak trotol ungu ({num_circ} zona hawar ditandai lingkaran)."
         )
     else:
         evidence_desc = (
@@ -1140,6 +1187,7 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
         "purple_pct": round(purple_pct, 1),
         "xantho_pct": round(xantho_pct, 1),
         "healthy_pct": round(healthy_pct, 1),
+        "num_spots_detected": len(merged_circles),
         "evidence_desc": evidence_desc,
         "overlay_img": annotated_pil
     }
@@ -1359,26 +1407,35 @@ def get_groq_recommendation(
     angle_idx=None,
     second_disease_name=None,
     second_confidence=None,
-    is_differential=False
+    is_differential=False,
+    latin_name=None,
+    severity_level=None,
+    evidence_desc=None
 ):
     """
     Memanggil Groq API untuk menyusun petunjuk obat dan perawatan lahan yang panjang, mendalam,
-    serta verifikasi karakteristik pembeda gejala (Diferensial Diagnosis) jika terdeteksi 2 kemungkinan mirip.
+    diselaraskan persis dengan hasil vonis diagnosis penyakit dari sumber resmi Balitsa Lembang & BPTP Kementan.
     """
     import requests
     import random
 
+    latin_str = f" ({latin_name})" if latin_name else ""
+    sev_str = f"Tingkat Keparahan Infeksi: {severity_level}\n" if severity_level else ""
+    ev_str = f"Gejala Fisik Lapangan: {evidence_desc}\n" if evidence_desc else ""
+
     if is_differential and second_disease_name:
         angle_title = "Diferensial Diagnosis & Perlindungan Spektrum Ganda"
         user_prompt = (
-            f"Model visual mendeteksi dua kemungkinan teratas: {disease_name} ({confidence:.1f}%) dan {second_disease_name} ({second_confidence:.1f}%).\n\n"
+            f"VONIS DIAGNOSIS PENYAKIT (KEMUNGKINAN GANDA): {disease_name}{latin_str} ({confidence:.1f}%) dan {second_disease_name} ({second_confidence:.1f}%).\n"
+            f"{sev_str}"
+            f"{ev_str}\n"
             "Anda bertindak sebagai Ahli Agronomi dan Konsultan Proteksi Tanaman Hortikultura Bawang Merah (merujuk pada riset Balitsa Lembang, BPTP Kementan, dan Jurnal Fitopatologi Indonesia).\n"
             "Bantu petani membedakan kedua penyakit ini di lapangan dan berikan penanganan terpadu:\n"
             "1. Ciri khas fisik pembeda yang paling mudah dilihat mata petani di lapangan (warna bercak, tekstur basah/kering, ada tidaknya tepung spora atau lendir).\n"
             "2. Tindakan pengobatan yang aman mencakup kedua spektrum (kombinasi fungisida + bakterisida tembaga atau sanitasi umum).\n\n"
             "WAJIB susun jawaban ke dalam 3 bagian persis dengan judul pemisah berikut:\n\n"
             "=== TINDAKAN LANGSUNG DI KEBUN ===\n"
-            f"- Berikan langkah taktis darurat dalam 24 jam pertama di bedengan.\n"
+            "- Berikan langkah taktis darurat dalam 24 jam pertama di bedengan.\n"
             f"- Jelaskan secara spesifik cara membedakan {disease_name} vs {second_disease_name} langsung dengan mata telanjang di sawah (misal: lendir busuk basah vs cincin konsentris tepung spora kering).\n"
             "- Jelaskan teknik pemotongan daun bergejala dan sanitasi alat gunting/pisau agar spora atau bakteri tidak menyebar ke tanaman sekitar.\n\n"
             "=== REKOMENDASI OBAT SEMPROT ===\n"
@@ -1400,19 +1457,24 @@ def get_groq_recommendation(
             angle_title, angle_desc = FOCUS_ANGLES[angle_idx]
 
         user_prompt = (
-            f"Kondisi Daun Bawang Merah: {disease_name}, Tingkat Keyakinan Model: {confidence:.1f}%.\n"
-            f"Status: {'Daun Sehat/Normal' if is_healthy else 'Terserang Penyakit/Hama Tanaman'}.\n"
-            f"Fokus Solusi Kali Ini: [{angle_title}] - {angle_desc}.\n\n"
-            "Anda bertindak sebagai Konsultan Ahli Perlindungan Tanaman Hortikultura Bawang Merah (merujuk pada riset Balitsa Lembang, BPTP Kementan, dan Jurnal Fitopatologi Indonesia).\n"
-            "Tolong berikan petunjuk obat dan perawatan lahan yang LENGKAP, MENDALAM, DAN DETAIL namun disajikan dalam BAHASA INDONESIA YANG LUGAS, JELAS, DAN SANGAT PRAKTIS UNTUK PETANI BAWANG MERAH (usia 30-50 tahun di sawah).\n"
-            "Rangkum intisari dari riset ilmiah dan pedoman teknis menjadi poin-poin langkah nyata yang siap diterapkan di kebun.\n\n"
+            f"VONIS DIAGNOSIS RESMI: {disease_name}{latin_str}.\n"
+            f"Tingkat Keyakinan Prediksi: {confidence:.1f}%.\n"
+            f"{sev_str}"
+            f"{ev_str}"
+            f"Status Tanaman: {'Daun Sehat/Normal' if is_healthy else 'Terserang Penyakit/Hama Tanaman'}.\n"
+            f"Fokus Sudut Solusi: [{angle_title}] - {angle_desc}.\n\n"
+            "INSTRUKSI UTAMA KONSULTAN PROTEKSI TANAMAN:\n"
+            f"1. Seluruh petunjuk obat semprot, takaran dosis, dan penanganan WAJIB PERSIS DAN KHUSUS untuk penyakit {disease_name}{latin_str}.\n"
+            f"2. JANGAN PERNAH menyarankan obat untuk penyakit lain (misalnya jika terdiagnosis Karat Daun, Anda WAJIB memberikan fungisida khusus Karat seperti Tebukonazol, Heksakonazol, Difenokonazol, atau Mankozeb, DILARANG memberikan bakterisida Xanthomonas).\n"
+            "3. Rujukan ilmiah wajib berasal dari pedoman resmi Balai Penelitian Tanaman Sayuran (Balitsa Lembang), BPTP Kementan RI, dan Pedoman Pengendalian OPT Hortikultura.\n"
+            "4. Sajikan dalam Bahasa Indonesia yang lugas, ramah, dan sangat praktis untuk petani di sawah.\n\n"
             "WAJIB susun jawaban ke dalam 3 bagian persis dengan judul pemisah berikut:\n\n"
             "=== TINDAKAN LANGSUNG DI KEBUN ===\n"
             "- Berikan langkah taktis darurat dalam 24-48 jam pertama di bedengan.\n"
             "- Jelaskan teknik pemotongan daun yang benar (jangan sampai spora terbang/berhamburan tertiup angin).\n"
             "- Jelaskan tindakan sanitasi alat gunting/pisau dan pemusnahan sisa pangkasan ke luar lahan (bakar/kubur jauh dari saluran air irigasi).\n\n"
             "=== REKOMENDASI OBAT SEMPROT ===\n"
-            "- Berikan 2-3 pilihan kombinasi bahan aktif fungisida/insektisida/bakterisida yang lazim dan mudah dibeli di kios pertanian (sebutkan golongan kontak dan sistemik).\n"
+            "- Berikan 2-3 pilihan kombinasi bahan aktif fungisida/insektisida/bakterisida terpercaya resmi Balitsa/Kementan (sebutkan golongan kontak dan sistemik).\n"
             "- Sebutkan takaran dosis realistis (misal: 1,5 - 2 sendok makan per tangki semprot 16 Liter).\n"
             "- Sebutkan waktu semprot terbaik (pagi hari sebelum jam 09.00 saat embun mengering, atau sore setelah jam 16.00 saat angin tenang dan tidak terik).\n"
             "- Ingatkan penggunaan perekat/perata/penembus (surfactant) terutama saat musim hujan agar obat tidak luntur.\n\n"
@@ -2048,39 +2110,16 @@ if selected_image is not None:
                     )
 
                 if visual_evidence.get("overlay_img") is not None:
-                    with st.expander("🖼️ Peta Deteksi Lesi pada Foto (Visual Lesion Heatmap)", expanded=False):
+                    with st.expander("🖼️ Peta Deteksi Lesi pada Foto (Lingkaran Deteksi Penyakit)", expanded=True):
                         st.image(
                             visual_evidence["overlay_img"],
-                            caption="Peta Deteksi: Bintil karat (oranye terang), bercak trotol (ungu/gelap), hawar basah (kuning pucat).",
+                            caption="Peta Deteksi: Lingkaran berwarna menandai titik pusat sebaran bintil/bercak penyakit yang terdeteksi otomatis pada helai daun.",
                             use_container_width=True
                         )
-
-            # ==============================================================================
-            # MODUL AUDIT PROBABILITAS LENGKAP & NILAI EKSTREM PIKSEL (BONGKAR SELURUH KELAS)
-            # ==============================================================================
-            st.markdown("### 📊 Panel Audit Probabilitas Lengkap (15 Kelas)")
-            st.caption("Seluruh nilai probabilitas dari ke-15 kelas file <code>class_names.json</code> diurutkan dari persentase tertinggi ke terendah:")
-
-            diag_rows = []
-            for k_idx in top_indices:
-                raw_label = class_names[k_idx]
-                prob_val = float(score[k_idx]) * 100.0
-                diag_rows.append({
-                    "Indeks": int(k_idx),
-                    "Nama Kelas (JSON)": raw_label,
-                    "Probabilitas (%)": f"{prob_val:.2f}%"
-                })
-            df_prob = pd.DataFrame(diag_rows)
-            st.dataframe(df_prob, use_container_width=True, hide_index=True)
-
-            # Cetak Nilai Ekstrem Piksel Tepat di Bawah Tabel
-            st.markdown(f"""
-                <div style="background: #F8FAFC; border-radius: 12px; padding: 0.95rem 1.15rem; margin-top: 0.4rem; margin-bottom: 1.2rem; border: 1.5px solid #CBD5E1; font-size: 0.92rem; color: #1E293B; line-height: 1.65;">
-                    ⚙️ <strong>Mode Normalisasi Aktif:</strong> <code>{diag_info.get('norm_mode_name', '-')}</code><br>
-                    📉 <strong>Nilai Piksel Terendah (Min Pixel):</strong> <code>{diag_info.get('min_pixel', 0.0):.4f}</code><br>
-                    📈 <strong>Nilai Piksel Tertinggi (Max Pixel):</strong> <code>{diag_info.get('max_pixel', 0.0):.4f}</code>
-                </div>
-            """, unsafe_allow_html=True)
+                        st.caption(
+                            "💡 **Petunjuk Deteksi Visual:** Area yang dilingkari merupakan kluster bintil/bercak aktif. "
+                            "Fokuskan pemangkasan sanitasi dan penyemprotan obat tepat pada zona daun yang dilingkari tersebut."
+                        )
 
             # ==============================================================================
             # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN (GROQ LLM)
@@ -2132,7 +2171,10 @@ if selected_image is not None:
                         is_healthy=is_healthy,
                         second_disease_name=second_info["nama_id"] if is_differential else None,
                         second_confidence=second_confidence if is_differential else None,
-                        is_differential=is_differential
+                        is_differential=is_differential,
+                        latin_name=info.get("latin"),
+                        severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
+                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None
                     )
                     st.session_state["ai_text_saved"] = ai_text
                     st.session_state["ai_angle_saved"] = ai_angle
@@ -2189,16 +2231,25 @@ if selected_image is not None:
             # Tombol Besar: "Minta Petunjuk / Alternatif Obat Lain"
             st.markdown("<div class='btn-alt-obat'>", unsafe_allow_html=True)
             if st.button("🔄 Minta Petunjuk / Alternatif Obat Lain", key="btn_minta_alternatif", use_container_width=True):
-                with st.spinner("🔄 Sedang meracik alternatif kombinasi obat dan panduan lain..."):
+                with st.spinner("🔄 Sedang meracik alternatif kombinasi obat dan panduan lain dari Balitsa/Kementan..."):
+                    import random
+                    curr_angle = st.session_state.get("ai_angle_saved")
+                    avail_idx = [i for i, (title, _) in enumerate(FOCUS_ANGLES) if title != curr_angle]
+                    chosen_idx = random.choice(avail_idx) if avail_idx else random.randint(0, len(FOCUS_ANGLES) - 1)
+                    
                     new_text, new_angle = get_groq_recommendation(
                         disease_name=info["nama_id"],
                         confidence=top_confidence,
-                        is_healthy=is_healthy
+                        is_healthy=is_healthy,
+                        angle_idx=chosen_idx,
+                        latin_name=info.get("latin"),
+                        severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
+                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None
                     )
                     if new_text:
                         st.session_state["ai_text_saved"] = new_text
                         st.session_state["ai_angle_saved"] = new_angle
-                        st.toast(f"Petunjuk alternatif berhasil dimuat ({new_angle})", icon="🌱")
+                        st.toast(f"Petunjuk alternatif terpercaya berhasil dimuat ({new_angle})", icon="🌱")
                         st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
