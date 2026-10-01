@@ -967,57 +967,79 @@ validate_with_groq_vision = validate_onion_image
 
 def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     """
-    Modul Inspeksi Fitur Visual Citra Daun Bawang Merah (Real Physical Lesion Analyzer):
-    Mendeteksi patologi lesi fisik nyata langsung dari piksel foto:
+    Modul Inspeksi Fitur Visual Citra Daun Bawang Merah (Pure NumPy & PIL):
+    Mendeteksi patologi lesi fisik nyata langsung dari piksel foto tanpa ketergantungan library luar:
     1. Bintil pustula serbuk oranye-karat (Karat Daun / Rust - Puccinia allii)
     2. Bercak trotol melekuk cincin konsentris keunguan (Bercak Ungu / Alternaria porri)
     3. Lesi pucat memanjang kebasah-basahan (Hawar Bakteri Xanthomonas)
     4. Klorosis dan jaringan daun hijau utuh (Normal / Daun Sehat)
     Menghitung Indeks Keparahan (Severity Index) kuantitatif dan membuat peta heatmap lesi.
     """
-    import cv2
     import numpy as np
+    from PIL import Image
 
-    if image.mode != "RGB":
-        img_rgb = np.array(image.convert("RGB"))
-    else:
-        img_rgb = np.array(image)
-
-    h, w = img_rgb.shape[:2]
+    # 1. Standardisasi resolusi gambar menggunakan PIL
+    img = image.convert("RGB")
+    w, h = img.size
     max_dim = 640
-    if max(h, w) > max_dim:
-        scale = max_dim / float(max(h, w))
+    if max(w, h) > max_dim:
+        scale = max_dim / float(max(w, h))
         new_w, new_h = max(int(w * scale), 10), max(int(h * scale), 10)
-        img_rgb = cv2.resize(img_rgb, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-    hsv = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
-    lab = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2LAB)
+    img_rgb = np.array(img, dtype=np.uint8)
 
-    # 1. Segmentasi Jaringan Daun Tanaman (Plant Canopy Mask)
-    mask_green = cv2.inRange(hsv, np.array([27, 28, 28]), np.array([86, 255, 255]))
-    mask_yellow = cv2.inRange(hsv, np.array([17, 35, 45]), np.array([28, 255, 255]))
-    mask_orange_hsv = cv2.inRange(hsv, np.array([5, 65, 50]), np.array([17, 255, 255]))
-    mask_orange_lab = (lab[:, :, 1] >= 128) & (lab[:, :, 2] >= 132)
-    mask_rust_raw = mask_orange_hsv & mask_orange_lab
+    # 2. Ekstraksi HSV murni via NumPy
+    arr_f = img_rgb.astype(np.float32) / 255.0
+    r, g, b = arr_f[:, :, 0], arr_f[:, :, 1], arr_f[:, :, 2]
+    cmax = np.maximum(np.maximum(r, g), b)
+    cmin = np.minimum(np.minimum(r, g), b)
+    delta = cmax - cmin
 
+    v = cmax * 255.0
+    s = np.zeros_like(cmax)
+    nz_cmax = cmax > 1e-5
+    s[nz_cmax] = (delta[nz_cmax] / cmax[nz_cmax]) * 255.0
+
+    delta_safe = np.where(delta == 0, 1e-7, delta)
+    h_deg = np.zeros_like(cmax)
+
+    mask_r = (cmax == r) & (delta > 1e-5)
+    h_deg[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta_safe[mask_r]) % 6.0)
+    mask_g = (cmax == g) & (delta > 1e-5)
+    h_deg[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta_safe[mask_g]) + 2.0)
+    mask_b = (cmax == b) & (delta > 1e-5)
+    h_deg[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta_safe[mask_b]) + 4.0)
+
+    # Skala Hue ke 0..180 (selaras konvensi OpenCV)
+    h_val = (h_deg / 2.0) % 180.0
+
+    # 3. Segmentasi Jaringan Daun Tanaman
+    # Daun hijau sehat
+    mask_green = (h_val >= 27.0) & (h_val <= 86.0) & (s >= 28.0) & (v >= 28.0)
+    # Daun menguning / klorotik
+    mask_yellow = (h_val >= 17.0) & (h_val < 27.0) & (s >= 35.0) & (v >= 45.0)
+    # Bintil pustula karat (oranye / tembaga / merah karat: Hue 4..17, Saturation kuat, R > G > B)
+    mask_rust_raw = (
+        (h_val >= 4.0) & (h_val <= 17.0) &
+        (s >= 60.0) & (v >= 50.0) &
+        (r > g * 1.15) & (g > b * 1.05)
+    )
+    # Bercak trotol keunguan / nekrotik gelap (Alternaria / Stemphylium)
     mask_purple_dark = (
-        ((hsv[:, :, 0] <= 14) | (hsv[:, :, 0] >= 140)) &
-        (hsv[:, :, 1] >= 30) &
-        (hsv[:, :, 2] >= 18) &
-        (hsv[:, :, 2] <= 130)
+        ((h_val <= 14.0) | (h_val >= 140.0)) &
+        (s >= 30.0) & (v >= 18.0) & (v <= 130.0)
+    )
+    # Hawar pucat jerami kebasah-basahan (Xanthomonas)
+    mask_xantho_pale = (
+        (h_val >= 18.0) & (h_val <= 40.0) &
+        (s >= 15.0) & (s <= 80.0) & (v >= 135.0) &
+        (~mask_rust_raw)
     )
 
-    mask_xantho_pale = (
-        (hsv[:, :, 0] >= 18) & (hsv[:, :, 0] <= 40) &
-        (hsv[:, :, 1] >= 15) & (hsv[:, :, 1] <= 80) &
-        (hsv[:, :, 2] >= 135)
-    ) & (~mask_rust_raw)
-
-    mask_plant = mask_green | mask_yellow | mask_orange_hsv | mask_purple_dark | mask_xantho_pale
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    mask_plant = cv2.morphologyEx(mask_plant.astype(np.uint8), cv2.MORPH_OPEN, kernel)
-
+    mask_plant = mask_green | mask_yellow | mask_rust_raw | mask_purple_dark | mask_xantho_pale
     total_plant_pixels = int(np.count_nonzero(mask_plant))
+
     if total_plant_pixels < 250:
         return {
             "has_visual_evidence": False,
@@ -1055,12 +1077,13 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     else:
         severity_level = "Berat / Kritis (> 45%)"
 
-    # Buat Peta Lesi Citra
+    # Buat Peta Lesi Citra murni via NumPy & PIL
     overlay_rgb = img_rgb.copy()
     overlay_rgb[(mask_rust_raw & mask_plant) == 1] = [245, 110, 10]
     overlay_rgb[(mask_purple_dark & mask_plant) == 1] = [185, 20, 160]
     overlay_rgb[(mask_xantho_pale & mask_plant) == 1] = [240, 220, 60]
-    annotated = cv2.addWeighted(img_rgb, 0.62, overlay_rgb, 0.38, 0)
+
+    annotated = (img_rgb * 0.62 + overlay_rgb * 0.38).astype(np.uint8)
     annotated_pil = Image.fromarray(annotated)
 
     evidence_disease = None
