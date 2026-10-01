@@ -848,29 +848,45 @@ def get_groq_api_key() -> str:
 
     return ""
 
-def validate_with_groq_vision(image: Image.Image, api_key: str = None) -> tuple[bool, str]:
+def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool, str]:
     """
-    Validasi Citra menggunakan Groq Vision API (Opsi A).
-    Jika model vision Groq sedang tidak aktif/decommissioned, fallback ke Opsi B.
+    Sistem Validasi Guardrail Gatekeeper Citra menggunakan Groq Vision:
+    Mencegah diagnosis foto non-tanaman bawang merah (manusia, hewan, kendaraan, tanah kosong, tanaman lain).
+    Model: llama-3.2-11b-vision-preview (temperature=0.0, max_tokens=10).
     """
     import base64
     from io import BytesIO
-    import urllib.request
+    import requests
     
     if not api_key:
         api_key = get_groq_api_key()
         
+    if not api_key:
+        # Fallback spektrum lokal jika API Key belum tersedia
+        is_plant, reason_text, _ = check_shallot_leaf_mask(image, min_ratio=0.12)
+        if not is_plant:
+            return False, "INVALID: Spektrum warna bukan daun bawang merah."
+        return True, "VALID (Local Fallback)"
+
     try:
+        # Resize thumbnail agar pengiriman cepat & hemat kuota
         thumb = image.copy()
         thumb.thumbnail((512, 512))
         buffered = BytesIO()
         thumb.save(buffered, format="JPEG", quality=85)
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
         
+        prompt_text = (
+            "Anda adalah validator citra pertanian. Periksa gambar ini secara cermat.\n"
+            "Apakah gambar ini menampilkan daun, umbi, atau bagian tanaman bawang merah (Allium cepa)?\n"
+            "Jawab HANYA dengan satu kata: 'VALID' jika benar bawang merah/daun bawang merah, atau 'INVALID' jika bukan atau objek lain."
+        )
+        
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "AgroScan-Validator/1.0"
         }
         payload = {
             "model": "llama-3.2-11b-vision-preview",
@@ -880,7 +896,7 @@ def validate_with_groq_vision(image: Image.Image, api_key: str = None) -> tuple[
                     "content": [
                         {
                             "type": "text",
-                            "text": "Jawab hanya satu kata: VALID jika gambar ini adalah daun/tanaman bawang merah (Allium cepa), atau INVALID jika bukan."
+                            "text": prompt_text
                         },
                         {
                             "type": "image_url",
@@ -891,21 +907,32 @@ def validate_with_groq_vision(image: Image.Image, api_key: str = None) -> tuple[
                     ]
                 }
             ],
-            "temperature": 0.1,
+            "temperature": 0.0,
             "max_tokens": 10
         }
         
-        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            res_json = json.loads(resp.read().decode("utf-8"))
-            ans = res_json["choices"][0]["message"]["content"].strip().upper()
+        resp = requests.post(url, headers=headers, json=payload, timeout=8)
+        if resp.status_code == 200:
+            ans = resp.json()["choices"][0]["message"]["content"].strip().upper()
             if "VALID" in ans and "INVALID" not in ans:
-                return True, "Valid (Groq Vision)"
+                return True, "VALID"
             else:
-                return False, "Groq Vision mendeteksi bahwa objek bukan daun bawang merah."
-    except Exception as e:
-        # Fallback langsung ke validasi lokal jika model vision tidak aktif di Groq
-        return True, f"Vision API fallback: {e}"
+                return False, "INVALID: Terdeteksi bukan daun/tanaman bawang merah."
+        else:
+            # Fallback jika model vision error atau decommissioned
+            is_plant, reason_text, _ = check_shallot_leaf_mask(image, min_ratio=0.12)
+            if not is_plant:
+                return False, f"INVALID (Vision Status {resp.status_code}): Spektrum citra bukan daun bawang."
+            return True, f"VALID (Fallback status {resp.status_code})"
+    except Exception as err:
+        # Fallback jaringan jika timeout
+        is_plant, reason_text, _ = check_shallot_leaf_mask(image, min_ratio=0.12)
+        if not is_plant:
+            return False, "INVALID (Fallback Timeout): Spektrum citra bukan daun bawang."
+        return True, f"VALID (Fallback: {err})"
+
+# Alias untuk kompatibilitas
+validate_with_groq_vision = validate_onion_image
 
 def predict_image(image: Image.Image, model, class_names, target_size=(224, 224), enforce_verification: bool = True):
     """
@@ -1393,36 +1420,30 @@ if selected_image is not None:
     # Tampilkan Hasil Pemeriksaan jika sudah diperiksa atau pengguna siap memeriksa
     if st.session_state.get("has_inspected_current") == current_img_sig:
         # ==============================================================================
-        # TAHAP 1: VALIDASI INPUT GAMBAR (IMAGE VERIFICATION / OOD GUARD)
-        # Dijalankan TEPAT SEBELUM PROSES DIAGNOSIS MobileNetV2 (model.predict)
-        # Mencegah eksekusi model pada foto non-bawang merah (wajah, tanah polos, benda acak)
+        # TAHAP 1: VALIDASI GAMBAR (GUARDRAIL GATEKEEPER GROQ VISION & OOD GUARD)
+        # Mencegah eksekusi model Keras pada foto yang bukan daun/tanaman bawang merah
         # ==============================================================================
-        leaf_ratio_threshold = (min_leaf_ratio / 100.0) if 'min_leaf_ratio' in locals() else 0.12
-        is_valid_shallot, ood_reason, detected_ratio = check_shallot_leaf_mask(
-            selected_image, min_ratio=leaf_ratio_threshold
-        )
+        with st.spinner("🔍 Memverifikasi keaslian foto daun bawang..."):
+            is_valid_vision, vision_verdict = validate_onion_image(selected_image)
 
-        if not is_valid_shallot:
-            # 1. Pesan wajib sesuai spesifikasi pengguna
-            st.error("❌ Gambar yang diunggah bukan daun bawang merah. Silakan ambil atau unggah foto daun bawang yang jelas.")
-            
-            # 2. Kartu edukasi & panduan bagi petani
+        if not is_valid_vision:
+            st.error("❌ Foto Ditolak: Objek yang diunggah terdeteksi bukan daun/tanaman bawang merah. Harap masukkan foto daun bawang merah yang jelas.")
             st.markdown(f"""
                 <div class="card-rejection">
                     <div class="card-rejection-badge">⚠️ FOTO DITOLAK / TIDAK VALID</div>
                     <div class="card-rejection-title">Objek Bukan Daun Bawang Merah!</div>
                     <div class="card-rejection-reason">
-                        {ood_reason} Spektrum warna daun/tanaman hanya terdeteksi <strong>{detected_ratio*100:.1f}%</strong> (batas minimal {leaf_ratio_threshold*100:.0f}%).
+                        {vision_verdict}
                     </div>
                     <div class="card-rejection-desc">
-                        Sistem mendeteksi bahwa gambar yang Anda masukkan <strong>bukan daun atau tanaman bawang merah</strong> (seperti wajah manusia, tanah polos, hewan, pakaian, atau benda sembarangan).
+                        Sistem mendeteksi bahwa gambar yang Anda masukkan <strong>bukan daun atau tanaman bawang merah</strong> (seperti foto manusia, hewan, kendaraan, tanah kosong, atau daun tanaman lain seperti mangga/padi).
                         <br><br>
                         <strong>📋 Panduan Pengambilan Foto yang Benar:</strong>
                         <ol>
                             <li>Gunakan foto <strong>daun atau umbi tanaman bawang merah asli</strong> di bedengan kebun/sawah.</li>
                             <li>Arahkan kamera HP (jarak ideal <strong>10–20 cm</strong>) tepat pada helai daun yang sakit.</li>
                             <li>Pastikan pencahayaan terang dan daun terlihat jelas tanpa bayangan gelap.</li>
-                            <li>Hindari memotret wajah, benda lain, atau pemandangan sawah dari kejauhan.</li>
+                            <li>Hindari memotret wajah, hewan, kendaraan, atau pemandangan sawah dari kejauhan.</li>
                         </ol>
                     </div>
                 </div>
