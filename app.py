@@ -760,16 +760,18 @@ def load_model_and_labels():
     model = tf.keras.models.load_model(MODEL_PATH)
     return model, class_names
 
-def preprocess_image_smart(image: Image.Image, target_size=(224, 224)):
+def preprocess_image_smart(image: Image.Image, target_size=(224, 224), norm_mode: str = "mobilenet_v2"):
     """
     Modul Perbaikan Pipeline Preprocessing (Fix Input Tensor)
-    dan Standardisasi Citra (Cloud vs Lokal Consistency):
+    dan Uji Coba Mode Normalisasi Piksel (A/B Testing Preprocessing):
     1. EXIF Transpose: Mengoreksi rotasi orientasi dari kamera smartphone iOS/Android.
     2. Paksa ke RGB: Hapus channel Alpha/transparansi jika format PNG/WA.
     3. Resize presisi 224x224.
     4. Ubah ke array NumPy float32 dalam skala [0, 255] (tf.keras.preprocessing.image.img_to_array).
     5. Tambah dimensi batch (1, 224, 224, 3).
-    6. Preprocessing resmi MobileNetV2 (rentang [-1, 1], HINDARI pembagian / 255.0 ganda).
+    6. Uji Coba Normalisasi Piksel:
+       - Mode 1: tf.keras.applications.mobilenet_v2.preprocess_input (rentang [-1, 1])
+       - Mode 2: Pembagian skala standar img_array / 255.0 (rentang [0, 1])
     """
     import tensorflow as tf
     orig_mode = image.mode if image is not None else "RGB"
@@ -790,13 +792,19 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224)):
     # 4. Tambah dimensi batch (1, 224, 224, 3)
     img_batch = np.expand_dims(img_array, axis=0)
 
-    # 5. Preprocessing resmi MobileNetV2 (rentang [-1, 1], HINDARI pembagian / 255.0 ganda)
-    img_final = tf.keras.applications.mobilenet_v2.preprocess_input(img_batch)
+    # 5. Normalisasi sesuai mode A/B Testing
+    if norm_mode == "rescaling_255":
+        img_final = img_batch / 255.0
+        mode_label = "Mode 2: img_array / 255.0 (Rentang [0, 1])"
+    else:
+        img_final = tf.keras.applications.mobilenet_v2.preprocess_input(img_batch)
+        mode_label = "Mode 1: mobilenet_v2.preprocess_input (Rentang [-1, 1])"
 
     # Catat statistik diagnostik piksel untuk panel audit
     diag_info = {
         "orig_mode": orig_mode,
         "orig_size": orig_size,
+        "norm_mode_name": mode_label,
         "min_pixel": float(np.min(img_final)),
         "max_pixel": float(np.max(img_final))
     }
@@ -957,10 +965,10 @@ def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool,
 # Alias untuk kompatibilitas
 validate_with_groq_vision = validate_onion_image
 
-def predict_image(image: Image.Image, model, class_names, target_size=(224, 224), enforce_verification: bool = True):
+def predict_image(image: Image.Image, model, class_names, target_size=(224, 224), enforce_verification: bool = True, norm_mode: str = "mobilenet_v2"):
     """
-    Inferensi MobileNetV2 presisi dengan Sistem Validasi Citra (OOD Guard)
-    dan Analisis Diferensial Diagnosis (Multidiagnosis jika selisih < 18%).
+    Inferensi MobileNetV2 presisi dengan Sistem Validasi Citra (OOD Guard),
+    Analisis Diferensial Diagnosis, dan Uji Coba Mode Normalisasi Piksel (A/B Testing).
     """
     # ==============================================================================
     # VALIDASI INPUT GAMBAR TEPAT SEBELUM PREDIKSI (OOD GUARD)
@@ -970,7 +978,7 @@ def predict_image(image: Image.Image, model, class_names, target_size=(224, 224)
         if not is_shallot:
             raise ValueError(f"OOD_GUARD_REJECTED: {reason_msg}")
 
-    input_tensor, processed_preview, diag_info = preprocess_image_smart(image, target_size)
+    input_tensor, processed_preview, diag_info = preprocess_image_smart(image, target_size, norm_mode=norm_mode)
     
     # Eksekusi MobileNetV2 setelah lolos verifikasi citra
     raw_preds = model.predict(input_tensor, verbose=0)
@@ -1421,6 +1429,20 @@ with st.sidebar:
 
     st.divider()
 
+    st.markdown("### 🧪 Uji Coba Normalisasi (A/B Testing)")
+    norm_choice = st.radio(
+        "Pilih Metode Prapemprosesan Citra:",
+        options=[
+            "Mode 1: mobilenet_v2.preprocess_input ([-1, 1])",
+            "Mode 2: Rescaling Standar img_array / 255.0 ([0, 1])"
+        ],
+        index=0,
+        help="Uji coba apakah model dilatih dengan MobileNetV2 preprocess_input [-1, 1] atau pembagian skala 1/255 [0, 1]."
+    )
+    norm_mode = "rescaling_255" if "Mode 2" in norm_choice else "mobilenet_v2"
+
+    st.divider()
+
     st.markdown("### ⚙️ Validasi Foto Bawang")
     conf_threshold = st.slider(
         "Batas Validasi Daun Bawang (%)",
@@ -1603,7 +1625,7 @@ if selected_image is not None:
                 preview_crop,
                 diag_info
             ) = predict_image(
-                selected_image, model, class_names, target_size=(224, 224), enforce_verification=False
+                selected_image, model, class_names, target_size=(224, 224), enforce_verification=False, norm_mode=norm_mode
             )
 
         # ==============================================================================
@@ -1747,55 +1769,32 @@ if selected_image is not None:
                     </div>
                 """, unsafe_allow_html=True)
 
-            # Kemungkinan Alternatif Lain (Top-3 Ringkas & Sederhana)
-            with st.expander("📊 Kemungkinan Lainnya (Top-3)", expanded=False):
-                st.caption("Pilihan kemungkinan lain yang mirip:")
-                for rank, idx in enumerate(top_indices[:3], start=1):
-                    raw_k = class_names[idx]
-                    info_k = CLASS_METADATA.get(raw_k, {"nama_id": raw_k})
-                    score_k = float(score[idx]) * 100.0
-                    st.write(f"**{rank}. {info_k['nama_id']}** — `{score_k:.1f}%`")
-                    st.progress(min(max(score_k / 100.0, 0.0), 1.0))
-
             # ==============================================================================
-            # MODUL DIAGNOSTIK & LOGGING TRANSPARAN (AUDIT MODEL & PIKSEL)
+            # MODUL AUDIT PROBABILITAS LENGKAP & NILAI EKSTREM PIKSEL (BONGKAR SELURUH KELAS)
             # ==============================================================================
-            with st.expander("🛠️ Panel Diagnostik Model & Piksel", expanded=False):
-                st.markdown("#### 🔬 Status Input Tensor & Pra-Pemrosesan")
-                col_d1, col_d2 = st.columns(2)
-                with col_d1:
-                    st.write(f"**Mode Warna Awal:** `{diag_info.get('orig_mode', '-')}`")
-                    orig_s = diag_info.get('orig_size', (0, 0))
-                    st.write(f"**Ukuran Asli Citra:** `{orig_s[0]} x {orig_s[1]} px`")
-                    st.write("**Ukuran Masuk Model:** `224 x 224 px (RGB)`")
-                with col_d2:
-                    min_p = diag_info.get('min_pixel', 0.0)
-                    max_p = diag_info.get('max_pixel', 0.0)
-                    st.write(f"**Min Pixel (Normalisasi):** `{min_p:.4f}`")
-                    st.write(f"**Max Pixel (Normalisasi):** `{max_p:.4f}`")
-                    if -1.1 <= min_p <= -0.5 and 0.5 <= max_p <= 1.1:
-                        st.success("✅ Rentang piksel valid [-1.0, 1.0] (Sesuai MobileNetV2)")
-                    else:
-                        st.warning(f"⚠️ Rentang piksel di luar [-1.0, 1.0]: [{min_p:.2f}, {max_p:.2f}]")
+            st.markdown("### 📊 Panel Audit Probabilitas Lengkap (15 Kelas)")
+            st.caption("Seluruh nilai probabilitas dari ke-15 kelas file <code>class_names.json</code> diurutkan dari persentase tertinggi ke terendah:")
 
-                st.markdown("#### 📋 Distribusi Probabilitas Seluruh 15 Kelas")
-                st.caption("Urutan peringkat probabilitas 15 kelas dari tertinggi ke terendah untuk audit keselarasan label class_names.json:")
-                
-                diag_rows = []
-                for rank_idx, k_idx in enumerate(top_indices, start=1):
-                    raw_label = class_names[k_idx]
-                    meta_item = CLASS_METADATA.get(raw_label, {})
-                    id_label = meta_item.get("nama_id", raw_label)
-                    prob_val = float(score[k_idx]) * 100.0
-                    diag_rows.append({
-                        "Peringkat": rank_idx,
-                        "Indeks Array": int(k_idx),
-                        "Nama Label di JSON": raw_label,
-                        "Nama Penyakit (ID)": id_label,
-                        "Persentase Probabilitas %": f"{prob_val:.2f}%"
-                    })
-                df_prob = pd.DataFrame(diag_rows)
-                st.dataframe(df_prob, use_container_width=True, hide_index=True)
+            diag_rows = []
+            for k_idx in top_indices:
+                raw_label = class_names[k_idx]
+                prob_val = float(score[k_idx]) * 100.0
+                diag_rows.append({
+                    "Indeks": int(k_idx),
+                    "Nama Kelas (JSON)": raw_label,
+                    "Probabilitas (%)": f"{prob_val:.2f}%"
+                })
+            df_prob = pd.DataFrame(diag_rows)
+            st.dataframe(df_prob, use_container_width=True, hide_index=True)
+
+            # Cetak Nilai Ekstrem Piksel Tepat di Bawah Tabel
+            st.markdown(f"""
+                <div style="background: #F8FAFC; border-radius: 12px; padding: 0.95rem 1.15rem; margin-top: 0.4rem; margin-bottom: 1.2rem; border: 1.5px solid #CBD5E1; font-size: 0.92rem; color: #1E293B; line-height: 1.65;">
+                    ⚙️ <strong>Mode Normalisasi Aktif:</strong> <code>{diag_info.get('norm_mode_name', '-')}</code><br>
+                    📉 <strong>Nilai Piksel Terendah (Min Pixel):</strong> <code>{diag_info.get('min_pixel', 0.0):.4f}</code><br>
+                    📈 <strong>Nilai Piksel Tertinggi (Max Pixel):</strong> <code>{diag_info.get('max_pixel', 0.0):.4f}</code>
+                </div>
+            """, unsafe_allow_html=True)
 
             # ==============================================================================
             # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN (GROQ LLM)
