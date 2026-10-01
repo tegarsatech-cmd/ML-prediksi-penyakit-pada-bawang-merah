@@ -1707,47 +1707,41 @@ if selected_image is not None:
             if is_differential:
                 # ------------------------------------------------------------------
                 # TAMPILAN DIFERENSIAL DIAGNOSIS (MULTIDIAGNOSIS KARENA GEJALA MIRIP)
+                # Gunakan native Streamlit alerts & columns agar bebas risiko kebocoran tag HTML/markdown code block
                 # ------------------------------------------------------------------
-                st.markdown(f"""
-                    <div style="background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border: 2px solid #F59E0B; border-radius: 18px; padding: 1.3rem; margin-bottom: 1.3rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-                        <div style="display: inline-block; background-color: #B45309; color: white; padding: 0.35rem 0.9rem; border-radius: 20px; font-weight: 800; font-size: 0.9rem; margin-bottom: 0.6rem; letter-spacing: 0.5px;">
-                            ⚠️ Gejala Ganda / Memerlukan Konfirmasi Fisik
-                        </div>
-                        <div style="font-size: 1.35rem; font-weight: 800; color: #78350F; margin-bottom: 0.35rem;">
-                            Terdeteksi 2 Kemungkinan Penyakit Serupa
-                        </div>
-                        <div style="font-size: 0.98rem; color: #92400E; margin-bottom: 1rem; line-height: 1.55;">
-                            Model visual menemukan kemiripan tinggi dengan selisih probabilitas sangat tipis (hanya <strong>{confidence_margin:.1f}%</strong>). Petani disarankan mencocokkan ciri fisik langsung di kebun:
-                        </div>
-                        
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.9rem; margin-bottom: 0.85rem;">
-                            <!-- KEMUNGKINAN A (PERINGKAT 1) -->
-                            <div style="background: white; border-radius: 14px; padding: 1rem 1.1rem; border: 1.5px solid #FCD34D; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
-                                <div style="font-size: 0.82rem; font-weight: 800; color: #B45309; text-transform: uppercase; letter-spacing: 0.5px;">Kemungkinan A (Peringkat 1)</div>
-                                <div style="font-size: 1.25rem; font-weight: 800; color: #0F172A; margin: 0.25rem 0;">{info['nama_id']}</div>
-                                <div style="font-size: 1.2rem; font-weight: 800; color: #D97706; margin-bottom: 0.5rem;">{top_confidence:.1f}%</div>
-                                <div style="font-size: 0.9rem; color: #334155; line-height: 1.5;">
-                                    <strong>🔍 Ciri di Sawah:</strong> {info.get('ciri_lapangan', '-')}
-                                </div>
-                            </div>
-                            
-                            <!-- KEMUNGKINAN B (PERINGKAT 2) -->
-                            <div style="background: white; border-radius: 14px; padding: 1rem 1.1rem; border: 1.5px solid #FCD34D; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
-                                <div style="font-size: 0.82rem; font-weight: 800; color: #B45309; text-transform: uppercase; letter-spacing: 0.5px;">Kemungkinan B (Peringkat 2)</div>
-                                <div style="font-size: 1.25rem; font-weight: 800; color: #0F172A; margin: 0.25rem 0;">{second_info['nama_id']}</div>
-                                <div style="font-size: 1.2rem; font-weight: 800; color: #D97706; margin-bottom: 0.5rem;">{second_confidence:.1f}%</div>
-                                <div style="font-size: 0.9rem; color: #334155; line-height: 1.5;">
-                                    <strong>🔍 Ciri di Sawah:</strong> {second_info.get('ciri_lapangan', '-')}
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div style="padding: 0.85rem 1rem; background: #FEF3C7; border-radius: 12px; border-left: 5px solid #D97706; font-size: 0.92rem; color: #78350F; line-height: 1.55;">
-                            💡 <strong>Kunci Pembeda Cepat di Lapangan:</strong><br>
-                            Periksa helai bercak daun secara teliti: <em>Bakteri (Hawar Daun)</em> biasanya tampak berlendir kebasah-basahan seperti tersiram air mendidih saat pagi hari lembap dan berbau busuk, sedangkan <em>Jamur (Bercak Ungu / Trotol / Stemphylium)</em> tampak bercak cincin konsentris kering dan bertepung spora.
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
+                st.warning(
+                    f"⚠️ **Gejala Ganda / Memerlukan Konfirmasi Fisik**\n\n"
+                    f"### Terdeteksi 2 Kemungkinan Penyakit Serupa\n\n"
+                    f"Model visual menemukan kemiripan tinggi dengan selisih probabilitas sangat tipis (hanya **{confidence_margin:.1f}%**). "
+                    f"Petani disarankan mencocokkan ciri fisik langsung di kebun:"
+                )
+
+                col_diff1, col_diff2 = st.columns(2)
+                with col_diff1:
+                    latin_a = f"*{info.get('latin', '')}*\n\n" if info.get("latin") else ""
+                    st.error(
+                        f"**Kemungkinan A (Peringkat 1)**\n\n"
+                        f"### {info['nama_id']}\n\n"
+                        f"{latin_a}"
+                        f"**Tingkat Kepastian:** `{top_confidence:.1f}%`\n\n"
+                        f"🔍 **Ciri di Sawah:**\n\n{info.get('ciri_lapangan', '-')}"
+                    )
+                with col_diff2:
+                    latin_b = f"*{second_info.get('latin', '')}*\n\n" if second_info.get("latin") else ""
+                    st.warning(
+                        f"**Kemungkinan B (Peringkat 2)**\n\n"
+                        f"### {second_info['nama_id']}\n\n"
+                        f"{latin_b}"
+                        f"**Tingkat Kepastian:** `{second_confidence:.1f}%`\n\n"
+                        f"🔍 **Ciri di Sawah:**\n\n{second_info.get('ciri_lapangan', '-')}"
+                    )
+
+                st.info(
+                    "💡 **Kunci Pembeda Cepat di Lapangan:**\n\n"
+                    "Periksa helai bercak daun secara teliti:\n\n"
+                    "• **Bakteri (Hawar Daun):** Biasanya tampak berlendir kebasah-basahan seperti tersiram air mendidih saat pagi hari lembap dan berbau busuk.\n\n"
+                    "• **Jamur (Bercak Ungu / Trotol / Stemphylium / Karat):** Tampak bercak cincin konsentris kering, bertepung spora, atau bintil karat serbuk oranye."
+                )
             else:
                 # ------------------------------------------------------------------
                 # TAMPILAN SATU VONIS TUNGGAL (KEPASTIAN TINGGI)
