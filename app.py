@@ -762,36 +762,45 @@ def load_model_and_labels():
 
 def preprocess_image_smart(image: Image.Image, target_size=(224, 224)):
     """
-    Standardisasi Pipeline Citra (Cloud vs Lokal Consistency):
-    Normalisasi Kanal Warna yang Aman dan Deterministik:
+    Modul Perbaikan Pipeline Preprocessing (Fix Input Tensor)
+    dan Standardisasi Citra (Cloud vs Lokal Consistency):
     1. EXIF Transpose: Mengoreksi rotasi orientasi dari kamera smartphone iOS/Android.
-    2. Format RGB murni: Mengonversi format RGBA/PNG/palet agar tidak ada channel alpha yang menggeser nilai piksel.
-    3. Resize tepat target_size (224, 224).
-    4. Konversi ke NumPy array float32 murni: np.array(img_resized, dtype=np.float32).
-    5. Tambahkan dimensi batch: np.expand_dims(img_array, axis=0).
-    6. Preprocessing resmi MobileNetV2 rentang [-1, 1] tanpa pembagian manual / 255.0 ganda.
+    2. Paksa ke RGB: Hapus channel Alpha/transparansi jika format PNG/WA.
+    3. Resize presisi 224x224.
+    4. Ubah ke array NumPy float32 dalam skala [0, 255] (tf.keras.preprocessing.image.img_to_array).
+    5. Tambah dimensi batch (1, 224, 224, 3).
+    6. Preprocessing resmi MobileNetV2 (rentang [-1, 1], HINDARI pembagian / 255.0 ganda).
     """
     import tensorflow as tf
+    orig_mode = image.mode if image is not None else "RGB"
+    orig_size = image.size if image is not None else (0, 0)
+
     # Normalisasi orientasi EXIF (kamera smartphone)
     cropped_img = ImageOps.exif_transpose(image) if image is not None else image
 
-    # Pastikan format RGB murni
-    if cropped_img.mode != "RGB":
-        cropped_img = cropped_img.convert("RGB")
+    # 1. Paksa ke RGB (hapus channel Alpha/transparansi jika format PNG/WA)
+    img_clean = cropped_img.convert("RGB")
 
-    # Resize tepat 224x224
-    img_resized = cropped_img.resize(target_size, Image.Resampling.BILINEAR)
+    # 2. Resize presisi 224x224
+    img_resized = img_clean.resize(target_size, Image.Resampling.BILINEAR)
 
-    # Konversi ke NumPy array float32
-    img_array = np.array(img_resized, dtype=np.float32)
+    # 3. Ubah ke array NumPy float32 dalam skala [0, 255]
+    img_array = tf.keras.preprocessing.image.img_to_array(img_resized, dtype="float32")
 
-    # Tambahkan dimensi batch (1, 224, 224, 3)
+    # 4. Tambah dimensi batch (1, 224, 224, 3)
     img_batch = np.expand_dims(img_array, axis=0)
 
-    # Gunakan preprocessing resmi MobileNetV2 (rentang [-1, 1])
-    # JANGAN membagi manual dengan 255.0 lagi sebelum fungsi ini!
+    # 5. Preprocessing resmi MobileNetV2 (rentang [-1, 1], HINDARI pembagian / 255.0 ganda)
     img_final = tf.keras.applications.mobilenet_v2.preprocess_input(img_batch)
-    return img_final, img_resized
+
+    # Catat statistik diagnostik piksel untuk panel audit
+    diag_info = {
+        "orig_mode": orig_mode,
+        "orig_size": orig_size,
+        "min_pixel": float(np.min(img_final)),
+        "max_pixel": float(np.max(img_final))
+    }
+    return img_final, img_resized, diag_info
 
 def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.12) -> tuple[bool, str, float]:
     """
@@ -961,7 +970,7 @@ def predict_image(image: Image.Image, model, class_names, target_size=(224, 224)
         if not is_shallot:
             raise ValueError(f"OOD_GUARD_REJECTED: {reason_msg}")
 
-    input_tensor, processed_preview = preprocess_image_smart(image, target_size)
+    input_tensor, processed_preview, diag_info = preprocess_image_smart(image, target_size)
     
     # Eksekusi MobileNetV2 setelah lolos verifikasi citra
     raw_preds = model.predict(input_tensor, verbose=0)
@@ -1039,7 +1048,8 @@ def predict_image(image: Image.Image, model, class_names, target_size=(224, 224)
         second_metadata,
         is_differential,
         confidence_margin,
-        processed_preview
+        processed_preview,
+        diag_info
     )
 
 def validate_onion_leaf(image: Image.Image, top_confidence: float, threshold: float = 40.0):
@@ -1211,20 +1221,20 @@ def get_groq_physical_verification(primary_name, second_name=None, is_differenti
     
     # Fallback lokal terverifikasi Balitsa jika kuota Groq habis atau offline
     fallback_diff = (
-        "🖐️ **Uji Raba & Tekstur Permukaan:**<br>"
-        "- **Hawar Daun Bakteri (Xanthomonas):** Bercak kebasah-basahan (*water-soaked*) seperti tersiram air mendidih. Pada pagi hari berembun terasa licin berlendir.<br>"
-        "- **Penyakit Jamur (Karat / Bercak Ungu / Stemphylium):** Tidak berlendir. Karat meninggalkan serbuk oranye kemerahan di jari, sedangkan Bercak Ungu kering dengan lingkaran cincin konsentris.<br><br>"
-        "👃 **Uji Aroma Daun:**<br>"
-        "- **Bakteri (Xanthomonas):** Saat helai daun dipetik dan diremas, tercium bau langu agak busuk menyengat.<br>"
-        "- **Jamur:** Tidak berbau busuk, hanya aroma khas dedaunan mengering biasa.<br><br>"
-        "🔍 **Uji Bekas Usap Jari:**<br>"
-        "- Jika diusap jari meninggalkan debu/serbuk warna tembaga atau oranye karat, itu adalah **Karat Daun (Jamur Puccinia)**, bukan bakteri!"
+        "* 🖐️ **Uji Raba & Tekstur Permukaan:**\n"
+        "  - **Hawar Daun Bakteri (Xanthomonas):** Bercak kebasah-basahan (*water-soaked*) seperti tersiram air mendidih. Pada pagi hari berembun terasa licin berlendir.\n"
+        "  - **Penyakit Jamur (Karat / Bercak Ungu / Stemphylium):** Tidak berlendir. Karat meninggalkan serbuk oranye kemerahan di jari, sedangkan Bercak Ungu kering dengan lingkaran cincin konsentris.\n"
+        "* 👃 **Uji Aroma Daun:**\n"
+        "  - **Bakteri (Xanthomonas):** Saat helai daun dipetik dan diremas, tercium bau langu agak busuk menyengat.\n"
+        "  - **Jamur:** Tidak berbau busuk, hanya aroma khas dedaunan mengering biasa.\n"
+        "* 🔍 **Uji Bekas Usap Jari:**\n"
+        "  - Jika diusap jari meninggalkan debu/serbuk warna tembaga atau oranye karat, itu adalah **Karat Daun (Jamur Puccinia)**, bukan bakteri!"
     )
 
     fallback_single = (
-        "🖐️ **Uji Sentuh Daun:** Periksa apakah bercak terasa basah berlendir (tanda infeksi bakteri) atau kering bertepung (tanda infeksi jamur).<br><br>"
-        "👃 **Uji Aroma Daun:** Daun yang terserang bakteri umumnya mengeluarkan aroma langu busuk saat diremas.<br><br>"
-        "🔍 **Uji Cincin & Spora:** Amati tepi bercak dengan cermat; infeksi jamur biasanya membentuk cincin melingkar konsentris atau bintil serbuk spora."
+        "* 🖐️ **Uji Sentuh Daun:** Periksa apakah bercak terasa basah berlendir (tanda infeksi bakteri) atau kering bertepung (tanda infeksi jamur).\n"
+        "* 👃 **Uji Aroma Daun:** Daun yang terserang bakteri umumnya mengeluarkan aroma langu busuk saat diremas.\n"
+        "* 🔍 **Uji Cincin & Spora:** Amati tepi bercak dengan cermat; infeksi jamur biasanya membentuk cincin melingkar konsentris atau bintil serbuk spora."
     )
 
     if not api_key:
@@ -1316,12 +1326,29 @@ def parse_groq_to_cards(ai_text, info):
 
     return c1 or fallback_c1, c2 or fallback_c2, c3 or fallback_c3
 
-def format_card_text_to_html(text: str) -> str:
-    """Mengubah format markdown bullet points, penomoran, dan bold ke HTML yang rapi & responsif."""
+def clean_text_output(text: str) -> str:
+    """
+    Membersihkan tag HTML mentah yang mungkin terbawa di teks sebelum ditampilkan ke layar.
+    Mencegah kebocoran tag seperti </div>, <span>, dll.
+    """
     if not text:
         return ""
-    # Ubah format bold **text** menjadi <strong>text</strong>
-    formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
+    clean = re.sub(r'<[^>]*>', '', str(text))
+    return clean.strip()
+
+def format_card_text_to_html(text: str) -> str:
+    """
+    Mengubah format markdown bullet points, penomoran, dan bold ke HTML yang rapi & responsif.
+    Membersihkan tag HTML tak diinginkan terlebih dahulu untuk mencegah kebocoran tag mentah.
+    """
+    if not text:
+        return ""
+    
+    # 1. Bersihkan dari tag HTML tak diinginkan
+    text_clean = clean_text_output(text)
+    
+    # 2. Ubah format bold **text** menjadi <strong>text</strong>
+    formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text_clean)
     lines = formatted.split('\n')
     output_lines = []
     in_list = False
@@ -1573,7 +1600,8 @@ if selected_image is not None:
                 second_info,
                 is_differential,
                 confidence_margin,
-                preview_crop
+                preview_crop,
+                diag_info
             ) = predict_image(
                 selected_image, model, class_names, target_size=(224, 224), enforce_verification=False
             )
@@ -1730,6 +1758,46 @@ if selected_image is not None:
                     st.progress(min(max(score_k / 100.0, 0.0), 1.0))
 
             # ==============================================================================
+            # MODUL DIAGNOSTIK & LOGGING TRANSPARAN (AUDIT MODEL & PIKSEL)
+            # ==============================================================================
+            with st.expander("🛠️ Panel Diagnostik Model & Piksel", expanded=False):
+                st.markdown("#### 🔬 Status Input Tensor & Pra-Pemrosesan")
+                col_d1, col_d2 = st.columns(2)
+                with col_d1:
+                    st.write(f"**Mode Warna Awal:** `{diag_info.get('orig_mode', '-')}`")
+                    orig_s = diag_info.get('orig_size', (0, 0))
+                    st.write(f"**Ukuran Asli Citra:** `{orig_s[0]} x {orig_s[1]} px`")
+                    st.write("**Ukuran Masuk Model:** `224 x 224 px (RGB)`")
+                with col_d2:
+                    min_p = diag_info.get('min_pixel', 0.0)
+                    max_p = diag_info.get('max_pixel', 0.0)
+                    st.write(f"**Min Pixel (Normalisasi):** `{min_p:.4f}`")
+                    st.write(f"**Max Pixel (Normalisasi):** `{max_p:.4f}`")
+                    if -1.1 <= min_p <= -0.5 and 0.5 <= max_p <= 1.1:
+                        st.success("✅ Rentang piksel valid [-1.0, 1.0] (Sesuai MobileNetV2)")
+                    else:
+                        st.warning(f"⚠️ Rentang piksel di luar [-1.0, 1.0]: [{min_p:.2f}, {max_p:.2f}]")
+
+                st.markdown("#### 📋 Distribusi Probabilitas Seluruh 15 Kelas")
+                st.caption("Urutan peringkat probabilitas 15 kelas dari tertinggi ke terendah untuk audit keselarasan label class_names.json:")
+                
+                diag_rows = []
+                for rank_idx, k_idx in enumerate(top_indices, start=1):
+                    raw_label = class_names[k_idx]
+                    meta_item = CLASS_METADATA.get(raw_label, {})
+                    id_label = meta_item.get("nama_id", raw_label)
+                    prob_val = float(score[k_idx]) * 100.0
+                    diag_rows.append({
+                        "Peringkat": rank_idx,
+                        "Indeks Array": int(k_idx),
+                        "Nama Label di JSON": raw_label,
+                        "Nama Penyakit (ID)": id_label,
+                        "Persentase Probabilitas %": f"{prob_val:.2f}%"
+                    })
+                df_prob = pd.DataFrame(diag_rows)
+                st.dataframe(df_prob, use_container_width=True, hide_index=True)
+
+            # ==============================================================================
             # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN (GROQ LLM)
             # ==============================================================================
             if not is_healthy:
@@ -1742,6 +1810,7 @@ if selected_image is not None:
                             is_differential=is_differential
                         )
                 phys_content = st.session_state[phys_cache_key]
+                html_phys = format_card_text_to_html(phys_content)
 
                 st.markdown(f"""
                     <div style="background: #FFFFFF; border-radius: 16px; border: 1.5px solid #CBD5E1; padding: 1.15rem 1.25rem; margin: 1rem 0; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
@@ -1753,7 +1822,7 @@ if selected_image is not None:
                             Gunakan panduan fisik berikut untuk memvalidasi gejala langsung pada daun bawang merah (mencegah kesalahan klasifikasi visual kamera HP antara <strong>Hawar Daun Bakteri (Xanthomonas)</strong> dan <strong>Karat Daun / Bercak Jamur</strong>):
                         </div>
                         <div style="background: #F8FAFC; border-radius: 12px; padding: 0.95rem 1.1rem; border-left: 4px solid #0284C7; font-size: 0.92rem; color: #1E293B; line-height: 1.65;">
-                            {phys_content}
+                            {html_phys}
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
