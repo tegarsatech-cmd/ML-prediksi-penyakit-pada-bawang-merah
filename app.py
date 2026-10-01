@@ -762,22 +762,29 @@ def load_model_and_labels():
 
 def preprocess_image_smart(image: Image.Image, target_size=(224, 224)):
     """
-    Audit & Prapemprosesan Citra MobileNetV2 Presisi [-1, 1]:
-    img = cropped_img.resize((224, 224))
-    img_array = tf.keras.preprocessing.image.img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0)
-    img_preprocessed = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-    (Tanpa pembagian manual / 255.0 ganda).
+    Standardisasi Pipeline Citra (Cloud vs Lokal Consistency):
+    Memastikan citra diproses seragam dan independen dari sistem operasi (Linux Cloud vs Windows Lokal):
+    1. EXIF Transpose: Mengoreksi rotasi orientasi dari kamera smartphone iOS/Android agar tidak terputar saat diproses di server Linux cloud.
+    2. Konversi aman ke RGB: Mencegah perbedaan penanganan channel warna BGR/RGBA di server cloud.
+    3. Resize ke target_size (224, 224) dengan interpolasi konsisten BILINEAR.
+    4. tf.keras.preprocessing.image.img_to_array(img_resized, dtype="float32").
+    5. np.expand_dims(img_array, axis=0).
+    6. tf.keras.applications.mobilenet_v2.preprocess_input(img_array) tanpa pembagian manual / 255.0 ganda.
     """
     import tensorflow as tf
-    if image.mode != "RGB":
-        image = image.convert("RGB")
-    
-    img = image.resize(target_size, Image.Resampling.BILINEAR)
-    img_array = tf.keras.preprocessing.image.img_to_array(img, dtype="float32")
+    # 1. Normalisasi orientasi EXIF (kamera smartphone)
+    img_corrected = ImageOps.exif_transpose(image) if image is not None else image
+    # 2. Konversi aman ke RGB (cegah perbedaan channel BGR/RGBA di cloud)
+    img_rgb = img_corrected.convert("RGB")
+    # 3. Resize ke target_size (224, 224) dengan interpolasi konsisten
+    img_resized = img_rgb.resize(target_size, Image.Resampling.BILINEAR)
+    # 4. Konversi ke array numpy float32
+    img_array = tf.keras.preprocessing.image.img_to_array(img_resized, dtype="float32")
+    # 5. Expand dimensi batch
     img_array = np.expand_dims(img_array, axis=0)
+    # 6. Gunakan fungsi bawaan MobileNetV2 tanpa pembagian / 255.0 ganda
     img_preprocessed = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-    return img_preprocessed, img
+    return img_preprocessed, img_resized
 
 def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.12) -> tuple[bool, str, float]:
     """
@@ -996,10 +1003,23 @@ def predict_image(image: Image.Image, model, class_names, target_size=(224, 224)
         "rekomendasi_singkat": "Lakukan sanitasi daun sakit."
     })
 
-    # Syarat Diferensial Diagnosis: Selisih < 18% dan keduanya bukan daun sehat murni
+    # Syarat Diferensial Diagnosis:
+    # 1. Selisih probabilitas peringkat 1 dan 2 < 20% (ambiguitas tinggi)
+    # 2. ATAU model memprediksi Xanthomonas Leaf Blight namun peringkat 2 adalah jamur bercak/karat (Rust, Alternaria, Purple blotch, Botrytis, Stemphylium) dengan margin < 28% (pencegahan bias over-prediksi Xanthomonas di server cloud)
     is_healthy_1 = metadata.get("is_healthy", False) or metadata.get("status") == "healthy"
     is_healthy_2 = second_metadata.get("is_healthy", False) or second_metadata.get("status") == "healthy"
-    is_differential = (confidence_margin < 18.0) and (not is_healthy_1) and (not is_healthy_2) and (raw_class_name != second_class_name)
+    
+    is_xanthomonas_ambiguity = (
+        raw_class_name == "Xanthomonas Leaf Blight" 
+        and second_class_name in ["Rust", "Alternaria_D", "Purple blotch", "Botrytis Leaf Blight", "stemphylium Leaf Blight"]
+        and confidence_margin < 28.0
+    )
+    is_differential = (
+        ((confidence_margin < 20.0) or is_xanthomonas_ambiguity) 
+        and (not is_healthy_1) 
+        and (not is_healthy_2) 
+        and (raw_class_name != second_class_name)
+    )
 
     return (
         score,
@@ -1171,6 +1191,87 @@ def get_groq_recommendation(
             continue
 
     return None, angle_title
+
+def get_groq_physical_verification(primary_name, second_name=None, is_differential=False):
+    """
+    Modul Validasi Karakteristik Fisik Menggunakan Groq LLM:
+    Menghasilkan panduan verifikasi fisik lapangan berbasis riset agronomi
+    untuk membantu petani membedakan penyakit yang mirip secara visual di kamera HP
+    (terutama Hawar Daun Bakteri Xanthomonas vs Karat Daun / Bercak Jamur).
+    """
+    import requests
+    api_key = get_groq_api_key()
+    
+    # Fallback lokal terverifikasi Balitsa jika kuota Groq habis atau offline
+    fallback_diff = (
+        "🖐️ **Uji Raba & Tekstur Permukaan:**<br>"
+        "- **Hawar Daun Bakteri (Xanthomonas):** Bercak kebasah-basahan (*water-soaked*) seperti tersiram air mendidih. Pada pagi hari berembun terasa licin berlendir.<br>"
+        "- **Penyakit Jamur (Karat / Bercak Ungu / Stemphylium):** Tidak berlendir. Karat meninggalkan serbuk oranye kemerahan di jari, sedangkan Bercak Ungu kering dengan lingkaran cincin konsentris.<br><br>"
+        "👃 **Uji Aroma Daun:**<br>"
+        "- **Bakteri (Xanthomonas):** Saat helai daun dipetik dan diremas, tercium bau langu agak busuk menyengat.<br>"
+        "- **Jamur:** Tidak berbau busuk, hanya aroma khas dedaunan mengering biasa.<br><br>"
+        "🔍 **Uji Bekas Usap Jari:**<br>"
+        "- Jika diusap jari meninggalkan debu/serbuk warna tembaga atau oranye karat, itu adalah **Karat Daun (Jamur Puccinia)**, bukan bakteri!"
+    )
+
+    fallback_single = (
+        "🖐️ **Uji Sentuh Daun:** Periksa apakah bercak terasa basah berlendir (tanda infeksi bakteri) atau kering bertepung (tanda infeksi jamur).<br><br>"
+        "👃 **Uji Aroma Daun:** Daun yang terserang bakteri umumnya mengeluarkan aroma langu busuk saat diremas.<br><br>"
+        "🔍 **Uji Cincin & Spora:** Amati tepi bercak dengan cermat; infeksi jamur biasanya membentuk cincin melingkar konsentris atau bintil serbuk spora."
+    )
+
+    if not api_key:
+        return fallback_diff if is_differential else fallback_single
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "AgroScan-Validator/1.0"
+    }
+
+    if is_differential and second_name:
+        prompt = (
+            f"Anda adalah Konsultan Proteksi Tanaman Bawang Merah (merujuk Balitsa Lembang & BPTP).\n"
+            f"Bantu petani membedakan dua penyakit yang tampak mirip di kamera HP: '{primary_name}' vs '{second_name}'.\n"
+            "Tuliskan panduan verifikasi fisik langsung di bedengan sawah dalam 3 poin ringkas dan padat:\n"
+            "1. 🖐️ Uji Raba & Tekstur Daun (Lendir basah licin vs serbuk tepung/bintil kering kasar)\n"
+            "2. 👃 Uji Aroma Daun (Bau langu busuk bakteri vs daun kering jamur)\n"
+            "3. 🔍 Uji Bentuk Bercak & Usapan Jari (Bercak lemas memanjang vs cincin konsentris vs debu karat oranye)"
+        )
+    else:
+        prompt = (
+            f"Anda adalah Konsultan Proteksi Tanaman Bawang Merah.\n"
+            f"Berikan 3 cara cepat verifikasi fisik di sawah untuk memastikan penyakit '{primary_name}':\n"
+            "1. 🖐️ Uji Raba & Tekstur Permukaan Daun\n"
+            "2. 👃 Uji Bau & Lendir Daun\n"
+            "3. 🔍 Ciri Khas Bentuk Bercak Lapangan"
+        )
+
+    models_to_try = ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
+    for model_name in models_to_try:
+        try:
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers,
+                json={
+                    "model": model_name,
+                    "temperature": 0.3,
+                    "max_tokens": 400,
+                    "messages": [
+                        {"role": "system", "content": "Anda adalah dokter tanaman hortikultura yang memberi instruksi cek fisik langsung di sawah secara singkat, padat, dan jelas untuk petani."},
+                        {"role": "user", "content": prompt}
+                    ]
+                },
+                timeout=9
+            )
+            if resp.status_code == 200:
+                txt = resp.json()["choices"][0]["message"]["content"].strip()
+                if len(txt) > 30:
+                    return txt
+        except Exception:
+            continue
+
+    return fallback_diff if is_differential else fallback_single
 
 def parse_groq_to_cards(ai_text, info):
     """Memecah teks balasan Groq menjadi 3 kartu panduan sederhana."""
@@ -1620,6 +1721,35 @@ if selected_image is not None:
                     score_k = float(score[idx]) * 100.0
                     st.write(f"**{rank}. {info_k['nama_id']}** — `{score_k:.1f}%`")
                     st.progress(min(max(score_k / 100.0, 0.0), 1.0))
+
+            # ==============================================================================
+            # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN (GROQ LLM)
+            # ==============================================================================
+            if not is_healthy:
+                phys_cache_key = f"phys_{top_class_raw}_{second_class_raw}_{is_differential}"
+                if phys_cache_key not in st.session_state:
+                    with st.spinner("🔬 Menyiapkan panduan verifikasi fisik lapangan..."):
+                        st.session_state[phys_cache_key] = get_groq_physical_verification(
+                            primary_name=info["nama_id"],
+                            second_name=second_info["nama_id"] if is_differential else None,
+                            is_differential=is_differential
+                        )
+                phys_content = st.session_state[phys_cache_key]
+
+                st.markdown(f"""
+                    <div style="background: #FFFFFF; border-radius: 16px; border: 1.5px solid #CBD5E1; padding: 1.15rem 1.25rem; margin: 1rem 0; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
+                        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem;">
+                            <span style="font-size: 1.35rem;">🔬</span>
+                            <span style="font-size: 1.1rem; font-weight: 800; color: #0F172A;">Verifikasi Karakteristik Fisik Langsung di Sawah (Groq AI)</span>
+                        </div>
+                        <div style="font-size: 0.88rem; color: #475569; margin-bottom: 0.85rem; line-height: 1.55;">
+                            Gunakan panduan fisik berikut untuk memvalidasi gejala langsung pada daun bawang merah (mencegah kesalahan klasifikasi visual kamera HP antara <strong>Hawar Daun Bakteri (Xanthomonas)</strong> dan <strong>Karat Daun / Bercak Jamur</strong>):
+                        </div>
+                        <div style="background: #F8FAFC; border-radius: 12px; padding: 0.95rem 1.1rem; border-left: 4px solid #0284C7; font-size: 0.92rem; color: #1E293B; line-height: 1.65;">
+                            {phys_content}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
 
             # ==============================================================================
             # 9. LANGKAH 3: PETUNJUK OBAT & PERAWATAN DARI DOKTER TANAMAN (GROQ AI)
