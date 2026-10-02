@@ -9,7 +9,7 @@ Aplikasi sistem pakar diagnosis dan deteksi dini penyakit tanaman bawang merah (
 
 1. **Inferensi Pola Konvolusi Murni 15 Kategori Model Keras**:
    - Menganalisis citra menggunakan model `model_bawang_final.keras` dengan 15 kelas klasifikasi penyakit dan kondisi sehat.
-   - Menggunakan tensor skala natural `[0.0, 255.0]` murni arsitektur Keras tanpa distorsi *double-normalization*.
+   - Menggunakan tensor skala standar MobileNetV2 `[-1.0, 1.0]` (`mobilenet_v2.preprocess_input`) yang dipadukan dengan Kalibrasi Bukti Fisik Citra Nyata.
    - **Multi-Crop TTA Cerdas (Test-Time Augmentation)**: Memindai helai daun dari beberapa perspektif (preservasi rasio aspek, pembesaran zona lesi tengah, dan ujung daun).
 
 2. **Diferensial Diagnosis (Kemungkinan A & Kemungkinan B)**:
