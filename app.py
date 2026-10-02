@@ -798,7 +798,7 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
         weights = [1.0]
     else:
         crops = [lb_img]
-        weights = [0.35]
+        weights = [0.40]
 
         # View 2: Focal Center Crop (zoom lesi tengah dengan resolusi tinggi)
         min_dim = min(w, h)
@@ -806,24 +806,24 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
         half = min_dim // 2
         center_img = img_clean.crop((cx - half, cy - half, cx + half, cy + half)).resize(target_size, Image.Resampling.LANCZOS)
         crops.append(center_img)
-        weights.append(0.35)
+        weights.append(0.40)
 
         # View 3: Simetri Horizontal (invarian arah daun)
         crops.append(center_img.transpose(Image.FLIP_LEFT_RIGHT))
-        weights.append(0.15)
+        weights.append(0.10)
 
         # View 4: Zona Ujung atau Pangkal Daun untuk foto vertikal/horizontal
         if h > w * 1.15:
             top_crop = img_clean.crop((0, 0, w, w)).resize(target_size, Image.Resampling.LANCZOS)
             crops.append(top_crop)
-            weights.append(0.15)
+            weights.append(0.10)
         elif w > h * 1.15:
             left_crop = img_clean.crop((0, 0, h, h)).resize(target_size, Image.Resampling.LANCZOS)
             crops.append(left_crop)
-            weights.append(0.15)
+            weights.append(0.10)
         else:
             crops.append(img_clean.resize(target_size, Image.Resampling.LANCZOS))
-            weights.append(0.15)
+            weights.append(0.10)
 
     # Susun batch tensor NumPy float32 dalam rentang murni [0.0, 255.0]
     batch_array = np.stack([np.array(c, dtype=np.float32) for c in crops], axis=0)
@@ -838,7 +838,7 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
     }
     return batch_array, lb_img, weights, diag_info
 
-def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.12) -> tuple[bool, str, float]:
+def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.02) -> tuple[bool, str, float]:
     """
     Validasi Citra Daun Bawang Merah sebelum masuk ke MobileNetV2 (Pre-Inference Guard):
     Memeriksa spektrum kromatisitas jaringan tanaman bawang merah (Allium cepa)
@@ -1231,15 +1231,25 @@ def generate_keras_cam_map(
         s_arr = np.where(cmax == 0, 0.0, delta / np.where(cmax == 0, 1.0, cmax))
         v_arr = cmax / 255.0
 
-        is_green_leaf = (h_arr >= 40.0) & (h_arr <= 165.0) & (s_arr >= 0.14) & (v_arr >= 0.10) & (v_arr <= 0.88)
-        is_yellow_lesion = (h_arr >= 25.0) & (h_arr < 40.0) & (g >= r * 0.78) & (s_arr >= 0.18) & (v_arr >= 0.16)
-        is_rust_lesion = (h_arr >= 8.0) & (h_arr < 25.0) & (r > g * 1.1) & (s_arr >= 0.28) & (v_arr >= 0.16)
-        is_purple_lesion = ((h_arr <= 14.0) | (h_arr >= 285.0)) & (r > g * 1.15) & (s_arr >= 0.18) & (v_arr >= 0.10) & (v_arr <= 0.75)
+        is_green_leaf = (h_arr >= 40.0) & (h_arr <= 165.0) & (s_arr >= 0.12) & (v_arr >= 0.08)
+        is_yellow_lesion = (h_arr >= 25.0) & (h_arr < 40.0) & (g >= r * 0.75) & (s_arr >= 0.15) & (v_arr >= 0.12)
+        is_rust_lesion = (h_arr >= 8.0) & (h_arr < 28.0) & (r > g * 1.08) & (s_arr >= 0.22) & (v_arr >= 0.12)
+        is_purple_lesion = ((h_arr <= 14.0) | (h_arr >= 270.0)) & (r > g * 1.1) & (s_arr >= 0.15) & (v_arr >= 0.08) & (v_arr <= 0.80)
+        is_brown_necrotic = (h_arr >= 15.0) & (h_arr < 40.0) & (s_arr >= 0.12) & (v_arr >= 0.10) & (v_arr <= 0.55)
 
         # PENTING: Kecualikan warna kulit tangan manusia agar lingkaran tidak menempel di tangan/jari
-        is_human_skin = (h_arr >= 6.0) & (h_arr <= 28.0) & (s_arr >= 0.15) & (s_arr <= 0.65) & (v_arr >= 0.35) & (r > g * 1.15) & (g > b * 1.05) & (b > 35)
+        # Filter ketat: kulit tangan punya saturasi RENDAH dan warna pink-kuning merata,
+        # sementara lesi karat punya saturasi TINGGI dan bintil menonjol
+        is_human_skin = (
+            (h_arr >= 8.0) & (h_arr <= 25.0) &
+            (s_arr >= 0.18) & (s_arr <= 0.50) &  # Saturasi menengah (kulit), lesi karat > 0.50
+            (v_arr >= 0.40) & (v_arr <= 0.85) &  # Kecerahan kulit (bukan lesi gelap)
+            (r > g * 1.15) & (g > b * 1.10) &    # Gradasi kulit: R > G > B halus
+            (b > 50) & (b < 180) &                # Kanal biru di rentang kulit
+            (np.abs(r - g) < 80)                  # Perbedaan R-G kecil (kulit merata, bukan bintil)
+        )
 
-        leaf_mask = ((is_green_leaf | is_yellow_lesion | is_rust_lesion | is_purple_lesion) & (~is_human_skin)).astype(np.float32)
+        leaf_mask = ((is_green_leaf | is_yellow_lesion | is_rust_lesion | is_purple_lesion | is_brown_necrotic) & (~is_human_skin)).astype(np.float32)
 
         # Abaikan margin tepi bingkai terluar 4% agar tidak menempel pada bingkai foto
         m_x, m_y = max(int(w * 0.04), 2), max(int(h * 0.04), 2)
@@ -1274,7 +1284,8 @@ def generate_keras_cam_map(
         cam_eval_2 = get_cam_eval(second_class_idx) if (is_differential and second_class_idx is not None) else None
 
         def extract_peaks(c_eval):
-            grid_n = 12
+            # Grid 8x8 menghasilkan sel yang lebih besar → menangkap area lesi lebih presisi
+            grid_n = 8
             cell_h = max(h // grid_n, 1)
             cell_w = max(w // grid_n, 1)
             p_list = []
@@ -1283,22 +1294,28 @@ def generate_keras_cam_map(
                     y1, y2 = r_i * cell_h, min((r_i + 1) * cell_h, h)
                     x1, x2 = c_i * cell_w, min((c_i + 1) * cell_w, w)
                     patch = c_eval[y1:y2, x1:x2]
+                    if patch.size == 0:
+                        continue
                     max_p = float(np.max(patch))
-                    if max_p > 0.15:
+                    mean_p = float(np.mean(patch))
+                    # Aktivasi harus di atas threshold DAN rata-rata sel cukup signifikan
+                    if max_p > 0.25 and mean_p > 0.08:
                         py, px = np.unravel_index(np.argmax(patch), patch.shape)
                         rx = int(x1 + px)
                         ry = int(y1 + py)
-                        if (not has_leaf_tissue) or (leaf_mask[ry, rx] > 0):
+                        # Pastikan peak berada di jaringan daun
+                        if (not has_leaf_tissue) or (ry < h and rx < w and leaf_mask[min(ry, h-1), min(rx, w-1)] > 0):
                             p_list.append((rx, ry, max_p))
             if not p_list and has_leaf_tissue:
                 py, px = np.unravel_index(np.argmax(c_eval), c_eval.shape)
+                py, px = min(py, h-1), min(px, w-1)
                 if leaf_mask[py, px] > 0:
                     p_list.append((int(px), int(py), float(c_eval[py, px])))
             p_list.sort(key=lambda p: p[2], reverse=True)
             return p_list
 
-        base_rad = max(18, int(min(w, h) * 0.045))
-        min_dist = max(32, int(min(w, h) * 0.085))
+        base_rad = max(22, int(min(w, h) * 0.06))
+        min_dist = max(40, int(min(w, h) * 0.10))
         spots = []
 
         if is_differential and cam_eval_2 is not None:
@@ -1360,30 +1377,39 @@ def generate_keras_cam_map(
                 color_inner = (254, 202, 202)   # Soft Red Glow
                 badge_bg = (220, 38, 38)        # Red badge
 
-            tick = 6
-            # 1. Lingkaran luar presisi (HUD Ring)
-            draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=color_hud, width=2)
-            # 2. Lingkaran konsentris dalam halus
-            inner_r = max(rad - 4, 6)
-            draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], outline=color_inner, width=1)
-            # 3. Titik pusat fokus neural
-            draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=color_hud)
-            # 4. Crosshair 4 arah (Target Reticle)
-            draw.line([cx - rad - tick, cy, cx - rad + 3, cy], fill=color_hud, width=2)
-            draw.line([cx + rad - 3, cy, cx + rad + tick, cy], fill=color_hud, width=2)
-            draw.line([cx, cy - rad - tick, cx, cy - rad + 3], fill=color_hud, width=2)
-            draw.line([cx, cy + rad - 3, cx, cy + rad + tick], fill=color_hud, width=2)
+            # Skala ketebalan dan tick sesuai resolusi gambar
+            line_w = max(2, int(min(w, h) * 0.005))
+            tick = max(8, int(min(w, h) * 0.018))
+            dot_r = max(3, int(min(w, h) * 0.007))
 
-            # 5. Label Modern Badge
-            badge_w = max(len(badge_label) * 8 + 16, 76)
-            badge_h = 16
-            bx1 = cx - badge_w // 2
-            by1 = cy - rad - badge_h - 4
-            bx2 = bx1 + badge_w
+            # 1. Lingkaran luar presisi (HUD Ring)
+            draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=color_hud, width=line_w)
+            # 2. Lingkaran konsentris dalam halus
+            inner_r = max(rad - line_w * 2, 6)
+            draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], outline=color_inner, width=max(1, line_w - 1))
+            # 3. Titik pusat fokus neural
+            draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r], fill=color_hud)
+            # 4. Crosshair 4 arah (Target Reticle)
+            draw.line([cx - rad - tick, cy, cx - rad + 3, cy], fill=color_hud, width=line_w)
+            draw.line([cx + rad - 3, cy, cx + rad + tick, cy], fill=color_hud, width=line_w)
+            draw.line([cx, cy - rad - tick, cx, cy - rad + 3], fill=color_hud, width=line_w)
+            draw.line([cx, cy + rad - 3, cx, cy + rad + tick], fill=color_hud, width=line_w)
+
+            # 5. Label Modern Badge (skala proporsional)
+            font_scale = max(8, int(min(w, h) * 0.018))
+            badge_w = max(len(badge_label) * font_scale + 16, 80)
+            badge_h = max(18, font_scale + 8)
+            bx1 = max(2, cx - badge_w // 2)
+            by1 = cy - rad - badge_h - 6
+            bx2 = min(w - 2, bx1 + badge_w)
             by2 = by1 + badge_h
-            if by1 > 3:
-                draw.rectangle([bx1, by1, bx2, by2], fill=badge_bg)
-                draw.text((bx1 + 5, by1 + 1), badge_label, fill=(255, 255, 255))
+            # Jika tidak muat di atas, taruh di bawah retikel
+            if by1 < 3:
+                by1 = cy + rad + 6
+                by2 = by1 + badge_h
+            if by2 < h - 2:
+                draw.rounded_rectangle([bx1, by1, bx2, by2], radius=4, fill=badge_bg)
+                draw.text((bx1 + 6, by1 + 2), badge_label, fill=(255, 255, 255))
 
         return annotated, [(s[0], s[1], s[2]) for s in spots]
     except Exception:
