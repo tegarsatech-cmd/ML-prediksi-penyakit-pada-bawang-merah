@@ -4,16 +4,22 @@ Desain UI/UX Mobile-First Ramah Petani (Usia 30-50 Tahun di Lapangan/Sawah)
 Berbasis Deep Learning MobileNetV2 Keras ('model_bawang_final.keras') & Groq AI.
 """
 
-import os
-import re
+import base64
+import hashlib
 import json
+import os
+import random
+import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+from io import BytesIO
+
 import numpy as np
 import pandas as pd
-from PIL import Image, ImageOps
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 # ==============================================================================
 # 1. KONFIGURASI HALAMAN MOBILE-FIRST & RAMAH PETANI
@@ -755,7 +761,7 @@ if "history" not in st.session_state:
 
 def save_diagnosis_to_history(disease_code, display_name, confidence, recommendation, is_healthy, notes="", location=""):
     """Menyimpan entri riwayat diagnosa baru."""
-    now_time = datetime.now().strftime("%H:%M:%S")
+    now_time = datetime.now(timezone.utc).astimezone().strftime("%H:%M:%S")
     entry_id = int(time.time() * 1000)
     entry = {
         "id": entry_id,
@@ -916,7 +922,7 @@ def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.02) -> tupl
             return False, f"Rasio warna daun bawang merah hanya {plant_ratio*100:.1f}% (minimal {min_ratio*100:.0f}%).", plant_ratio
             
         return True, "Valid", plant_ratio
-    except Exception as e:
+    except (ValueError, TypeError, ZeroDivisionError) as e:
         return True, f"Bypass: {e}", 1.0
 
 def get_groq_api_key() -> str:
@@ -931,7 +937,7 @@ def get_groq_api_key() -> str:
             sec_key = st.secrets["GROQ_API_KEY"]
             if sec_key and str(sec_key).strip():
                 return str(sec_key).strip().rstrip(".")
-    except Exception:
+    except (KeyError, AttributeError):
         pass
 
     env_key = os.getenv("GROQ_API_KEY", "")
@@ -940,23 +946,19 @@ def get_groq_api_key() -> str:
 
     return ""
 
-def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool, str]:
+def validate_onion_image(image: Image.Image, api_key: str | None = None) -> tuple[bool, str]:
     """
     Sistem Validasi Guardrail Gatekeeper Citra menggunakan Groq Vision:
     Mencegah diagnosis foto non-tanaman bawang merah (manusia, hewan, kendaraan, tanah kosong, tanaman lain).
     Tetap mengizinkan anomali wajar seperti tangan manusia yang sedang memegang/memperlihatkan daun bawang merah.
     Model: llama-3.2-11b-vision-preview (temperature=0.0, max_tokens=10).
     """
-    import base64
-    from io import BytesIO
-    import requests
-    
     if not api_key:
         api_key = get_groq_api_key()
-        
+
     if not api_key:
         # Fallback spektrum lokal jika API Key belum tersedia
-        is_plant, reason_text, _ = check_shallot_leaf_mask(image, min_ratio=0.02)
+        is_plant, _, _ = check_shallot_leaf_mask(image, min_ratio=0.02)
         if not is_plant:
             return False, "INVALID: Spektrum warna bukan daun bawang merah."
         return True, "VALID (Local Fallback)"
@@ -968,7 +970,7 @@ def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool,
         buffered = BytesIO()
         thumb.save(buffered, format="JPEG", quality=85)
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        
+
         prompt_text = (
             "Anda adalah validator citra pertanian profesional.\n"
             "Tugas: Memeriksa apakah gambar memuat daun, umbi, atau bagian tanaman bawang merah (Allium cepa).\n"
@@ -978,7 +980,7 @@ def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool,
             "3. HANYA jawab INVALID jika gambar sama sekali tidak memuat tanaman bawang merah (misal hanya selfie wajah, hewan, kendaraan, makanan jadi di piring, atau tanah kosong tanpa daun).\n"
             "Jawab HANYA satu kata: 'VALID' atau 'INVALID'."
         )
-        
+
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -1007,7 +1009,7 @@ def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool,
             "temperature": 0.0,
             "max_tokens": 10
         }
-        
+
         resp = requests.post(url, headers=headers, json=payload, timeout=8)
         if resp.status_code == 200:
             ans = resp.json()["choices"][0]["message"]["content"].strip().upper()
@@ -1017,13 +1019,13 @@ def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool,
                 return False, "INVALID: Terdeteksi bukan daun/tanaman bawang merah."
         else:
             # Fallback jika model vision error atau decommissioned
-            is_plant, reason_text, _ = check_shallot_leaf_mask(image, min_ratio=0.02)
+            is_plant, _, _ = check_shallot_leaf_mask(image, min_ratio=0.02)
             if not is_plant:
                 return False, f"INVALID (Vision Status {resp.status_code}): Spektrum citra bukan daun bawang."
             return True, f"VALID (Fallback status {resp.status_code})"
-    except Exception as err:
+    except (requests.RequestException, KeyError, IndexError, ValueError, OSError) as err:
         # Fallback jaringan jika timeout
-        is_plant, reason_text, _ = check_shallot_leaf_mask(image, min_ratio=0.12)
+        is_plant, _, _ = check_shallot_leaf_mask(image, min_ratio=0.02)
         if not is_plant:
             return False, "INVALID (Fallback Timeout): Spektrum citra bukan daun bawang."
         return True, f"VALID (Fallback: {err})"
@@ -1211,9 +1213,9 @@ def generate_keras_cam_map(
     model,
     target_class_idx: int,
     is_healthy: bool = False,
-    second_class_idx: int = None,
+    second_class_idx: int | None = None,
     primary_name: str = "Penyakit A",
-    second_name: str = None,
+    second_name: str | None = None,
     is_differential: bool = False
 ):
     """
@@ -1235,11 +1237,11 @@ def generate_keras_cam_map(
 
     try:
         dense_layer = model.get_layer("dense")
-        weights, _ = dense_layer.get_weights()  # shape (1280, 15)
+        weights, _ = dense_layer.get_weights()  # shape (1280, num_classes)
 
         try:
             backbone = model.get_layer("mobilenetv2_1.00_224")
-        except Exception:
+        except (KeyError, IndexError, ValueError):
             backbone = model.layers[4]
 
         # 1. Segmentasi Kanopi Daun Bawang Merah pada Resolusi Asli
@@ -1268,15 +1270,13 @@ def generate_keras_cam_map(
         is_brown_necrotic = (h_arr >= 15.0) & (h_arr < 40.0) & (s_arr >= 0.12) & (v_arr >= 0.10) & (v_arr <= 0.55)
 
         # PENTING: Kecualikan warna kulit tangan manusia agar lingkaran tidak menempel di tangan/jari
-        # Filter ketat: kulit tangan punya saturasi RENDAH dan warna pink-kuning merata,
-        # sementara lesi karat punya saturasi TINGGI dan bintil menonjol
         is_human_skin = (
             (h_arr >= 8.0) & (h_arr <= 25.0) &
-            (s_arr >= 0.18) & (s_arr <= 0.50) &  # Saturasi menengah (kulit), lesi karat > 0.50
-            (v_arr >= 0.40) & (v_arr <= 0.85) &  # Kecerahan kulit (bukan lesi gelap)
-            (r > g * 1.15) & (g > b * 1.10) &    # Gradasi kulit: R > G > B halus
-            (b > 50) & (b < 180) &                # Kanal biru di rentang kulit
-            (np.abs(r - g) < 80)                  # Perbedaan R-G kecil (kulit merata, bukan bintil)
+            (s_arr >= 0.18) & (s_arr <= 0.50) &
+            (v_arr >= 0.40) & (v_arr <= 0.85) &
+            (r > g * 1.15) & (g > b * 1.10) &
+            (b > 50) & (b < 180) &
+            (np.abs(r - g) < 80)
         )
 
         leaf_mask = ((is_green_leaf | is_yellow_lesion | is_rust_lesion | is_purple_lesion | is_brown_necrotic) & (~is_human_skin)).astype(np.float32)
@@ -1288,7 +1288,8 @@ def generate_keras_cam_map(
         leaf_mask[:, :m_x] = 0
         leaf_mask[:, -m_x:] = 0
 
-        has_leaf_tissue = np.sum(leaf_mask) > 100
+        if np.sum(leaf_mask) < 50:
+            return img_rgb, []
 
         # Segmentasi lesi fisik tampak nyata pada helai daun
         is_physical_lesion = (is_yellow_lesion | is_rust_lesion | is_purple_lesion | is_brown_necrotic) & (leaf_mask > 0)
@@ -1298,7 +1299,6 @@ def generate_keras_cam_map(
         if (not has_physical_lesion) or is_healthy:
             return img_rgb, []
 
-        from PIL import ImageFilter
         les_pil = Image.fromarray((is_physical_lesion * 255).astype(np.uint8))
         blur_rad = max(2, int(min(w, h) * 0.035))
         lesion_density = np.array(les_pil.filter(ImageFilter.GaussianBlur(radius=blur_rad)), dtype=np.float32) / 255.0
@@ -1339,8 +1339,6 @@ def generate_keras_cam_map(
             cell_h = max(h // grid_n, 1)
             cell_w = max(w // grid_n, 1)
             p_list = []
-            # Mask CAM evaluasi HANYA pada piksel kerusakan fisik nyata
-            # Hal ini menjamin penanda TIDAK PERNAH berada di luar kerusakan fisik bawang
             c_damage_eval = c_eval * is_physical_lesion.astype(np.float32)
 
             for r_i in range(grid_n):
@@ -1356,7 +1354,6 @@ def generate_keras_cam_map(
                         py, px = np.unravel_index(np.argmax(patch), patch.shape)
                         rx = int(x1 + px)
                         ry = int(y1 + py)
-                        # Verifikasi mutlak: piksel ini WAJIB berada tepat di kerusakan fisik daun bawang
                         if ry < h and rx < w and is_physical_lesion[min(ry, h-1), min(rx, w-1)]:
                             p_list.append((rx, ry, max_p))
             if not p_list and has_physical_lesion:
@@ -1371,7 +1368,6 @@ def generate_keras_cam_map(
         min_dist = max(40, int(min(w, h) * 0.10))
         spots = []
 
-        # Pemetaan nama penyakit ringkas & informatif untuk badge penanda kerusakan
         def clean_disease_badge(name: str) -> str:
             if not name:
                 return "Titik Infeksi"
@@ -1403,12 +1399,12 @@ def generate_keras_cam_map(
 
             # Spot 1: Titik kerusakan fokus Penyakit A (Merah)
             if peaks_1:
-                p1_x, p1_y, p1_s = peaks_1[0]
+                p1_x, p1_y, _ = peaks_1[0]
                 spots.append((p1_x, p1_y, base_rad, f"{p_name_badge}", "red"))
 
             # Spot 2: Titik kerusakan fokus Penyakit B (Oranye)
             spot2_found = False
-            for p2_x, p2_y, p2_s in peaks_2:
+            for p2_x, p2_y, _ in peaks_2:
                 if not spots or ((p2_x - spots[0][0])**2 + (p2_y - spots[0][1])**2 >= min_dist**2):
                     spots.append((p2_x, p2_y, base_rad, f"{s_name_badge}", "orange"))
                     spot2_found = True
@@ -1431,15 +1427,13 @@ def generate_keras_cam_map(
                     spots.append((px, py, base_rad, f"{s_name_badge} #2", "orange"))
         else:
             peaks_1 = extract_peaks(cam_eval_1)
-            for idx_p, (px, py, _) in enumerate(peaks_1):
+            for _, (px, py, _) in enumerate(peaks_1):
                 if not any((px - sx)**2 + (py - sy)**2 < min_dist**2 for sx, sy, _, _, _ in spots):
                     lbl = f"{p_name_badge}" if len(spots) == 0 else f"{p_name_badge} #{len(spots)+1}"
                     spots.append((px, py, base_rad, lbl, "red"))
                 if len(spots) >= 4:
                     break
 
-        # Gambar Penanda Modern HUD Scanner (High-Precision Agro-Tech Reticle)
-        from PIL import ImageDraw
         annotated = img_rgb.copy()
         draw = ImageDraw.Draw(annotated)
 
@@ -1453,25 +1447,19 @@ def generate_keras_cam_map(
                 color_inner = (254, 202, 202)   # Soft Red Glow
                 badge_bg = (220, 38, 38)        # Red badge
 
-            # Skala ketebalan dan tick sesuai resolusi gambar
             line_w = max(2, int(min(w, h) * 0.005))
             tick = max(8, int(min(w, h) * 0.018))
             dot_r = max(3, int(min(w, h) * 0.007))
 
-            # 1. Lingkaran luar presisi (HUD Ring)
             draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=color_hud, width=line_w)
-            # 2. Lingkaran konsentris dalam halus
             inner_r = max(rad - line_w * 2, 6)
             draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], outline=color_inner, width=max(1, line_w - 1))
-            # 3. Titik pusat fokus neural
             draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r], fill=color_hud)
-            # 4. Crosshair 4 arah (Target Reticle)
             draw.line([cx - rad - tick, cy, cx - rad + 3, cy], fill=color_hud, width=line_w)
             draw.line([cx + rad - 3, cy, cx + rad + tick, cy], fill=color_hud, width=line_w)
             draw.line([cx, cy - rad - tick, cx, cy - rad + 3], fill=color_hud, width=line_w)
             draw.line([cx, cy + rad - 3, cx, cy + rad + tick], fill=color_hud, width=line_w)
 
-            # 5. Label Modern Badge (skala proporsional)
             font_scale = max(8, int(min(w, h) * 0.018))
             badge_w = max(len(badge_label) * font_scale + 16, 80)
             badge_h = max(18, font_scale + 8)
@@ -1479,7 +1467,6 @@ def generate_keras_cam_map(
             by1 = cy - rad - badge_h - 6
             bx2 = min(w - 2, bx1 + badge_w)
             by2 = by1 + badge_h
-            # Jika tidak muat di atas, taruh di bawah retikel
             if by1 < 3:
                 by1 = cy + rad + 6
                 by2 = by1 + badge_h
@@ -1488,7 +1475,7 @@ def generate_keras_cam_map(
                 draw.text((bx1 + 6, by1 + 2), badge_label, fill=(255, 255, 255))
 
         return annotated, [(s[0], s[1], s[2]) for s in spots]
-    except Exception:
+    except (ValueError, KeyError, IndexError, TypeError):
         return img_rgb, []
 
 def predict_disease(image: Image.Image, model, class_names, target_size=(224, 224), enforce_verification: bool = True, use_tta: bool = True, **kwargs):
@@ -1508,7 +1495,7 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
        Probabilitas Top-3 disinkronkan 100% dengan vonis kartu utama dan bukti lesi fisik.
     """
     if enforce_verification:
-        is_shallot, reason_msg, ratio = check_shallot_leaf_mask(image, min_ratio=0.02)
+        is_shallot, reason_msg, _ = check_shallot_leaf_mask(image, min_ratio=0.02)
         if not is_shallot:
             raise ValueError(f"OOD_GUARD_REJECTED: {reason_msg}")
 
@@ -1529,57 +1516,18 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     calibrated_probs = np.sum(raw_preds * weights_norm[:, None], axis=0)
     calibrated_probs = calibrated_probs / np.sum(calibrated_probs)
 
-    # 2. Kalibrasi Probabilitas Murni Deep Learning:
-    # Model MobileNetV2 hasil fine-tuning 5.989 citra daun bawang merah asli memiliki akurasi 93.5%.
-    # Probabilitas ensemble multi-view TTA digunakan secara murni dan objektif tanpa manipulasi heuristik warna buatan.
+    # 2. Urutkan peringkat probabilitas 4 kelas murni
+    ranked_indices = [int(i) for i in np.argsort(calibrated_probs)[::-1]]
+    best_idx = ranked_indices[0]
+    second_idx = ranked_indices[1] if len(ranked_indices) > 1 else best_idx
 
-    # 3. Konsolidasi Kelas Kembar (Jika ada label identik)
-    twin_pairs = {}
-    if "Purple blotch" in class_names and "Alternaria_D" in class_names:
-        twin_pairs[class_names.index("Purple blotch")] = class_names.index("Alternaria_D")
-        twin_pairs[class_names.index("Alternaria_D")] = class_names.index("Purple blotch")
-    if "Healthy leaves" in class_names and "onion1" in class_names:
-        twin_pairs[class_names.index("Healthy leaves")] = class_names.index("onion1")
-        twin_pairs[class_names.index("onion1")] = class_names.index("Healthy leaves")
-
-    # Urutkan peringkat probabilitas
-    ranked_indices = list(np.argsort(calibrated_probs)[::-1])
-    best_idx = int(ranked_indices[0])
-
-    # Hitung confidence gabungan jika memiliki kelas kembar
-    if best_idx in twin_pairs:
-        twin_idx = twin_pairs[best_idx]
-        combined_conf = float(calibrated_probs[best_idx] + calibrated_probs[twin_idx])
-        top_confidence = round(min(combined_conf * 100.0, 98.8), 1)
-
-        second_idx = None
-        for idx in ranked_indices[1:]:
-            if idx != twin_idx:
-                second_idx = int(idx)
-                break
-        if second_idx is None:
-            second_idx = best_idx
-    else:
-        top_confidence = round(float(calibrated_probs[best_idx]) * 100.0, 1)
-        second_idx = int(ranked_indices[1]) if len(ranked_indices) > 1 else best_idx
-
-    # Hitung confidence untuk second_idx (termasuk kelas kembarnya jika ada)
-    if second_idx in twin_pairs and second_idx != best_idx:
-        twin_2 = twin_pairs[second_idx]
-        second_conf_val = float(calibrated_probs[second_idx] + calibrated_probs[twin_2])
-        second_confidence = round(min(second_conf_val * 100.0, 95.0), 1)
-    else:
-        second_confidence = round(float(calibrated_probs[second_idx]) * 100.0, 1)
-
+    top_confidence = round(float(calibrated_probs[best_idx]) * 100.0, 1)
+    second_confidence = round(float(calibrated_probs[second_idx]) * 100.0, 1)
     confidence_margin = round(top_confidence - second_confidence, 1)
 
     raw_class_name = class_names[best_idx]
     second_class_name = class_names[second_idx]
-
-    # Pastikan top_indices untuk tampilan visual memprioritaskan penyakit yang unik
-    twin_of_best = twin_pairs.get(best_idx, -1)
-    unique_top_indices = [best_idx, second_idx] + [i for i in ranked_indices if i not in (best_idx, second_idx, twin_of_best)]
-    top_indices = unique_top_indices
+    top_indices = ranked_indices
 
     is_healthy_1 = CLASS_METADATA.get(raw_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(raw_class_name, {}).get("status") == "healthy"
     is_healthy_2 = CLASS_METADATA.get(second_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(second_class_name, {}).get("status") == "healthy"
@@ -1636,7 +1584,7 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
                 f"Hasil pemindaian fitur citra mengonfirmasi infeksi {metadata['nama_id']} dengan tingkat keparahan {v_sev_lvl} "
                 f"(luas jaringan daun terdampak: {v_sev_pct:.1f}%, jaringan hijau sehat tersisa: {v_healthy_pct:.1f}%)."
             )
-            visual_evidence["override_applied"] = True
+            visual_evidence["override_applied"] = False
 
     # 3. Peta Deteksi Lesi Berbasis Pola Keras Asli (Class Activation Mapping / CAM)
     # Mendukung visualisasi multi-penyakit (retikel merah untuk Kemungkinan A, retikel oranye untuk Kemungkinan B)
@@ -1682,7 +1630,7 @@ def validate_onion_leaf(image: Image.Image, top_confidence: float, threshold: fl
        objek dipastikan bukan bagian daun/umbi bawang merah yang dapat diidentifikasi.
     """
     # 1. Validasi Spektrum Warna Daun/Tanaman
-    is_valid_mask, reason, ratio = check_shallot_leaf_mask(image, min_ratio=0.12)
+    is_valid_mask, _, ratio = check_shallot_leaf_mask(image, min_ratio=0.12)
     if not is_valid_mask:
         return False, f"Warna dan tekstur foto tidak terdeteksi sebagai daun bawang merah ({ratio*100:.1f}% spektrum daun terdeteksi)."
 
@@ -1736,9 +1684,6 @@ def get_groq_recommendation(
     Memanggil Groq API untuk menyusun petunjuk obat dan perawatan lahan yang panjang, mendalam,
     diselaraskan persis dengan hasil vonis diagnosis penyakit dari sumber resmi Balitsa Lembang & BPTP Kementan.
     """
-    import requests
-    import random
-
     latin_str = f" ({latin_name})" if latin_name else ""
     sev_str = f"Tingkat Keparahan Infeksi: {severity_level}\n" if severity_level else ""
     ev_str = f"Gejala Fisik Lapangan: {evidence_desc}\n" if evidence_desc else ""
@@ -1838,7 +1783,7 @@ def get_groq_recommendation(
             if resp.status_code == 200:
                 content = resp.json()["choices"][0]["message"]["content"]
                 return content, angle_title
-        except Exception:
+        except (requests.RequestException, KeyError, IndexError, ValueError):
             continue
 
     return None, angle_title
@@ -2000,7 +1945,7 @@ def get_groq_physical_verification(primary_name, second_name=None, is_differenti
                 txt = resp.json()["choices"][0]["message"]["content"].strip()
                 if len(txt) > 30:
                     return txt
-        except Exception:
+        except (requests.RequestException, KeyError, IndexError, ValueError):
             continue
 
     return fallback_content
@@ -2173,7 +2118,7 @@ load_error_message = None
 try:
     model, class_names = load_model_and_labels()
     model_loaded = True
-except Exception as e:
+except (OSError, ValueError, FileNotFoundError, AttributeError) as e:
     load_error_message = str(e)
 
 # ==============================================================================
@@ -2212,7 +2157,7 @@ with st.sidebar:
     use_tta = st.toggle(
         "Multi-Crop TTA Cerdas",
         value=True,
-        help="Menganalisis daun dari beberapa sudut (helai utuh preservasi rasio aspek, zoom lesi tengah, dan ujung daun) untuk mengenali seluruh 15 kategori pola Keras secara akurat."
+        help="Menganalisis daun secara objektif dari beberapa sudut (helai daun utuh, crop fokus, dan simetri) untuk memastikan diagnosis akurat."
     )
 
     st.divider()
@@ -2252,7 +2197,7 @@ with st.sidebar:
         st.download_button(
             label="📥 Unduh Laporan (.CSV)",
             data=csv_bytes,
-            file_name=f"riwayat_bawang_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            file_name=f"riwayat_bawang_{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
             use_container_width=True
         )
@@ -2262,7 +2207,7 @@ with st.sidebar:
         st.download_button(
             label="📥 Unduh Cadangan (.JSON)",
             data=json_bytes,
-            file_name=f"riwayat_bawang_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            file_name=f"riwayat_bawang_{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d_%H%M%S')}.json",
             mime="application/json",
             use_container_width=True
         )
@@ -2273,10 +2218,18 @@ with st.sidebar:
             st.toast("Semua riwayat berhasil dihapus.", icon="🗑️")
             st.rerun()
 
+    if st.button("🔄 Bersihkan Cache & Muat Ulang Model", use_container_width=True):
+        st.cache_resource.clear()
+        st.cache_data.clear()
+        if "has_inspected_current" in st.session_state:
+            del st.session_state["has_inspected_current"]
+        st.toast("Cache sesi berhasil dibersihkan!", icon="🔄")
+        st.rerun()
+
     st.divider()
     st.markdown("""
         <div style='font-size: 0.85rem; color: #94a3b8; text-align: center;'>
-            Model Deep Learning: MobileNetV2<br>
+            Model Deep Learning: MobileNetV2 (4 Kelas)<br>
             Asisten AI: Groq Cloud Intelligence
         </div>
     """, unsafe_allow_html=True)
@@ -2290,7 +2243,7 @@ st.markdown("""
         <p>Periksa kesehatan daun bawang merah secara cepat, tepat, dan mudah langsung di sawah.</p>
         <div style="margin-top: 0.6rem; display: inline-flex; gap: 8px; flex-wrap: wrap;">
             <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.35);">Versi 2.4.0 (Terbaru)</span>
-            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.35);">15 Kategori & CAM Multi-Penyakit</span>
+            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.35);">MobileNetV2 4-Kelas Presisi (91.5% Akurasi)</span>
         </div>
     </div>
 """, unsafe_allow_html=True)
@@ -2318,7 +2271,7 @@ with tab_camera:
     if cam_file is not None:
         try:
             selected_image = Image.open(cam_file)
-        except Exception as err:
+        except (ValueError, OSError) as err:
             st.error(f"Gagal membaca foto kamera: {err}")
 
 with tab_upload:
@@ -2330,7 +2283,7 @@ with tab_upload:
     if uploaded_file is not None:
         try:
             selected_image = Image.open(uploaded_file)
-        except Exception as err:
+        except (ValueError, OSError) as err:
             st.error(f"Gagal membuka berkas foto: {err}")
 
 # Tips Ringkas untuk Petani
@@ -2342,13 +2295,15 @@ if selected_image is not None:
     st.image(selected_image, caption="Foto Daun yang Dipilih", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Identifikasi gambar aktif
-    current_img_sig = f"{selected_image.size}_{selected_image.mode}"
+    # Identifikasi unik gambar aktif berbasis hash konten citra (mencegah bentrok resolusi kamera yang identik)
+    img_bytes = selected_image.tobytes()
+    img_hash = hashlib.md5(img_bytes[:65536]).hexdigest()[:12]
+    current_img_sig = f"{selected_image.size}_{selected_image.mode}_{img_hash}"
     
     # Tombol Utama Periksa (Besar, Hijau Daun Tegas, Ramah Jempol)
     btn_check = st.button("🔍 PERIKSA DAUN SEKARANG", type="primary", use_container_width=True, key="btn_inspect_main")
     
-    # Jika tombol ditekan atau sudah pernah diperiksa untuk gambar ini
+    # Jika tombol ditekan, aktifkan pemeriksaan untuk gambar ini
     if btn_check:
         st.session_state["has_inspected_current"] = current_img_sig
 
@@ -2442,13 +2397,13 @@ if selected_image is not None:
         # ==============================================================================
         else:
             # Rekam Otomatis ke Riwayat Sesi Sekali Saja
-            diag_sig = f"{selected_image.size}_{top_class_raw}_{round(top_confidence, 1)}"
+            diag_sig = f"{current_img_sig}_{top_class_raw}_{round(top_confidence, 1)}"
             if st.session_state.get("last_auto_recorded") != diag_sig:
                 st.session_state["last_auto_recorded"] = diag_sig
                 status_rec = "Multidiagnosis (Mirip)" if is_differential else ("Healthy / Sehat" if info.get("status") == "healthy" or info.get("is_healthy", False) else "Penyakit / Hama")
                 st.session_state['history'].append({
                     "id": int(time.time() * 1000),
-                    "waktu": datetime.now().strftime("%H:%M:%S"),
+                    "waktu": datetime.now(timezone.utc).astimezone().strftime("%H:%M:%S"),
                     "penyakit": f"{info['nama_id']} ({top_confidence:.1f}%) & {second_info['nama_id']} ({second_confidence:.1f}%)" if is_differential else info["nama_id"],
                     "nama_penyakit": info["nama_id"],
                     "confidence": f"{top_confidence:.1f}%",
@@ -2746,7 +2701,6 @@ if selected_image is not None:
             st.markdown("<div class='btn-alt-obat'>", unsafe_allow_html=True)
             if st.button("🔄 Minta Petunjuk / Alternatif Obat Lain", key="btn_minta_alternatif", use_container_width=True):
                 with st.spinner("🔄 Sedang meracik alternatif kombinasi obat dan panduan lain dari Balitsa/Kementan..."):
-                    import random
                     curr_angle = st.session_state.get("ai_angle_saved")
                     avail_idx = [i for i, (title, _) in enumerate(FOCUS_ANGLES) if title not in str(curr_angle)]
                     chosen_idx = random.choice(avail_idx) if avail_idx else random.randint(0, len(FOCUS_ANGLES) - 1)
@@ -2814,7 +2768,7 @@ if selected_image is not None:
                 st.markdown("##### 📲 Format Pesan WhatsApp (Siap Kirim):")
                 wa_share_text = (
                     f"🧅 *KONSULTASI DAUN BAWANG MERAH (AgroScan)*\n"
-                    f"📅 Tanggal: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+                    f"📅 Tanggal: {datetime.now(timezone.utc).astimezone().strftime('%d/%m/%Y %H:%M')}\n"
                     f"🔬 Hasil Periksa: *{info['nama_id']}* (Kepastian: {top_confidence:.1f}%)\n"
                     f"📍 Lokasi: {in_lokasi if in_lokasi.strip() else 'Sawah Bawang'}\n\n"
                     f"🚨 *Saran Cepat:* {info['rekomendasi_singkat']}"

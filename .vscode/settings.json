@@ -1,0 +1,17 @@
+{
+    "python.analysis.exclude": [
+        "**/.venv",
+        "**/dataset_temp"
+    ],
+    "python.analysis.ignore": [
+        "**/.venv/**"
+    ],
+    "files.watcherExclude": {
+        "**/.venv/**": true,
+        "**/dataset_temp/**": true
+    },
+    "ruff.exclude": [
+        ".venv",
+        "dataset_temp"
+    ]
+}
