@@ -1,4 +1,9 @@
 {
+    "python.defaultInterpreterPath": "C:\\Users\\adhil\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+    "python.analysis.extraPaths": [
+        "C:\\Users\\adhil\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages",
+        "d:\\pendeteksi bawang merah citra  digital"
+    ],
     "python.analysis.exclude": [
         "**/.venv",
         "**/dataset_temp"

@@ -1043,8 +1043,6 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     4. Klorosis dan jaringan daun hijau utuh (Normal / Daun Sehat)
     Menghitung Indeks Keparahan (Severity Index) kuantitatif dan membuat peta heatmap lesi.
     """
-    import numpy as np
-    from PIL import Image
 
     # 1. Standardisasi resolusi gambar menggunakan PIL
     img = image.convert("RGB")
