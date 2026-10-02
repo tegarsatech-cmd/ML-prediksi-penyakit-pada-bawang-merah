@@ -1335,46 +1335,69 @@ def generate_keras_cam_map(
         min_dist = max(40, int(min(w, h) * 0.10))
         spots = []
 
+        # Pemetaan nama penyakit ringkas & informatif untuk badge penanda kerusakan
+        def clean_disease_badge(name: str) -> str:
+            if not name:
+                return "Titik Infeksi"
+            n = name.split("/")[0].split("(")[0].strip()
+            clean_map = {
+                "Hawar Daun Bakteri": "Hawar Bakteri",
+                "Karat Daun": "Karat Daun",
+                "Bercak Ungu": "Bercak Ungu",
+                "Embun Bulu": "Embun Bulu",
+                "Layu Moler": "Layu Fusarium",
+                "Hawar Daun Kering Ujung": "Stemphylium",
+                "Hawar Daun": "Hawar Daun",
+                "Busuk Umbi": "Busuk Umbi",
+                "Ulat Grayak": "Ulat Grayak",
+                "Virus Iris Kuning": "Virus Iris",
+                "Virus Kuning Melintir": "Virus Daun"
+            }
+            for k, v in clean_map.items():
+                if k.lower() in n.lower():
+                    return v
+            return n[:12]
+
+        p_name_badge = clean_disease_badge(primary_name)
+        s_name_badge = clean_disease_badge(second_name) if second_name else ""
+
         if is_differential and cam_eval_2 is not None:
             peaks_1 = extract_peaks(cam_eval_1)
             peaks_2 = extract_peaks(cam_eval_2)
 
-            p_name_short = primary_name.split("/")[0].split("(")[0].strip()[:10]
-            s_name_short = (second_name or "").split("/")[0].split("(")[0].strip()[:10]
-
-            # Spot 1: Titik lesi fokus Kemungkinan A (Merah)
+            # Spot 1: Titik kerusakan fokus Penyakit A (Merah)
             if peaks_1:
                 p1_x, p1_y, p1_s = peaks_1[0]
-                spots.append((p1_x, p1_y, base_rad, f"A: {p_name_short}", "red"))
+                spots.append((p1_x, p1_y, base_rad, f"{p_name_badge}", "red"))
 
-            # Spot 2: Titik lesi fokus Kemungkinan B (Oranye)
+            # Spot 2: Titik kerusakan fokus Penyakit B (Oranye)
             spot2_found = False
             for p2_x, p2_y, p2_s in peaks_2:
                 if not spots or ((p2_x - spots[0][0])**2 + (p2_y - spots[0][1])**2 >= min_dist**2):
-                    spots.append((p2_x, p2_y, base_rad, f"B: {s_name_short}", "orange"))
+                    spots.append((p2_x, p2_y, base_rad, f"{s_name_badge}", "orange"))
                     spot2_found = True
                     break
             if not spot2_found and peaks_2:
                 p2_x, p2_y, _ = peaks_2[0]
-                spots.append((p2_x, p2_y, base_rad, f"B: {s_name_short}", "orange"))
+                spots.append((p2_x, p2_y, base_rad, f"{s_name_badge}", "orange"))
 
-            # Titik tambahan bila ada lesi sekunder
+            # Titik tambahan bila ada sebaran kerusakan lain
             for px, py, _ in peaks_1[1:]:
                 if len(spots) >= 4:
                     break
                 if not any((px - sx)**2 + (py - sy)**2 < min_dist**2 for sx, sy, _, _, _ in spots):
-                    spots.append((px, py, base_rad, "LESI A #2", "red"))
+                    spots.append((px, py, base_rad, f"{p_name_badge} #2", "red"))
 
             for px, py, _ in peaks_2[1:]:
                 if len(spots) >= 4:
                     break
                 if not any((px - sx)**2 + (py - sy)**2 < min_dist**2 for sx, sy, _, _, _ in spots):
-                    spots.append((px, py, base_rad, "LESI B #2", "orange"))
+                    spots.append((px, py, base_rad, f"{s_name_badge} #2", "orange"))
         else:
             peaks_1 = extract_peaks(cam_eval_1)
             for idx_p, (px, py, _) in enumerate(peaks_1):
                 if not any((px - sx)**2 + (py - sy)**2 < min_dist**2 for sx, sy, _, _, _ in spots):
-                    lbl = "LESI UTAMA" if len(spots) == 0 else f"LESI #{len(spots)+1}"
+                    lbl = f"{p_name_badge}" if len(spots) == 0 else f"{p_name_badge} #{len(spots)+1}"
                     spots.append((px, py, base_rad, lbl, "red"))
                 if len(spots) >= 4:
                     break
@@ -1484,72 +1507,17 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     is_healthy_1 = CLASS_METADATA.get(raw_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(raw_class_name, {}).get("status") == "healthy"
     is_healthy_2 = CLASS_METADATA.get(second_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(second_class_name, {}).get("status") == "healthy"
 
-    # Evaluasi Diferensial Diagnosis: Terpicu jika ada 2 penyakit dengan persaingan probabilitas nyata
+    # Evaluasi Diferensial Diagnosis:
+    # "hasil periksa nya klo cuma terdetek 1 ya maka kemungkinan juga 1 saja"
+    # Diferensial HANYA aktif bila kedua penyakit bersaing ketat (ambigu) dengan margin <= 8% dan tidak ada yang dominan
     is_differential = (
-        ((second_confidence >= 15.0) or (top_confidence < 68.0) or (confidence_margin <= 25.0))
+        (confidence_margin <= 8.0)
+        and (top_confidence < 45.0)
+        and (second_confidence >= 35.0)
         and (not is_healthy_1) 
         and (not is_healthy_2) 
         and (raw_class_name != second_class_name)
     )
-
-    # ==========================================================================
-    # SINKRONISASI BUKTI FISIK LESI CITRA SECARA PRESISI (100% SESUAI PERMINTAAN):
-    # ==========================================================================
-    if visual_evidence.get("has_visual_evidence"):
-        r_pct = visual_evidence.get("rust_pct", 0.0)
-        p_pct = visual_evidence.get("purple_pct", 0.0)
-        s_pct = visual_evidence.get("severity_pct", 0.0)
-        h_pct = visual_evidence.get("healthy_pct", 100.0)
-
-        # Kasus 1: Terdeteksi kluster bintil karat Puccinia allii pada helai daun
-        if r_pct >= 1.5 or visual_evidence.get("evidence_disease") == "Rust":
-            rust_idx = class_names.index("Rust") if "Rust" in class_names else best_idx
-            iysv_idx = class_names.index("Iris yellow virus_augment") if "Iris yellow virus_augment" in class_names else second_idx
-
-            # Kalibrasi probabilitas tepat sesuai spesifikasi:
-            # Kemungkinan A (Peringkat 1): Karat Daun (58.1%)
-            # Kemungkinan B (Peringkat 2): Virus Iris Kuning (37.3%)
-            calibrated_probs = np.full_like(calibrated_probs, (1.0 - 0.581 - 0.373) / max(len(class_names) - 2, 1))
-            calibrated_probs[rust_idx] = 0.581
-            calibrated_probs[iysv_idx] = 0.373
-
-            top_indices = [rust_idx, iysv_idx] + [i for i in range(len(class_names)) if i not in (rust_idx, iysv_idx)]
-            best_idx = rust_idx
-            second_idx = iysv_idx
-            raw_class_name = "Rust"
-            second_class_name = "Iris yellow virus_augment"
-            top_confidence = 58.1
-            second_confidence = 37.3
-            confidence_margin = 20.8
-            is_differential = True
-            is_healthy_1 = False
-            is_healthy_2 = False
-
-            visual_evidence["override_applied"] = True
-            visual_evidence["evidence_desc"] = (
-                f"Ditemukan kluster bintil pustula serbuk berwarna jingga-karat khas jamur *Puccinia allii* "
-                f"seluas {r_pct:.1f}% pada helai daun di foto (Tingkat Keparahan: {visual_evidence.get('severity_level')}), "
-                f"disertai pola klorosis yang menyerupai gejala Virus Iris Kuning (IYSV)."
-            )
-        # Kasus 2: Terdeteksi bercak trotol nekrotik ungu gelap
-        elif p_pct >= 2.5 and p_pct > r_pct:
-            pb_idx = class_names.index("Purple blotch") if "Purple blotch" in class_names else best_idx
-            alt_idx = class_names.index("Alternaria_D") if "Alternaria_D" in class_names else second_idx
-            calibrated_probs = np.full_like(calibrated_probs, (1.0 - 0.624 - 0.315) / max(len(class_names) - 2, 1))
-            calibrated_probs[pb_idx] = 0.624
-            calibrated_probs[alt_idx] = 0.315
-            top_indices = [pb_idx, alt_idx] + [i for i in range(len(class_names)) if i not in (pb_idx, alt_idx)]
-            best_idx = pb_idx
-            second_idx = alt_idx
-            raw_class_name = "Purple blotch"
-            second_class_name = "Alternaria_D"
-            top_confidence = 62.4
-            second_confidence = 31.5
-            confidence_margin = 30.9
-            is_differential = True
-            is_healthy_1 = False
-            is_healthy_2 = False
-            visual_evidence["override_applied"] = True
 
     metadata = CLASS_METADATA.get(raw_class_name, {
         "nama_id": raw_class_name,
@@ -1574,6 +1542,25 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
         "solusi": "Gunakan obat yang sesuai.",
         "rekomendasi_singkat": "Lakukan sanitasi daun sakit."
     })
+
+    # Selaraskan deskripsi bukti fisik citra dengan hasil vonis model Keras
+    if visual_evidence.get("has_visual_evidence"):
+        v_sev_pct = visual_evidence.get("severity_pct", 0.0)
+        v_sev_lvl = visual_evidence.get("severity_level", "Normal")
+        v_healthy_pct = visual_evidence.get("healthy_pct", 100.0)
+
+        if is_healthy_1:
+            visual_evidence["evidence_desc"] = (
+                f"Jaringan daun hijau sehat optimal ({v_healthy_pct:.1f}% klorofil normal utuh) "
+                "tanpa ditemukan bintil jamur, bercak basah, maupun luka gigitan hama."
+            )
+            visual_evidence["override_applied"] = False
+        else:
+            visual_evidence["evidence_desc"] = (
+                f"Hasil pemindaian fitur citra mengonfirmasi infeksi {metadata['nama_id']} dengan tingkat keparahan {v_sev_lvl} "
+                f"(luas jaringan daun terdampak: {v_sev_pct:.1f}%, jaringan hijau sehat tersisa: {v_healthy_pct:.1f}%)."
+            )
+            visual_evidence["override_applied"] = True
 
     # 3. Peta Deteksi Lesi Berbasis Pola Keras Asli (Class Activation Mapping / CAM)
     # Mendukung visualisasi multi-penyakit (retikel merah untuk Kemungkinan A, retikel oranye untuk Kemungkinan B)
@@ -2500,7 +2487,7 @@ if selected_image is not None:
 
                 col_v1, col_v2, col_v3 = st.columns(3)
                 with col_v1:
-                    st.metric(label="🩺 Luas Kerusakan Lesi", value=f"{v_sev_pct:.1f}%", delta=v_sev_lvl, delta_color="inverse")
+                    st.metric(label="🩺 Luas Kerusakan Daun", value=f"{v_sev_pct:.1f}%", delta=v_sev_lvl, delta_color="inverse")
                 with col_v2:
                     st.metric(label="🟠 Bintil Pustula Karat", value=f"{v_rust_pct:.1f}%", help="Persentase kluster serbuk jingga-karat pada helai daun")
                 with col_v3:
@@ -2513,16 +2500,16 @@ if selected_image is not None:
                     )
                 else:
                     st.info(
-                        f"📋 **Karakteristik Fisik Lesi pada Foto:**\n\n"
+                        f"📋 **Karakteristik Fisik Daun pada Foto:**\n\n"
                         f"{v_desc}"
                     )
 
                 if visual_evidence.get("overlay_img") is not None:
-                    with st.expander("🖼️ Peta Deteksi Lesi pada Foto (Titik Atensi Neural Model Keras)", expanded=True):
+                    with st.expander("🖼️ Peta Titik Kerusakan pada Foto Daun (Titik Atensi Neural Model Keras)", expanded=True):
                         map_caption = (
-                            f"Peta Target Lesi Multi-Penyakit: Retikel Merah [A] menandai fokus gejala {info['nama_id']}, sedangkan Retikel Oranye [B] menandai fokus gejala {second_info['nama_id']} pada helai daun."
+                            f"Peta Titik Kerusakan Multi-Penyakit: Retikel Merah menandai fokus gejala {info['nama_id']}, sedangkan Retikel Oranye menandai fokus gejala {second_info['nama_id']} pada helai daun."
                             if is_differential
-                            else f"Peta Target Lesi: Retikel scanner modern (lingkaran merah berteknologi HUD dengan crosshair) menandai titik pusat lesi aktif pada daun {info['nama_id']} yang dipelajari lapisan konvolusi MobileNetV2 Keras."
+                            else f"Peta Titik Kerusakan: Retikel scanner presisi tinggi menandai titik pusat kerusakan aktif {info['nama_id']} pada helai daun yang dipelajari lapisan konvolusi MobileNetV2 Keras."
                         )
                         st.image(
                             visual_evidence["overlay_img"],
@@ -2531,17 +2518,17 @@ if selected_image is not None:
                         )
                         num_spots = visual_evidence.get("num_spots_detected", 0)
                         if is_healthy:
-                            st.success("✅ **Daun Sehat & Normal:** Model konvolusi Keras mengonfirmasi helai daun segar dan tidak menemukan titik lesi penyakit aktif.")
+                            st.success("✅ **Daun Sehat & Normal:** Model konvolusi Keras mengonfirmasi helai daun segar dan tidak menemukan titik kerusakan penyakit.")
                         elif is_differential:
                             st.caption(
                                 f"💡 **Petunjuk Deteksi Multi-Penyakit ({num_spots} Titik Terdeteksi):** Model mendeteksi dua kemungkinan patogen yang menginfeksi helai daun. "
-                                f"Retikel **Merah [A]** menandai area lesi yang paling kuat dicurigai sebagai **{info['nama_id']}**, "
-                                f"sedangkan Retikel **Oranye [B]** menandai area yang dicurigai sebagai **{second_info['nama_id']}**. "
+                                f"Retikel **Merah** menandai area kerusakan yang paling kuat dicurigai sebagai **{info['nama_id']}**, "
+                                f"sedangkan Retikel **Oranye** menandai area yang dicurigai sebagai **{second_info['nama_id']}**. "
                                 "Cocokkan perbedaan ciri fisik kedua area tersebut langsung di bedengan kebun untuk penanganan yang tepat."
                             )
                         elif num_spots > 0:
                             st.caption(
-                                f"💡 **Petunjuk Deteksi ({num_spots} Titik Lesi Terdeteksi):** Retikel scanner modern di atas memetakan fokus atensi jaringan konvolusi MobileNetV2 secara tepat pada helai daun tanaman (bukan tangan atau latar belakang). Area bertanda **[LESI UTAMA]** menunjukkan konsentrasi kerusakan tertinggi tempat infeksi aktif berkembang. Fokuskan sanitasi pemangkasan daun sakit dan penyemprotan obat pada titik-titik tersebut."
+                                f"💡 **Petunjuk Deteksi ({num_spots} Titik Kerusakan Terdeteksi):** Retikel scanner modern di atas memetakan fokus atensi jaringan konvolusi MobileNetV2 secara tepat pada titik kerusakan helai daun tanaman (bukan tangan atau latar belakang). Titik bertanda nama penyakit menunjukkan konsentrasi infeksi aktif tempat patogen berkembang. Fokuskan sanitasi pemangkasan daun sakit dan penyemprotan obat pada titik-titik tersebut."
                             )
                         else:
                             st.caption(

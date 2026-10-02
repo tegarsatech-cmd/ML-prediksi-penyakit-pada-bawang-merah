@@ -15,10 +15,10 @@ Aplikasi sistem pakar diagnosis dan deteksi dini penyakit tanaman bawang merah (
 2. **Diferensial Diagnosis (Kemungkinan A & Kemungkinan B)**:
    - Jika terdapat dua penyakit yang bersaing dengan tingkat probabilitas signifikan (misal Karat Daun vs Hawar Bakteri), sistem menampilkan dua kartu diagnosis berdampingan secara adil dan transparan lengkap dengan persentase kepastian alami, nama latin, dan ciri khas lapangan.
 
-3. **Peta Deteksi Lesi Multi-Penyakit (High-Precision HUD Reticle CAM)**:
-   - **Segmentasi Kanopi Daun (Leaf Canopy Masking)**: Titik atensi dipastikan 100% hanya mengunci helai daun, bukan latar belakang, lantai, atau meja.
+3. **Peta Titik Kerusakan pada Foto Daun (High-Precision HUD Reticle CAM)**:
+   - **Segmentasi Kanopi Daun (Leaf Canopy Masking)**: Titik atensi dipastikan 100% hanya mengunci helai daun bawang, bukan latar belakang, lantai, atau meja.
    - **Skin Tone Exclusion**: Membedakan warna kulit manusia dari daun, sehingga foto daun yang sedang dipegang oleh tangan petani tetap terdeteksi presisi tanpa ada lingkaran di jari tangan.
-   - **Penanda Multi-Penyakit**: Retikel Merah Neon `[A: Nama Penyakit]` menandai fokus infeksi Kemungkinan A, dan Retikel Oranye Neon `[B: Nama Penyakit]` menandai fokus infeksi Kemungkinan B.
+   - **Penanda Langsung Nama Penyakit**: Retikel scanner modern berlabel nama penyakit secara spesifik menandai titik pusat infeksi aktif pada helai daun bawang merah tanpa label umum acak.
 
 4. **Verifikasi Karakteristik Fisik Langsung di Sawah**:
    - Panduan praktis lapangan mencakup **Uji Raba** (lendir vs tepung kering), **Uji Aroma Daun** (langu busuk bakteri vs daun kering jamur), dan **Uji Usapan Jari** untuk memvalidasi diagnosis langsung di bedengan.
