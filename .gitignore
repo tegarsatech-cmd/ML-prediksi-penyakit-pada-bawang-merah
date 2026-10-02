@@ -14,5 +14,6 @@ __pycache__/
 
 # Datasets and training temp
 dataset_temp/
+dataset_clean/
 data/
 *.zip

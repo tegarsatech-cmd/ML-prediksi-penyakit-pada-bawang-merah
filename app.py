@@ -810,21 +810,92 @@ def load_model_and_labels():
     model = tf.keras.models.load_model(MODEL_PATH)
     return model, class_names
 
+def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.15) -> tuple[Image.Image, tuple[int, int, int, int], float]:
+    """
+    Ekstraksi Otomatis Region of Interest (ROI) Daun Bawang Merah:
+    Mendeteksi area helai daun dan memangkas latar belakang tanah, mulsa, tangan, atau meja.
+    Menjembatani perbedaan antara foto kamera smartphone lapangan dengan foto dataset makro.
+    """
+    img_rgb = image.convert("RGB")
+    orig_w, orig_h = img_rgb.size
+
+    thumb_dim = 256
+    scale_w = orig_w / float(thumb_dim)
+    scale_h = orig_h / float(thumb_dim)
+    thumb = img_rgb.resize((thumb_dim, thumb_dim), Image.Resampling.BILINEAR)
+
+    arr = np.array(thumb, dtype=np.float32)
+    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+
+    cmax = np.maximum(np.maximum(r, g), b)
+    cmin = np.minimum(np.minimum(r, g), b)
+    delta = cmax - cmin
+    delta_safe = np.where(delta == 0, 1.0, delta)
+
+    h = np.zeros_like(delta)
+    mask_r = (cmax == r) & (delta > 0)
+    h[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta_safe[mask_r]) % 6.0)
+    mask_g = (cmax == g) & (delta > 0)
+    h[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta_safe[mask_g]) + 2.0)
+    mask_b = (cmax == b) & (delta > 0)
+    h[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta_safe[mask_b]) + 4.0)
+
+    cmax_safe = np.where(cmax == 0, 1.0, cmax)
+    s = np.where(cmax == 0, 0.0, delta / cmax_safe)
+    v = cmax / 255.0
+
+    # Deteksi piksel tanaman daun bawang merah
+    is_green = (h >= 35.0) & (h <= 170.0) & (s >= 0.12) & (v >= 0.10)
+    is_yellow = (h >= 20.0) & (h < 35.0) & (g >= r * 0.70) & (s >= 0.15) & (v >= 0.20)
+    is_spot = (h >= 5.0) & (h < 20.0) & (r > g * 1.05) & (s >= 0.20) & (v >= 0.15)
+
+    plant_mask = is_green | is_yellow | is_spot
+    plant_pixels = np.argwhere(plant_mask)
+
+    if len(plant_pixels) < 60:
+        return img_rgb, (0, 0, orig_w, orig_h), 1.0
+
+    y_min, x_min = plant_pixels.min(axis=0)
+    y_max, x_max = plant_pixels.max(axis=0)
+
+    ox1 = int(x_min * scale_w)
+    oy1 = int(y_min * scale_h)
+    ox2 = int(x_max * scale_w)
+    oy2 = int(y_max * scale_h)
+
+    bw = ox2 - ox1
+    bh = oy2 - oy1
+
+    pad_x = int(bw * padding_pct)
+    pad_y = int(bh * padding_pct)
+
+    fx1 = max(0, ox1 - pad_x)
+    fy1 = max(0, oy1 - pad_y)
+    fx2 = min(orig_w, ox2 + pad_x)
+    fy2 = min(orig_h, oy2 + pad_y)
+
+    crop_w = fx2 - fx1
+    crop_h = fy2 - fy1
+    area_ratio = (crop_w * crop_h) / float(orig_w * orig_h)
+
+    if area_ratio < 0.04 or crop_w < 35 or crop_h < 35:
+        return img_rgb, (0, 0, orig_w, orig_h), 1.0
+
+    cropped_roi = img_rgb.crop((fx1, fy1, fx2, fy2))
+    return cropped_roi, (fx1, fy1, fx2, fy2), area_ratio
+
 def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: bool = True, **kwargs):
     """
-    Pipeline Prapemprosesan Citra Multiperspektif (Smart Aspect-Ratio Preserving TTA):
+    Pipeline Prapemprosesan Citra Multiperspektif Cerdas (Leaf-Focused Smart TTA):
     1. EXIF Transpose: Mengoreksi rotasi orientasi dari kamera smartphone iOS/Android.
-    2. Paksa ke RGB: Hapus channel Alpha/transparansi jika format PNG/WA.
-    3. Preservasi Rasio Aspek (Mencegah distorsi bentuk lesi/bercak daun):
-       - View 1: Letterbox Proposional (helai daun utuh tanpa penyusutan gepeng).
-       - View 2: High-Resolution Focal Center Crop (fokus pada tekstur bintil/bercak tengah).
-       - View 3: Simetri Horizontal (invarian arah rotasi kamera).
-       - View 4: Zona Ujung/Pangkal Daun (penting untuk penyakit hawar ujung / busuk pangkal).
-    4. Input Skala Model Keras:
-       Arsitektur model Keras model_bawang_final.keras telah memiliki layer internal:
-       true_divide (dibagi 127.5) dan subtract (dikurangi 1.0).
-       Oleh karena itu, input tensor ke model Keras HARUS berupa piksel murni float32
-       dalam rentang [0.0, 255.0] untuk mencegah cacat double-normalization.
+    2. Auto-Cropping Daun (Leaf ROI): Memfokuskan potongan pada helai daun bawang merah
+       dan menyingkirkan latar belakang tanah/tangan/mulsa (menghilangkan Domain Gap).
+    3. Multi-View TTA:
+       - View 1: Focused Leaf ROI (daun bersih fokus tinggi).
+       - View 2: High-Resolution Macro Center Crop dari Leaf ROI (detail lesi/tekstur).
+       - View 3: Simetri Horizontal dari Leaf ROI (invarian arah kamera).
+       - View 4: Full Frame Natural (konteks global keseluruhan tanaman).
+    4. Input Skala Model Keras: Tensor float32 [0.0, 255.0] murni untuk layer internal MobileNetV2.
     """
     orig_mode = image.mode if image is not None else "RGB"
     orig_size = image.size if image is not None else (0, 0)
@@ -834,27 +905,38 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
     img_clean = cropped_img.convert("RGB")
     w, h = img_clean.size
 
-    # View 1: Full-Frame Natural (persis sesuai skala pelatihan Keras tanpa padding buatan)
+    # 2. Deteksi & Ekstraksi Region of Interest (ROI) Daun Bawang Merah
+    leaf_roi, leaf_bbox, leaf_coverage = extract_leaf_roi(img_clean, padding_pct=0.15)
+    is_auto_cropped = leaf_coverage < 0.88
+
+    # View Utama: Focused Leaf ROI (atau Full Frame jika daun sudah memenuhi layar)
+    primary_crop = leaf_roi if is_auto_cropped else img_clean
+    view_primary = primary_crop.resize(target_size, Image.Resampling.BILINEAR)
     view_full = img_clean.resize(target_size, Image.Resampling.BILINEAR)
 
     if not use_tta:
-        crops = [view_full]
+        crops = [view_primary]
         weights = [1.0]
     else:
-        crops = [view_full]
-        weights = [0.50]
+        crops = [view_primary]
+        weights = [0.45]
 
-        # View 2: Focal Center Crop (fokus lesi/tekstur tengah beresolusi tinggi tanpa distorsi)
-        min_dim = min(w, h)
-        cx, cy = w // 2, h // 2
+        # View 2: Macro Center Crop dari area daun fokus
+        pw, ph = primary_crop.size
+        min_dim = min(pw, ph)
+        cx, cy = pw // 2, ph // 2
         half = min_dim // 2
-        center_img = img_clean.crop((cx - half, cy - half, cx + half, cy + half)).resize(target_size, Image.Resampling.BILINEAR)
+        center_img = primary_crop.crop((cx - half, cy - half, cx + half, cy + half)).resize(target_size, Image.Resampling.BILINEAR)
         crops.append(center_img)
-        weights.append(0.30)
+        weights.append(0.25)
 
         # View 3: Simetri Horizontal (invarian sudut pemotretan kamera smartphone)
-        crops.append(view_full.transpose(Image.FLIP_LEFT_RIGHT))
-        weights.append(0.20)
+        crops.append(view_primary.transpose(Image.FLIP_LEFT_RIGHT))
+        weights.append(0.15)
+
+        # View 4: Full Frame Global (konteks keseluruhan daun/tanaman)
+        crops.append(view_full)
+        weights.append(0.15)
 
     # Susun batch tensor NumPy float32 dalam skala alami [0.0, 255.0]
     # Model Keras 'model_bawang_final.keras' telah memiliki layer internal:
@@ -866,13 +948,16 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
     diag_info = {
         "orig_mode": orig_mode,
         "orig_size": orig_size,
-        "norm_mode_name": f"MobileNetV2 Alami [0, 255] + Multi-View TTA ({len(crops)} Perspektif)" if use_tta else "MobileNetV2 Alami [0, 255] (Full Frame)",
+        "norm_mode_name": f"MobileNetV2 Alami [0, 255] + Leaf-Focused TTA ({len(crops)} Perspektif)" if use_tta else "MobileNetV2 Alami [0, 255] (Focused ROI)",
         "num_views": len(crops),
+        "is_auto_cropped": is_auto_cropped,
+        "leaf_coverage_pct": round(leaf_coverage * 100.0, 1),
+        "leaf_bbox": leaf_bbox,
         "min_pixel": float(np.min(batch_array)),
         "max_pixel": float(np.max(batch_array))
     }
 
-    return batch_array, view_full, weights, diag_info
+    return batch_array, view_primary, weights, diag_info
 
 def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.02) -> tuple[bool, str, float]:
     """
@@ -2423,6 +2508,18 @@ if selected_image is not None:
                     <div class="step-title">Hasil Pemeriksaan Daun</div>
                 </div>
             """, unsafe_allow_html=True)
+
+            if diag_info.get("is_auto_cropped", False):
+                with st.expander("🔍 Lihat Hasil Pemotongan Otomatis Daun (Auto-Crop)", expanded=False):
+                    col_crop1, col_crop2 = st.columns([1, 1])
+                    with col_crop1:
+                        st.image(preview_crop, caption="Fokus Helai Daun (Bebas Latar Belakang)", use_container_width=True)
+                    with col_crop2:
+                        st.info(
+                            f"🍃 **Auto-Fokus Daun Aktif:** Sistem mendeteksi daun pada "
+                            f"**{diag_info.get('leaf_coverage_pct', 0)}%** area foto. "
+                            "Latar belakang tanah, tangan, atau pematang otomatis disingkirkan agar model menganalisis lesi dengan presisi."
+                        )
 
             is_healthy = info.get("status") == "healthy" or info.get("is_healthy", False)
             is_pest = info.get("status") == "pest"
