@@ -828,46 +828,27 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
     img_clean = cropped_img.convert("RGB")
     w, h = img_clean.size
 
-    # View 1: Letterbox Proposional (preservasi rasio aspek tanpa gepeng)
-    scale = min(target_size[0] / max(w, 1), target_size[1] / max(h, 1))
-    nw, nh = max(1, int(w * scale)), max(1, int(h * scale))
-    resized_lb = img_clean.resize((nw, nh), Image.Resampling.LANCZOS)
-    lb_img = Image.new("RGB", target_size, (128, 128, 128))
-    px = (target_size[0] - nw) // 2
-    py = (target_size[1] - nh) // 2
-    lb_img.paste(resized_lb, (px, py))
+    # View 1: Full-Frame Natural (persis sesuai skala pelatihan Keras tanpa padding buatan)
+    view_full = img_clean.resize(target_size, Image.Resampling.BILINEAR)
 
     if not use_tta:
-        crops = [lb_img]
+        crops = [view_full]
         weights = [1.0]
     else:
-        crops = [lb_img]
-        weights = [0.40]
+        crops = [view_full]
+        weights = [0.50]
 
-        # View 2: Focal Center Crop (zoom lesi tengah dengan resolusi tinggi)
+        # View 2: Focal Center Crop (fokus lesi/tekstur tengah beresolusi tinggi tanpa distorsi)
         min_dim = min(w, h)
         cx, cy = w // 2, h // 2
         half = min_dim // 2
-        center_img = img_clean.crop((cx - half, cy - half, cx + half, cy + half)).resize(target_size, Image.Resampling.LANCZOS)
+        center_img = img_clean.crop((cx - half, cy - half, cx + half, cy + half)).resize(target_size, Image.Resampling.BILINEAR)
         crops.append(center_img)
-        weights.append(0.40)
+        weights.append(0.30)
 
-        # View 3: Simetri Horizontal (invarian arah daun)
-        crops.append(center_img.transpose(Image.FLIP_LEFT_RIGHT))
-        weights.append(0.10)
-
-        # View 4: Zona Ujung atau Pangkal Daun untuk foto vertikal/horizontal
-        if h > w * 1.15:
-            top_crop = img_clean.crop((0, 0, w, w)).resize(target_size, Image.Resampling.LANCZOS)
-            crops.append(top_crop)
-            weights.append(0.10)
-        elif w > h * 1.15:
-            left_crop = img_clean.crop((0, 0, h, h)).resize(target_size, Image.Resampling.LANCZOS)
-            crops.append(left_crop)
-            weights.append(0.10)
-        else:
-            crops.append(img_clean.resize(target_size, Image.Resampling.LANCZOS))
-            weights.append(0.10)
+        # View 3: Simetri Horizontal (invarian sudut pemotretan kamera smartphone)
+        crops.append(view_full.transpose(Image.FLIP_LEFT_RIGHT))
+        weights.append(0.20)
 
     # Susun batch tensor NumPy float32 dalam skala alami [0.0, 255.0]
     # Model Keras 'model_bawang_final.keras' telah memiliki layer internal:
@@ -879,12 +860,13 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
     diag_info = {
         "orig_mode": orig_mode,
         "orig_size": orig_size,
-        "norm_mode_name": f"MobileNetV2 Alami [0, 255] + Multi-Crop TTA ({len(crops)} Perspektif)" if use_tta else "MobileNetV2 Alami [0, 255] (Single Letterbox)",
+        "norm_mode_name": f"MobileNetV2 Alami [0, 255] + Multi-View TTA ({len(crops)} Perspektif)" if use_tta else "MobileNetV2 Alami [0, 255] (Full Frame)",
         "num_views": len(crops),
         "min_pixel": float(np.min(batch_array)),
         "max_pixel": float(np.max(batch_array))
     }
-    return batch_array, lb_img, weights, diag_info
+
+    return batch_array, view_full, weights, diag_info
 
 def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.02) -> tuple[bool, str, float]:
     """
@@ -1547,58 +1529,9 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     calibrated_probs = np.sum(raw_preds * weights_norm[:, None], axis=0)
     calibrated_probs = calibrated_probs / np.sum(calibrated_probs)
 
-    # 2. Kalibrasi Fusi Multi-Kandidat & Penyelarasan Bukti Fisik Lapangan:
-    # Mengombinasikan aktivasi model Keras dengan bukti patologi fisik makroskopis pada foto
-    v_healthy_pct = visual_evidence.get("healthy_pct", 100.0)
-    v_sev_pct = visual_evidence.get("severity_pct", 0.0)
-    v_rust_pct = visual_evidence.get("rust_pct", 0.0)
-    v_purple_pct = visual_evidence.get("purple_pct", 0.0)
-    v_xantho_pct = visual_evidence.get("xantho_pct", 0.0)
-    evidence_disease = visual_evidence.get("evidence_disease")
-
-    # Indeks kelas kunci (mendukung model 4 kelas baru maupun fallback 15 kelas)
-    idx_healthy = class_names.index("Sehat") if "Sehat" in class_names else (class_names.index("Healthy leaves") if "Healthy leaves" in class_names else -1)
-    idx_trotol = class_names.index("Trotol") if "Trotol" in class_names else (class_names.index("Purple blotch") if "Purple blotch" in class_names else -1)
-    idx_moler = class_names.index("Moler") if "Moler" in class_names else (class_names.index("Fusarium-D") if "Fusarium-D" in class_names else -1)
-    idx_busuk = class_names.index("Busuk Daun") if "Busuk Daun" in class_names else (class_names.index("Xanthomonas Leaf Blight") if "Xanthomonas Leaf Blight" in class_names else -1)
-
-    # Pembobot adaptif berbasis bukti visual lapangan (Soft Multipliers)
-    multipliers = np.ones(len(class_names), dtype=np.float32)
-
-    # A. Corroboration Daun Sehat & Segar
-    if (v_healthy_pct >= 82.0 and v_sev_pct < 6.0) or (evidence_disease in ["Sehat", "Healthy leaves"]):
-        if idx_healthy != -1:
-            multipliers[idx_healthy] *= 2.0
-    elif v_sev_pct >= 15.0:
-        if idx_healthy != -1:
-            multipliers[idx_healthy] *= 0.35
-
-    # B. Corroboration Bercak Ungu / Trotol
-    if evidence_disease in ["Trotol", "Purple blotch"] or v_purple_pct >= 2.0:
-        boost = 2.0 + min(float(v_purple_pct) * 0.35, 2.5)
-        if idx_trotol != -1:
-            multipliers[idx_trotol] *= boost
-        if idx_healthy != -1:
-            multipliers[idx_healthy] *= 0.2
-
-    # C. Corroboration Hawar / Busuk Daun
-    if evidence_disease in ["Busuk Daun", "Xanthomonas Leaf Blight", "Rust"] or (v_xantho_pct >= 10.0 and v_purple_pct < 1.0) or v_rust_pct >= 1.5:
-        if idx_busuk != -1:
-            multipliers[idx_busuk] *= 2.0
-        if idx_healthy != -1:
-            multipliers[idx_healthy] *= 0.3
-
-    # D. Corroboration Layu Moler
-    if evidence_disease in ["Moler", "Fusarium-D"]:
-        if idx_moler != -1:
-            multipliers[idx_moler] *= 2.0
-        if idx_healthy != -1:
-            multipliers[idx_healthy] *= 0.3
-
-    # Posterior probabilitas terkalibrasi
-    posterior = calibrated_probs * multipliers
-    posterior = posterior / np.sum(posterior)
-    calibrated_probs = posterior
+    # 2. Kalibrasi Probabilitas Murni Deep Learning:
+    # Model MobileNetV2 hasil fine-tuning 5.989 citra daun bawang merah asli memiliki akurasi 93.5%.
+    # Probabilitas ensemble multi-view TTA digunakan secara murni dan objektif tanpa manipulasi heuristik warna buatan.
 
     # 3. Konsolidasi Kelas Kembar (Jika ada label identik)
     twin_pairs = {}
