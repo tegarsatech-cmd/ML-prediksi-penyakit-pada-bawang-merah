@@ -867,16 +867,19 @@ def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.12) -> tupl
         s = np.where(cmax == 0, 0.0, delta / cmax_safe)
         v = cmax / 255.0
         
-        # 1. Daun hijau sehat / bergejala (Hue 42 - 165)
-        is_green_leaf = (h >= 42.0) & (h <= 165.0) & (s >= 0.14) & (v >= 0.12)
+        # 1. Daun hijau sehat / bergejala (Hue 40 - 165)
+        is_green_leaf = (h >= 40.0) & (h <= 165.0) & (s >= 0.12) & (v >= 0.10)
         
-        # 2. Daun menguning / ujung kering penyakit (Hue 35 - 42, G dominan)
-        is_yellowing = (h >= 35.0) & (h < 42.0) & (g >= r * 0.82) & (g > b * 1.12) & (s >= 0.18)
+        # 2. Daun menguning / ujung kering penyakit (Hue 25 - 40, G dominan)
+        is_yellowing = (h >= 25.0) & (h < 40.0) & (g >= r * 0.75) & (s >= 0.15)
         
-        # 3. Umbi / selubung ungu kemerahan bawang merah (Hue 295 - 355)
-        is_purple_bulb = (h >= 295.0) & (h <= 355.0) & (r > g * 1.25) & (b > g * 0.85) & (s >= 0.20)
+        # 3. Bintil karat oranye / lesi kemerahan
+        is_rust_spot = (h >= 8.0) & (h < 25.0) & (r > g * 1.1) & (s >= 0.25) & (v >= 0.16)
+
+        # 4. Umbi / selubung ungu kemerahan bawang merah (Hue 285 - 355)
+        is_purple_bulb = ((h >= 285.0) | (h <= 14.0)) & (r > g * 1.15) & (s >= 0.15)
         
-        plant_mask = is_green_leaf | is_yellowing | is_purple_bulb
+        plant_mask = is_green_leaf | is_yellowing | is_rust_spot | is_purple_bulb
         plant_ratio = float(np.mean(plant_mask))
         
         if plant_ratio < min_ratio:
@@ -911,6 +914,7 @@ def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool,
     """
     Sistem Validasi Guardrail Gatekeeper Citra menggunakan Groq Vision:
     Mencegah diagnosis foto non-tanaman bawang merah (manusia, hewan, kendaraan, tanah kosong, tanaman lain).
+    Tetap mengizinkan anomali wajar seperti tangan manusia yang sedang memegang/memperlihatkan daun bawang merah.
     Model: llama-3.2-11b-vision-preview (temperature=0.0, max_tokens=10).
     """
     import base64
@@ -922,7 +926,7 @@ def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool,
         
     if not api_key:
         # Fallback spektrum lokal jika API Key belum tersedia
-        is_plant, reason_text, _ = check_shallot_leaf_mask(image, min_ratio=0.12)
+        is_plant, reason_text, _ = check_shallot_leaf_mask(image, min_ratio=0.02)
         if not is_plant:
             return False, "INVALID: Spektrum warna bukan daun bawang merah."
         return True, "VALID (Local Fallback)"
@@ -936,9 +940,13 @@ def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool,
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
         
         prompt_text = (
-            "Anda adalah validator citra pertanian. Periksa gambar ini secara cermat.\n"
-            "Apakah gambar ini menampilkan daun, umbi, atau bagian tanaman bawang merah (Allium cepa)?\n"
-            "Jawab HANYA dengan satu kata: 'VALID' jika benar bawang merah/daun bawang merah, atau 'INVALID' jika bukan atau objek lain."
+            "Anda adalah validator citra pertanian profesional.\n"
+            "Tugas: Memeriksa apakah gambar memuat daun, umbi, atau bagian tanaman bawang merah (Allium cepa).\n"
+            "ATURAN KHUSUS:\n"
+            "1. Jika terlihat tangan manusia yang sedang memegang atau memperlihatkan helai daun/umbi bawang merah di kebun/sawah, gambar ini TETAP DINYATAKAN VALID!\n"
+            "2. Asalkan ada helai daun bawang merah yang terlihat (meskipun dipegang tangan atau ada latar tanah/kebun), jawab VALID.\n"
+            "3. HANYA jawab INVALID jika gambar sama sekali tidak memuat tanaman bawang merah (misal hanya selfie wajah, hewan, kendaraan, makanan jadi di piring, atau tanah kosong tanpa daun).\n"
+            "Jawab HANYA satu kata: 'VALID' atau 'INVALID'."
         )
         
         url = "https://api.groq.com/openai/v1/chat/completions"
@@ -979,7 +987,7 @@ def validate_onion_image(image: Image.Image, api_key: str = None) -> tuple[bool,
                 return False, "INVALID: Terdeteksi bukan daun/tanaman bawang merah."
         else:
             # Fallback jika model vision error atau decommissioned
-            is_plant, reason_text, _ = check_shallot_leaf_mask(image, min_ratio=0.12)
+            is_plant, reason_text, _ = check_shallot_leaf_mask(image, min_ratio=0.02)
             if not is_plant:
                 return False, f"INVALID (Vision Status {resp.status_code}): Spektrum citra bukan daun bawang."
             return True, f"VALID (Fallback status {resp.status_code})"
@@ -1168,15 +1176,26 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
         "overlay_img": annotated_pil
     }
 
-def generate_keras_cam_map(image: Image.Image, model, target_class_idx: int, is_healthy: bool = False):
+def generate_keras_cam_map(
+    image: Image.Image,
+    model,
+    target_class_idx: int,
+    is_healthy: bool = False,
+    second_class_idx: int = None,
+    primary_name: str = "Penyakit A",
+    second_name: str = None,
+    is_differential: bool = False
+):
     """
     Menghasilkan Peta Deteksi Lesi Berbasis Pola Konvolusi Keras Asli (Class Activation Mapping / CAM):
     1. Mengambil peta aktivasi layer konvolusi terakhir (mobilenetv2_1.00_224, shape 7x7x1280).
     2. Menghitung dot product dengan vektor bobot dense layer untuk kelas yang didiagnosis.
     3. Segmentasi Kanopi Daun (Leaf Canopy Masking): Memastikan penanda lesi HANYA berada di helai daun,
-       bukan pada latar belakang, meja, atau tanah.
-    4. Menggambar penanda modern High-Precision Agro-Tech Reticle (HUD Scanner) pada titik lesi aktif daun.
-    5. Jika daun sehat, lingkaran tidak digambar untuk menjaga foto tetap bersih dan jernih.
+       bukan pada latar belakang, meja, atau tangan manusia yang sedang memegang daun.
+    4. Mendukung multi-penyakit: Jika terdeteksi 2 penyakit mirip (diferensial diagnosis),
+       retikel Merah menandai fokus Kemungkinan A, dan retikel Oranye menandai fokus Kemungkinan B.
+    5. Menggambar penanda modern High-Precision Agro-Tech Reticle (HUD Scanner) pada titik lesi aktif daun.
+    6. Jika daun sehat, lingkaran tidak digambar untuk menjaga foto tetap bersih dan jernih.
     """
     img_rgb = image.convert("RGB")
     w, h = img_rgb.size
@@ -1212,11 +1231,15 @@ def generate_keras_cam_map(image: Image.Image, model, target_class_idx: int, is_
         s_arr = np.where(cmax == 0, 0.0, delta / np.where(cmax == 0, 1.0, cmax))
         v_arr = cmax / 255.0
 
-        is_green_leaf = (h_arr >= 42.0) & (h_arr <= 165.0) & (s_arr >= 0.20) & (v_arr >= 0.12) & (v_arr <= 0.88)
-        is_yellow_lesion = (h_arr >= 25.0) & (h_arr < 42.0) & (g >= r * 0.78) & (s_arr >= 0.22) & (v_arr >= 0.18)
-        is_rust_lesion = (h_arr >= 8.0) & (h_arr < 25.0) & (r > g * 1.1) & (s_arr >= 0.25) & (v_arr >= 0.16)
+        is_green_leaf = (h_arr >= 40.0) & (h_arr <= 165.0) & (s_arr >= 0.14) & (v_arr >= 0.10) & (v_arr <= 0.88)
+        is_yellow_lesion = (h_arr >= 25.0) & (h_arr < 40.0) & (g >= r * 0.78) & (s_arr >= 0.18) & (v_arr >= 0.16)
+        is_rust_lesion = (h_arr >= 8.0) & (h_arr < 25.0) & (r > g * 1.1) & (s_arr >= 0.28) & (v_arr >= 0.16)
         is_purple_lesion = ((h_arr <= 14.0) | (h_arr >= 285.0)) & (r > g * 1.15) & (s_arr >= 0.18) & (v_arr >= 0.10) & (v_arr <= 0.75)
-        leaf_mask = (is_green_leaf | is_yellow_lesion | is_rust_lesion | is_purple_lesion).astype(np.float32)
+
+        # PENTING: Kecualikan warna kulit tangan manusia agar lingkaran tidak menempel di tangan/jari
+        is_human_skin = (h_arr >= 6.0) & (h_arr <= 28.0) & (s_arr >= 0.15) & (s_arr <= 0.65) & (v_arr >= 0.35) & (r > g * 1.15) & (g > b * 1.05) & (b > 35)
+
+        leaf_mask = ((is_green_leaf | is_yellow_lesion | is_rust_lesion | is_purple_lesion) & (~is_human_skin)).astype(np.float32)
 
         # Abaikan margin tepi bingkai terluar 4% agar tidak menempel pada bingkai foto
         m_x, m_y = max(int(w * 0.04), 2), max(int(h * 0.04), 2)
@@ -1224,6 +1247,8 @@ def generate_keras_cam_map(image: Image.Image, model, target_class_idx: int, is_
         leaf_mask[-m_y:, :] = 0
         leaf_mask[:, :m_x] = 0
         leaf_mask[:, -m_x:] = 0
+
+        has_leaf_tissue = np.sum(leaf_mask) > 100
 
         # 2. Siapkan input 224x224 skala alami [0, 255]
         resized = img_rgb.resize((224, 224), Image.Resampling.LANCZOS)
@@ -1233,71 +1258,109 @@ def generate_keras_cam_map(image: Image.Image, model, target_class_idx: int, is_
         x_norm = (arr / 127.5) - 1.0
         features = backbone(x_norm, training=False).numpy()[0]  # shape (7, 7, 1280)
 
-        # Hitung CAM (dot product feature map 7x7x1280 dengan bobot kelas target)
-        cam = np.dot(features, weights[:, target_class_idx])  # shape (7, 7)
+        def get_cam_eval(class_idx):
+            cam_raw = np.dot(features, weights[:, class_idx])
+            c_min = float(np.min(cam_raw))
+            c_max = float(np.max(cam_raw))
+            if (c_max - c_min) > 1e-6:
+                cam_n = (cam_raw - c_min) / (c_max - c_min)
+            else:
+                cam_n = np.zeros_like(cam_raw)
+            cam_p = Image.fromarray((cam_n * 255).astype(np.uint8)).resize((w, h), Image.Resampling.BILINEAR)
+            arr_c = np.array(cam_p, dtype=np.float32) / 255.0
+            return (arr_c * leaf_mask) if has_leaf_tissue else arr_c
 
-        # Normalisasi Min-Max yang tepat agar seluruh rentang berada pada [0.0, 1.0]
-        c_min = float(np.min(cam))
-        c_max = float(np.max(cam))
-        if (c_max - c_min) > 1e-6:
-            cam_norm = (cam - c_min) / (c_max - c_min)
+        cam_eval_1 = get_cam_eval(target_class_idx)
+        cam_eval_2 = get_cam_eval(second_class_idx) if (is_differential and second_class_idx is not None) else None
+
+        def extract_peaks(c_eval):
+            grid_n = 12
+            cell_h = max(h // grid_n, 1)
+            cell_w = max(w // grid_n, 1)
+            p_list = []
+            for r_i in range(grid_n):
+                for c_i in range(grid_n):
+                    y1, y2 = r_i * cell_h, min((r_i + 1) * cell_h, h)
+                    x1, x2 = c_i * cell_w, min((c_i + 1) * cell_w, w)
+                    patch = c_eval[y1:y2, x1:x2]
+                    max_p = float(np.max(patch))
+                    if max_p > 0.15:
+                        py, px = np.unravel_index(np.argmax(patch), patch.shape)
+                        rx = int(x1 + px)
+                        ry = int(y1 + py)
+                        if (not has_leaf_tissue) or (leaf_mask[ry, rx] > 0):
+                            p_list.append((rx, ry, max_p))
+            if not p_list and has_leaf_tissue:
+                py, px = np.unravel_index(np.argmax(c_eval), c_eval.shape)
+                if leaf_mask[py, px] > 0:
+                    p_list.append((int(px), int(py), float(c_eval[py, px])))
+            p_list.sort(key=lambda p: p[2], reverse=True)
+            return p_list
+
+        base_rad = max(18, int(min(w, h) * 0.045))
+        min_dist = max(32, int(min(w, h) * 0.085))
+        spots = []
+
+        if is_differential and cam_eval_2 is not None:
+            peaks_1 = extract_peaks(cam_eval_1)
+            peaks_2 = extract_peaks(cam_eval_2)
+
+            p_name_short = primary_name.split("/")[0].split("(")[0].strip()[:10]
+            s_name_short = (second_name or "").split("/")[0].split("(")[0].strip()[:10]
+
+            # Spot 1: Titik lesi fokus Kemungkinan A (Merah)
+            if peaks_1:
+                p1_x, p1_y, p1_s = peaks_1[0]
+                spots.append((p1_x, p1_y, base_rad, f"A: {p_name_short}", "red"))
+
+            # Spot 2: Titik lesi fokus Kemungkinan B (Oranye)
+            spot2_found = False
+            for p2_x, p2_y, p2_s in peaks_2:
+                if not spots or ((p2_x - spots[0][0])**2 + (p2_y - spots[0][1])**2 >= min_dist**2):
+                    spots.append((p2_x, p2_y, base_rad, f"B: {s_name_short}", "orange"))
+                    spot2_found = True
+                    break
+            if not spot2_found and peaks_2:
+                p2_x, p2_y, _ = peaks_2[0]
+                spots.append((p2_x, p2_y, base_rad, f"B: {s_name_short}", "orange"))
+
+            # Titik tambahan bila ada lesi sekunder
+            for px, py, _ in peaks_1[1:]:
+                if len(spots) >= 4:
+                    break
+                if not any((px - sx)**2 + (py - sy)**2 < min_dist**2 for sx, sy, _, _, _ in spots):
+                    spots.append((px, py, base_rad, "LESI A #2", "red"))
+
+            for px, py, _ in peaks_2[1:]:
+                if len(spots) >= 4:
+                    break
+                if not any((px - sx)**2 + (py - sy)**2 < min_dist**2 for sx, sy, _, _, _ in spots):
+                    spots.append((px, py, base_rad, "LESI B #2", "orange"))
         else:
-            cam_norm = np.zeros_like(cam)
+            peaks_1 = extract_peaks(cam_eval_1)
+            for idx_p, (px, py, _) in enumerate(peaks_1):
+                if not any((px - sx)**2 + (py - sy)**2 < min_dist**2 for sx, sy, _, _, _ in spots):
+                    lbl = "LESI UTAMA" if len(spots) == 0 else f"LESI #{len(spots)+1}"
+                    spots.append((px, py, base_rad, lbl, "red"))
+                if len(spots) >= 4:
+                    break
 
-        # Resize CAM 7x7 ke ukuran foto asli
-        cam_pil = Image.fromarray((cam_norm * 255).astype(np.uint8)).resize((w, h), Image.Resampling.BILINEAR)
-        cam_arr = np.array(cam_pil, dtype=np.float32) / 255.0
-
-        # Kunci atensi neural HANYA pada helai daun tanaman (membuang noise latar belakang)
-        has_leaf_tissue = np.sum(leaf_mask) > 100
-        cam_eval = (cam_arr * leaf_mask) if has_leaf_tissue else cam_arr
-
-        # Cari titik puncak aktivasi neural Keras secara presisi di helai daun
+        # Gambar Penanda Modern HUD Scanner (High-Precision Agro-Tech Reticle)
         from PIL import ImageDraw
         annotated = img_rgb.copy()
         draw = ImageDraw.Draw(annotated)
 
-        grid_n = 12
-        cell_h = max(h // grid_n, 1)
-        cell_w = max(w // grid_n, 1)
+        for cx, cy, rad, badge_label, color_type in spots:
+            if color_type == "orange":
+                color_hud = (245, 158, 11)      # Neon Orange / Amber
+                color_inner = (254, 240, 138)   # Soft Amber Glow
+                badge_bg = (217, 119, 6)        # Amber badge
+            else:
+                color_hud = (239, 68, 68)       # Merah Neon Presisi
+                color_inner = (254, 202, 202)   # Soft Red Glow
+                badge_bg = (220, 38, 38)        # Red badge
 
-        peaks = []
-        for r_i in range(grid_n):
-            for c_i in range(grid_n):
-                y1, y2 = r_i * cell_h, min((r_i + 1) * cell_h, h)
-                x1, x2 = c_i * cell_w, min((c_i + 1) * cell_w, w)
-                patch = cam_eval[y1:y2, x1:x2]
-                max_p = float(np.max(patch))
-                if max_p > 0.15:
-                    py, px = np.unravel_index(np.argmax(patch), patch.shape)
-                    real_x = int(x1 + px)
-                    real_y = int(y1 + py)
-                    if (not has_leaf_tissue) or (leaf_mask[real_y, real_x] > 0):
-                        peaks.append((real_x, real_y, max_p))
-
-        # Fallback jika aktivasi sangat halus: ambil titik tertinggi yang berada di daun
-        if not peaks and has_leaf_tissue:
-            py, px = np.unravel_index(np.argmax(cam_eval), cam_eval.shape)
-            if leaf_mask[py, px] > 0:
-                peaks.append((int(px), int(py), float(cam_eval[py, px])))
-
-        # Urutkan puncak aktivasi dari tertinggi dan terapkan Non-Maximum Suppression (NMS)
-        peaks.sort(key=lambda p: p[2], reverse=True)
-        merged = []
-        base_rad = max(18, int(min(w, h) * 0.045))
-        min_dist = max(32, int(min(w, h) * 0.085))
-        for px, py, score in peaks:
-            if not any((px - mx)**2 + (py - my)**2 < min_dist**2 for mx, my, _, _ in merged):
-                merged.append((px, py, base_rad, score))
-            if len(merged) >= 4:
-                break
-
-        # Gambar Penanda Modern HUD Scanner (High-Precision Agro-Tech Reticle)
-        color_hud = (239, 68, 68)       # Merah Neon Presisi
-        color_inner = (254, 202, 202)   # Soft Glow
-        tick = 6
-
-        for idx_spot, (cx, cy, rad, score) in enumerate(merged, start=1):
+            tick = 6
             # 1. Lingkaran luar presisi (HUD Ring)
             draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=color_hud, width=2)
             # 2. Lingkaran konsentris dalam halus
@@ -1311,19 +1374,18 @@ def generate_keras_cam_map(image: Image.Image, model, target_class_idx: int, is_
             draw.line([cx, cy - rad - tick, cx, cy - rad + 3], fill=color_hud, width=2)
             draw.line([cx, cy + rad - 3, cx, cy + rad + tick], fill=color_hud, width=2)
 
-            # 5. Label Modern Badge [LESI #1]
-            badge_label = f"LESI #{idx_spot}" if idx_spot > 1 else "LESI UTAMA"
-            badge_w = 68 if idx_spot > 1 else 78
+            # 5. Label Modern Badge
+            badge_w = max(len(badge_label) * 8 + 16, 76)
             badge_h = 16
             bx1 = cx - badge_w // 2
             by1 = cy - rad - badge_h - 4
             bx2 = bx1 + badge_w
             by2 = by1 + badge_h
             if by1 > 3:
-                draw.rectangle([bx1, by1, bx2, by2], fill=(220, 38, 38))
-                draw.text((bx1 + 4, by1 + 1), badge_label, fill=(255, 255, 255))
+                draw.rectangle([bx1, by1, bx2, by2], fill=badge_bg)
+                draw.text((bx1 + 5, by1 + 1), badge_label, fill=(255, 255, 255))
 
-        return annotated, [(c[0], c[1], c[2]) for c in merged]
+        return annotated, [(s[0], s[1], s[2]) for s in spots]
     except Exception:
         return img_rgb, []
 
@@ -1344,7 +1406,7 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
        Probabilitas Top-3 disinkronkan 100% dengan vonis kartu utama dan bukti lesi fisik.
     """
     if enforce_verification:
-        is_shallot, reason_msg, ratio = check_shallot_leaf_mask(image, min_ratio=0.12)
+        is_shallot, reason_msg, ratio = check_shallot_leaf_mask(image, min_ratio=0.02)
         if not is_shallot:
             raise ValueError(f"OOD_GUARD_REJECTED: {reason_msg}")
 
@@ -1365,52 +1427,11 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     calibrated_probs = np.sum(raw_preds * weights_norm[:, None], axis=0)
     calibrated_probs = calibrated_probs / np.sum(calibrated_probs)
 
+    # Urutkan peringkat probabilitas alami model Keras
     top_indices = np.argsort(calibrated_probs)[::-1]
     best_idx = int(top_indices[0])
     second_idx = int(top_indices[1]) if len(top_indices) > 1 else best_idx
 
-    # Integrasi Fusi Harmonis: Bila ada persaingan sangat ketat antara Top-1 & Top-2 (margin < 15%),
-    # verifikasi fisik spektrum warna membantu mempertegas diagnosis pemenang
-    ev_dis = visual_evidence.get("evidence_disease")
-    if ev_dis and ev_dis in class_names:
-        ev_idx = class_names.index(ev_dis)
-        if ev_idx == second_idx and (calibrated_probs[best_idx] - calibrated_probs[second_idx] < 0.15):
-            # Jika Top-2 didukung bukti fisik nyata kuat (misal bintil spora nyata terlihat), tukar posisi
-            best_idx, second_idx = second_idx, best_idx
-
-    raw_class_name = class_names[best_idx]
-    top_confidence = round(float(calibrated_probs[best_idx]) * 100.0, 1)
-
-    second_class_name = class_names[second_idx]
-    second_confidence = round(float(calibrated_probs[second_idx]) * 100.0, 1)
-
-    confidence_margin = round(top_confidence - second_confidence, 1)
-
-    # Penguatan keyakinan jika bukti fisik mendukung hasil konvolusi model Keras
-    is_healthy_pred = CLASS_METADATA.get(raw_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(raw_class_name, {}).get("status") == "healthy"
-    if raw_class_name == "Rust" and visual_evidence.get("rust_pct", 0) >= 1.2:
-        top_confidence = round(min(98.8, max(top_confidence, 88.0 + visual_evidence.get("rust_pct", 0) * 1.5)), 1)
-    elif raw_class_name in ["Purple blotch", "Alternaria_D"] and visual_evidence.get("purple_pct", 0) >= 2.0:
-        top_confidence = round(min(98.5, max(top_confidence, 87.0 + visual_evidence.get("purple_pct", 0) * 1.2)), 1)
-    elif is_healthy_pred and visual_evidence.get("healthy_pct", 0) >= 88.0 and visual_evidence.get("severity_pct", 0) < 5.0:
-        top_confidence = round(min(99.0, max(top_confidence, 90.0)), 1)
-
-    # Sinkronisasi Total Probabilitas: Selaraskan calibrated_probs dengan top_confidence dan urutan pemenang
-    # Ini memastikan bahwa nilai persentase pada kartu utama dan daftar Top-3 100% identik dan konsisten
-    target_top_prob = top_confidence / 100.0
-    rem_sum = np.sum(calibrated_probs) - calibrated_probs[best_idx]
-    if rem_sum > 1e-6:
-        scale_fac = (1.0 - target_top_prob) / rem_sum
-        for i in range(len(calibrated_probs)):
-            if i != best_idx:
-                calibrated_probs[i] = max(0.001, calibrated_probs[i] * scale_fac)
-    calibrated_probs[best_idx] = target_top_prob
-    calibrated_probs = calibrated_probs / np.sum(calibrated_probs)
-
-    # Re-sort top_indices agar sinkron 100% dengan urutan peringkat 1, 2, 3
-    top_indices = np.argsort(calibrated_probs)[::-1]
-    best_idx = int(top_indices[0])
-    second_idx = int(top_indices[1]) if len(top_indices) > 1 else best_idx
     raw_class_name = class_names[best_idx]
     second_class_name = class_names[second_idx]
     top_confidence = round(float(calibrated_probs[best_idx]) * 100.0, 1)
@@ -1420,8 +1441,9 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     is_healthy_1 = CLASS_METADATA.get(raw_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(raw_class_name, {}).get("status") == "healthy"
     is_healthy_2 = CLASS_METADATA.get(second_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(second_class_name, {}).get("status") == "healthy"
 
+    # Evaluasi Diferensial Diagnosis: Terpicu jika ada 2 penyakit dengan persaingan probabilitas nyata
     is_differential = (
-        ((second_confidence >= 18.0) or (top_confidence < 60.0) or (confidence_margin < 20.0))
+        ((second_confidence >= 15.0) or (top_confidence < 68.0) or (confidence_margin <= 25.0))
         and (not is_healthy_1) 
         and (not is_healthy_2) 
         and (raw_class_name != second_class_name)
@@ -1452,11 +1474,16 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     })
 
     # 3. Peta Deteksi Lesi Berbasis Pola Keras Asli (Class Activation Mapping / CAM)
+    # Mendukung visualisasi multi-penyakit (retikel merah untuk Kemungkinan A, retikel oranye untuk Kemungkinan B)
     annotated_cam, cam_circles = generate_keras_cam_map(
         image=image,
         model=model,
         target_class_idx=best_idx,
-        is_healthy=is_healthy_pred
+        is_healthy=is_healthy_1,
+        second_class_idx=second_idx if is_differential else None,
+        primary_name=metadata["nama_id"],
+        second_name=second_metadata["nama_id"] if is_differential else None,
+        is_differential=is_differential
     )
     visual_evidence["overlay_img"] = annotated_cam
     visual_evidence["num_spots_detected"] = len(cam_circles)
@@ -2027,9 +2054,9 @@ with st.sidebar:
     st.markdown("### ⚙️ Validasi Foto Bawang")
     conf_threshold = st.slider(
         "Batas Validasi Daun Bawang (%)",
-        min_value=30,
+        min_value=20,
         max_value=75,
-        value=40,
+        value=25,
         step=5,
         help="Jika kepastian model di bawah nilai ini, foto akan ditolak sebagai bukan daun bawang merah atau foto tidak jelas."
     )
@@ -2037,11 +2064,11 @@ with st.sidebar:
 
     min_leaf_ratio = st.slider(
         "Sensitivitas Daun Bawang (%)",
-        min_value=5,
+        min_value=2,
         max_value=30,
-        value=12,
+        value=3,
         step=1,
-        help="Persentase minimal warna daun/umbi bawang merah yang harus ada pada foto sebelum model MobileNetV2 dijalankan."
+        help="Persentase minimal warna daun/umbi bawang merah yang harus ada pada foto sebelum model MobileNetV2 dijalankan (tetap mendeteksi meski daun dipegang tangan manusia)."
     )
     st.caption(f"Batas luas daun minimal: **{min_leaf_ratio}%**")
 
@@ -2385,17 +2412,29 @@ if selected_image is not None:
 
                 if visual_evidence.get("overlay_img") is not None:
                     with st.expander("🖼️ Peta Deteksi Lesi pada Foto (Titik Atensi Neural Model Keras)", expanded=True):
+                        map_caption = (
+                            f"Peta Target Lesi Multi-Penyakit: Retikel Merah [A] menandai fokus gejala {info['nama_id']}, sedangkan Retikel Oranye [B] menandai fokus gejala {second_info['nama_id']} pada helai daun."
+                            if is_differential
+                            else f"Peta Target Lesi: Retikel scanner modern (lingkaran merah berteknologi HUD dengan crosshair) menandai titik pusat lesi aktif pada daun {info['nama_id']} yang dipelajari lapisan konvolusi MobileNetV2 Keras."
+                        )
                         st.image(
                             visual_evidence["overlay_img"],
-                            caption=f"Peta Target Lesi: Retikel scanner modern (lingkaran merah berteknologi HUD dengan crosshair) menandai titik pusat lesi aktif pada daun {info['nama_id']} yang dipelajari lapisan konvolusi MobileNetV2 Keras.",
+                            caption=map_caption,
                             use_container_width=True
                         )
                         num_spots = visual_evidence.get("num_spots_detected", 0)
                         if is_healthy:
                             st.success("✅ **Daun Sehat & Normal:** Model konvolusi Keras mengonfirmasi helai daun segar dan tidak menemukan titik lesi penyakit aktif.")
+                        elif is_differential:
+                            st.caption(
+                                f"💡 **Petunjuk Deteksi Multi-Penyakit ({num_spots} Titik Terdeteksi):** Model mendeteksi dua kemungkinan patogen yang menginfeksi helai daun. "
+                                f"Retikel **Merah [A]** menandai area lesi yang paling kuat dicurigai sebagai **{info['nama_id']}**, "
+                                f"sedangkan Retikel **Oranye [B]** menandai area yang dicurigai sebagai **{second_info['nama_id']}**. "
+                                "Cocokkan perbedaan ciri fisik kedua area tersebut langsung di bedengan kebun untuk penanganan yang tepat."
+                            )
                         elif num_spots > 0:
                             st.caption(
-                                f"💡 **Petunjuk Deteksi ({num_spots} Titik Lesi Terdeteksi):** Retikel scanner modern di atas memetakan fokus atensi jaringan konvolusi MobileNetV2 secara tepat pada helai daun tanaman. Area bertanda **[LESI UTAMA]** menunjukkan konsentrasi kerusakan tertinggi tempat infeksi aktif berkembang. Fokuskan sanitasi pemangkasan daun sakit dan penyemprotan obat pada titik-titik tersebut."
+                                f"💡 **Petunjuk Deteksi ({num_spots} Titik Lesi Terdeteksi):** Retikel scanner modern di atas memetakan fokus atensi jaringan konvolusi MobileNetV2 secara tepat pada helai daun tanaman (bukan tangan atau latar belakang). Area bertanda **[LESI UTAMA]** menunjukkan konsentrasi kerusakan tertinggi tempat infeksi aktif berkembang. Fokuskan sanitasi pemangkasan daun sakit dan penyemprotan obat pada titik-titik tersebut."
                             )
                         else:
                             st.caption(
