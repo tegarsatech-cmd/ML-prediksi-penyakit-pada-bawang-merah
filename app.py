@@ -538,6 +538,50 @@ st.markdown("""
 # Menggunakan Istilah Populer yang Akrab Bagi Petani Indonesia
 # ==============================================================================
 CLASS_METADATA = {
+    "Busuk Daun": {
+        "nama_id": "Hawar / Busuk Daun",
+        "latin": "Botrytis / Stemphylium / Xanthomonas",
+        "status": "disease",
+        "is_healthy": False,
+        "ciri_lapangan": "Ujung daun menguning kecokelatan kering memanjang ke bawah atau melepuh kebasah-basahan seperti tersiram air mendidih.",
+        "gejala": "Pangkas helai daun yang tampak membusuk atau mengering seperti terbakar sebelum merambat ke umbi tanaman.",
+        "pencegahan": "Hindari penyiraman sore/malam hari dan jaga sirkulasi parit bedengan macak-macak.",
+        "solusi": "Semprot bakterisida/fungisida berbahan aktif Tembaga Hidroksida atau Klorotalonil secara merata pada pagi hari.",
+        "rekomendasi_singkat": "Semprot Tembaga Hidroksida/Klorotalonil dan pangkas daun yang membusuk."
+    },
+    "Moler": {
+        "nama_id": "Layu Moler / Fusarium",
+        "latin": "Fusarium oxysporum",
+        "status": "disease",
+        "is_healthy": False,
+        "ciri_lapangan": "Helai daun melintir-lintir abnormal (moler), menguning pucat dari ujung, perakaran membusuk dan mudah dicabut.",
+        "gejala": "Segera cabut tanaman yang daunnya melintir abnormal (moler) sampai ke perakarannya agar jamur tidak menular lewat parit.",
+        "pencegahan": "Campurkan agens hayati Trichoderma dengan pupuk kandang matang saat olah tanah dasar bedengan.",
+        "solusi": "Taburkan kapur dolomit pada lubang bekas cabutan dan kocorkan fungisida sistemik berbahan aktif Benomil atau Mankozeb.",
+        "rekomendasi_singkat": "Cabut tanaman melintir/moler, taburkan dolomit & agens Trichoderma."
+    },
+    "Sehat": {
+        "nama_id": "Daun Sehat & Segar",
+        "latin": "Kondisi Normal",
+        "status": "healthy",
+        "is_healthy": True,
+        "ciri_lapangan": "Daun hijau segar mengkilap, silindris tegak berdiri kokoh tanpa bercak berlendir, luka trotol, maupun kelintiran abnormal.",
+        "gejala": "Kondisi tanaman sangat prima! Daun hijau segar, tegak berdiri kokoh tanpa bercak patogen atau luka hama.",
+        "pencegahan": "Lanjutkan pemantauan rutin 2-3 hari sekali. Pertahankan kebersihan gulma di parit dan pematang.",
+        "solusi": "Tidak memerlukan obat semprot kimia kuratif. Cukup semprotkan pupuk daun mikro dan asam amino untuk menjaga kesegaran.",
+        "rekomendasi_singkat": "Tanaman sehat optimal! Cukup lanjutkan pemupukan berimbang dan pengairan rutin."
+    },
+    "Trotol": {
+        "nama_id": "Bercak Ungu / Trotol",
+        "latin": "Alternaria porri",
+        "status": "disease",
+        "is_healthy": False,
+        "ciri_lapangan": "Bercak melekuk ke dalam berbentuk cincin konsentris bertepung keunguan/gelap di tengah helai daun, tepi menguning kering.",
+        "gejala": "Potong atau pangkas daun yang terdapat bercak trotol ungu cincin konsentris. Kumpulkan dan bakar di luar areal sawah.",
+        "pencegahan": "Bersihkan gulma dan rumput liar di sekitar parit. Buat bedengan lebih tinggi agar tidak tergenang air saat hujan lebat.",
+        "solusi": "Semprot fungisida berbahan aktif Difenokonazol atau Mankozeb. Semprot pada pagi hari (pukul 06.00 - 08.30) atau sore (pukul 16.00) saat angin tenang.",
+        "rekomendasi_singkat": "Semprot Difenokonazol/Mankozeb dan pangkas daun trotol segera."
+    },
     "Alternaria_D": {
         "nama_id": "Bercak Ungu / Trotol",
         "latin": "Alternaria porri",
@@ -1512,63 +1556,58 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     v_xantho_pct = visual_evidence.get("xantho_pct", 0.0)
     evidence_disease = visual_evidence.get("evidence_disease")
 
-    # Indeks kelas kunci
-    idx_healthy = class_names.index("Healthy leaves") if "Healthy leaves" in class_names else 7
-    idx_onion1 = class_names.index("onion1") if "onion1" in class_names else 13
-    idx_rust = class_names.index("Rust") if "Rust" in class_names else 10
-    idx_purple = class_names.index("Purple blotch") if "Purple blotch" in class_names else 9
-    idx_alternaria = class_names.index("Alternaria_D") if "Alternaria_D" in class_names else 0
-    idx_xantho = class_names.index("Xanthomonas Leaf Blight") if "Xanthomonas Leaf Blight" in class_names else 12
-    idx_iris = class_names.index("Iris yellow virus_augment") if "Iris yellow virus_augment" in class_names else 8
-    idx_stemphylium = class_names.index("stemphylium Leaf Blight") if "stemphylium Leaf Blight" in class_names else 14
+    # Indeks kelas kunci (mendukung model 4 kelas baru maupun fallback 15 kelas)
+    idx_healthy = class_names.index("Sehat") if "Sehat" in class_names else (class_names.index("Healthy leaves") if "Healthy leaves" in class_names else -1)
+    idx_trotol = class_names.index("Trotol") if "Trotol" in class_names else (class_names.index("Purple blotch") if "Purple blotch" in class_names else -1)
+    idx_moler = class_names.index("Moler") if "Moler" in class_names else (class_names.index("Fusarium-D") if "Fusarium-D" in class_names else -1)
+    idx_busuk = class_names.index("Busuk Daun") if "Busuk Daun" in class_names else (class_names.index("Xanthomonas Leaf Blight") if "Xanthomonas Leaf Blight" in class_names else -1)
 
     # Pembobot adaptif berbasis bukti visual lapangan (Soft Multipliers)
     multipliers = np.ones(len(class_names), dtype=np.float32)
 
     # A. Corroboration Daun Sehat & Segar
-    if (v_healthy_pct >= 82.0 and v_sev_pct < 6.0) or (evidence_disease == "Healthy leaves"):
-        multipliers[idx_healthy] *= 2.0
-        multipliers[idx_onion1] *= 1.8
+    if (v_healthy_pct >= 82.0 and v_sev_pct < 6.0) or (evidence_disease in ["Sehat", "Healthy leaves"]):
+        if idx_healthy != -1:
+            multipliers[idx_healthy] *= 2.0
     elif v_sev_pct >= 15.0:
-        # Jika daun jelas memiliki kerusakan fisik nyata, redam kemungkinan daun sehat
-        multipliers[idx_healthy] *= 0.35
-        multipliers[idx_onion1] *= 0.35
+        if idx_healthy != -1:
+            multipliers[idx_healthy] *= 0.35
 
-    # B. Corroboration Bintil Karat Jingga (Puccinia allii)
-    if evidence_disease == "Rust" or v_rust_pct >= 1.5:
-        boost = 2.2 + min(float(v_rust_pct) * 0.4, 2.5)
-        multipliers[idx_rust] *= boost
-        multipliers[idx_healthy] *= 0.2
-        multipliers[idx_onion1] *= 0.2
-
-    # C. Corroboration Bercak Ungu / Alternaria porri
-    if evidence_disease == "Purple blotch" or v_purple_pct >= 2.0:
+    # B. Corroboration Bercak Ungu / Trotol
+    if evidence_disease in ["Trotol", "Purple blotch"] or v_purple_pct >= 2.0:
         boost = 2.0 + min(float(v_purple_pct) * 0.35, 2.5)
-        multipliers[idx_purple] *= boost
-        multipliers[idx_alternaria] *= boost
-        multipliers[idx_healthy] *= 0.2
-        multipliers[idx_onion1] *= 0.2
+        if idx_trotol != -1:
+            multipliers[idx_trotol] *= boost
+        if idx_healthy != -1:
+            multipliers[idx_healthy] *= 0.2
 
-    # D. Corroboration Hawar Daun Bakteri (Xanthomonas)
-    if evidence_disease == "Xanthomonas Leaf Blight" or (v_xantho_pct >= 10.0 and v_rust_pct < 0.8 and v_purple_pct < 1.0):
-        multipliers[idx_xantho] *= 2.0
-        multipliers[idx_healthy] *= 0.3
-        multipliers[idx_onion1] *= 0.3
+    # C. Corroboration Hawar / Busuk Daun
+    if evidence_disease in ["Busuk Daun", "Xanthomonas Leaf Blight", "Rust"] or (v_xantho_pct >= 10.0 and v_purple_pct < 1.0) or v_rust_pct >= 1.5:
+        if idx_busuk != -1:
+            multipliers[idx_busuk] *= 2.0
+        if idx_healthy != -1:
+            multipliers[idx_healthy] *= 0.3
+
+    # D. Corroboration Layu Moler
+    if evidence_disease in ["Moler", "Fusarium-D"]:
+        if idx_moler != -1:
+            multipliers[idx_moler] *= 2.0
+        if idx_healthy != -1:
+            multipliers[idx_healthy] *= 0.3
 
     # Posterior probabilitas terkalibrasi
     posterior = calibrated_probs * multipliers
     posterior = posterior / np.sum(posterior)
     calibrated_probs = posterior
 
-    # 3. Konsolidasi Kelas Kembar (Harmonisasi Label Identik)
-    # - "Alternaria_D" & "Purple blotch": Keduanya adalah patogen Alternaria porri (Bercak Ungu / Trotol)
-    # - "Healthy leaves" & "onion1": Keduanya adalah Daun Sehat & Normal
-    twin_pairs = {
-        idx_purple: idx_alternaria,
-        idx_alternaria: idx_purple,
-        idx_healthy: idx_onion1,
-        idx_onion1: idx_healthy
-    }
+    # 3. Konsolidasi Kelas Kembar (Jika ada label identik)
+    twin_pairs = {}
+    if "Purple blotch" in class_names and "Alternaria_D" in class_names:
+        twin_pairs[class_names.index("Purple blotch")] = class_names.index("Alternaria_D")
+        twin_pairs[class_names.index("Alternaria_D")] = class_names.index("Purple blotch")
+    if "Healthy leaves" in class_names and "onion1" in class_names:
+        twin_pairs[class_names.index("Healthy leaves")] = class_names.index("onion1")
+        twin_pairs[class_names.index("onion1")] = class_names.index("Healthy leaves")
 
     # Urutkan peringkat probabilitas
     ranked_indices = list(np.argsort(calibrated_probs)[::-1])
@@ -1580,7 +1619,6 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
         combined_conf = float(calibrated_probs[best_idx] + calibrated_probs[twin_idx])
         top_confidence = round(min(combined_conf * 100.0, 98.8), 1)
 
-        # Cari second_idx yang berbeda secara fitopatologi (bukan kelas kembar dari peringkat 1)
         second_idx = None
         for idx in ranked_indices[1:]:
             if idx != twin_idx:

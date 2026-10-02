@@ -11,3 +11,8 @@ __pycache__/
 
 # Streamlit secrets & cache
 .streamlit/secrets.toml
+
+# Datasets and training temp
+dataset_temp/
+data/
+*.zip
