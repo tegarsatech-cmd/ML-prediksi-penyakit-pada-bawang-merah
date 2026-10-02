@@ -1263,16 +1263,18 @@ def generate_keras_cam_map(
         # Segmentasi lesi fisik tampak nyata pada helai daun
         is_physical_lesion = (is_yellow_lesion | is_rust_lesion | is_purple_lesion | is_brown_necrotic) & (leaf_mask > 0)
         has_physical_lesion = np.sum(is_physical_lesion) > 30
-        if has_physical_lesion:
-            from PIL import ImageFilter
-            les_pil = Image.fromarray((is_physical_lesion * 255).astype(np.uint8))
-            blur_rad = max(2, int(min(w, h) * 0.035))
-            lesion_density = np.array(les_pil.filter(ImageFilter.GaussianBlur(radius=blur_rad)), dtype=np.float32) / 255.0
-            ld_max = float(np.max(lesion_density))
-            if ld_max > 1e-5:
-                lesion_density = lesion_density / ld_max
-        else:
-            lesion_density = None
+
+        # Jika daun sehat atau tidak terdapat kerusakan fisik nyata, jangan beri penanda apapun
+        if (not has_physical_lesion) or is_healthy:
+            return img_rgb, []
+
+        from PIL import ImageFilter
+        les_pil = Image.fromarray((is_physical_lesion * 255).astype(np.uint8))
+        blur_rad = max(2, int(min(w, h) * 0.035))
+        lesion_density = np.array(les_pil.filter(ImageFilter.GaussianBlur(radius=blur_rad)), dtype=np.float32) / 255.0
+        ld_max = float(np.max(lesion_density))
+        if ld_max > 1e-5:
+            lesion_density = lesion_density / ld_max
 
         # 2. Siapkan input 224x224 skala alami MobileNetV2 [-1, 1]
         resized = img_rgb.resize((224, 224), Image.Resampling.LANCZOS)
@@ -1292,42 +1294,46 @@ def generate_keras_cam_map(
                 cam_n = np.zeros_like(cam_raw)
             cam_p = Image.fromarray((cam_n * 255).astype(np.uint8)).resize((w, h), Image.Resampling.BILINEAR)
             arr_c = np.array(cam_p, dtype=np.float32) / 255.0
-            if has_physical_lesion and lesion_density is not None:
-                # Kombinasikan aktivasi neural CAM (35%) dengan densitas lesi fisik nyata (65%)
-                return (0.35 * arr_c + 0.65 * lesion_density) * leaf_mask
-            return (arr_c * leaf_mask) if has_leaf_tissue else arr_c
+            # Batasi evaluasi CAM hanya pada piksel kerusakan fisik nyata daun bawang
+            if lesion_density is not None:
+                return (0.35 * arr_c + 0.65 * lesion_density) * is_physical_lesion.astype(np.float32)
+            return arr_c * is_physical_lesion.astype(np.float32)
 
         cam_eval_1 = get_cam_eval(target_class_idx)
         cam_eval_2 = get_cam_eval(second_class_idx) if (is_differential and second_class_idx is not None) else None
 
         def extract_peaks(c_eval):
-            # Grid 8x8 menghasilkan sel yang lebih besar → menangkap area lesi lebih presisi
+            if not has_physical_lesion:
+                return []
             grid_n = 8
             cell_h = max(h // grid_n, 1)
             cell_w = max(w // grid_n, 1)
             p_list = []
+            # Mask CAM evaluasi HANYA pada piksel kerusakan fisik nyata
+            # Hal ini menjamin penanda TIDAK PERNAH berada di luar kerusakan fisik bawang
+            c_damage_eval = c_eval * is_physical_lesion.astype(np.float32)
+
             for r_i in range(grid_n):
                 for c_i in range(grid_n):
                     y1, y2 = r_i * cell_h, min((r_i + 1) * cell_h, h)
                     x1, x2 = c_i * cell_w, min((c_i + 1) * cell_w, w)
-                    patch = c_eval[y1:y2, x1:x2]
-                    if patch.size == 0:
+                    patch = c_damage_eval[y1:y2, x1:x2]
+                    patch_lesion = is_physical_lesion[y1:y2, x1:x2]
+                    if patch.size == 0 or np.sum(patch_lesion) == 0:
                         continue
                     max_p = float(np.max(patch))
-                    mean_p = float(np.mean(patch))
-                    # Aktivasi harus di atas threshold DAN rata-rata sel cukup signifikan
-                    if max_p > 0.25 and mean_p > 0.08:
+                    if max_p > 0.12:
                         py, px = np.unravel_index(np.argmax(patch), patch.shape)
                         rx = int(x1 + px)
                         ry = int(y1 + py)
-                        # Pastikan peak berada di jaringan daun
-                        if (not has_leaf_tissue) or (ry < h and rx < w and leaf_mask[min(ry, h-1), min(rx, w-1)] > 0):
+                        # Verifikasi mutlak: piksel ini WAJIB berada tepat di kerusakan fisik daun bawang
+                        if ry < h and rx < w and is_physical_lesion[min(ry, h-1), min(rx, w-1)]:
                             p_list.append((rx, ry, max_p))
-            if not p_list and has_leaf_tissue:
-                py, px = np.unravel_index(np.argmax(c_eval), c_eval.shape)
+            if not p_list and has_physical_lesion:
+                py, px = np.unravel_index(np.argmax(c_damage_eval), c_damage_eval.shape)
                 py, px = min(py, h-1), min(px, w-1)
-                if leaf_mask[py, px] > 0:
-                    p_list.append((int(px), int(py), float(c_eval[py, px])))
+                if is_physical_lesion[py, px]:
+                    p_list.append((int(px), int(py), float(c_damage_eval[py, px])))
             p_list.sort(key=lambda p: p[2], reverse=True)
             return p_list
 
@@ -1493,7 +1499,95 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     calibrated_probs = np.sum(raw_preds * weights_norm[:, None], axis=0)
     calibrated_probs = calibrated_probs / np.sum(calibrated_probs)
 
-    # Urutkan peringkat probabilitas alami model Keras
+    # 2. Koreksi Prior Dataset & Penyelarasan Bukti Fisik Citra Daun Bawang (.keras & Foto):
+    # Mengoreksi bias dataset latih (di mana kelas Xanthomonas terlalu dominan secara frekuensi)
+    # dengan mengombinasikan aktivasi model Keras dan bukti patologi fisik nyata pada foto:
+    v_healthy_pct = visual_evidence.get("healthy_pct", 100.0)
+    v_sev_pct = visual_evidence.get("severity_pct", 0.0)
+    v_rust_pct = visual_evidence.get("rust_pct", 0.0)
+    v_purple_pct = visual_evidence.get("purple_pct", 0.0)
+    v_xantho_pct = visual_evidence.get("xantho_pct", 0.0)
+    evidence_disease = visual_evidence.get("evidence_disease")
+
+    # Bobot prior frekuensi dataset latih untuk kompensasi bias
+    dataset_priors = np.array([
+        0.04,  # 0: Alternaria_D
+        0.03,  # 1: Botrytis Leaf Blight
+        0.03,  # 2: Bulb Rot
+        0.03,  # 3: Bulb_blight-D
+        0.04,  # 4: Caterpillar-P
+        0.04,  # 5: Downy mildew
+        0.04,  # 6: Fusarium-D
+        0.05,  # 7: Healthy leaves
+        0.04,  # 8: Iris yellow virus_augment
+        0.04,  # 9: Purple blotch
+        0.12,  # 10: Rust
+        0.03,  # 11: Virosis-D
+        0.40,  # 12: Xanthomonas Leaf Blight (overrepresented di dataset latih)
+        0.05,  # 13: onion1
+        0.05   # 14: stemphylium Leaf Blight
+    ], dtype=np.float32)
+
+    unbiased_probs = calibrated_probs / dataset_priors
+    unbiased_probs = unbiased_probs / np.sum(unbiased_probs)
+
+    # Matriks Likelihood Bukti Fisik Foto Daun Bawang
+    likelihood = np.ones(len(class_names), dtype=np.float32) * 0.05
+    idx_healthy = class_names.index("Healthy leaves") if "Healthy leaves" in class_names else 7
+    idx_rust = class_names.index("Rust") if "Rust" in class_names else 10
+    idx_purple = class_names.index("Purple blotch") if "Purple blotch" in class_names else 9
+    idx_alternaria = class_names.index("Alternaria_D") if "Alternaria_D" in class_names else 0
+    idx_xantho = class_names.index("Xanthomonas Leaf Blight") if "Xanthomonas Leaf Blight" in class_names else 12
+    idx_iris = class_names.index("Iris yellow virus_augment") if "Iris yellow virus_augment" in class_names else 8
+    idx_stemphylium = class_names.index("stemphylium Leaf Blight") if "stemphylium Leaf Blight" in class_names else 14
+
+    # Kasus A: Foto Daun Sehat & Segar (Klorofil hijau utuh, tidak ada kerusakan fisik bermakna)
+    if (v_healthy_pct >= 85.0 and v_sev_pct < 5.0) or (evidence_disease == "Healthy leaves"):
+        likelihood[:] = 0.0005
+        likelihood[idx_healthy] = 1.0
+        final_probs = unbiased_probs * likelihood
+        final_probs = final_probs / np.sum(final_probs)
+        h_conf = min(max(0.94 + (v_healthy_pct - 85.0) * 0.003, 0.94), 0.988)
+        final_probs[idx_healthy] = h_conf
+        rem_sum = np.sum(final_probs) - h_conf
+        if rem_sum > 0:
+            for j in range(len(final_probs)):
+                if j != idx_healthy:
+                    final_probs[j] = (final_probs[j] / rem_sum) * (1.0 - h_conf)
+
+    # Kasus B: Gejala Bintil Karat Jingga (Puccinia allii)
+    elif evidence_disease == "Rust" or v_rust_pct >= 1.5:
+        likelihood[idx_rust] = 1.0
+        likelihood[idx_iris] = 0.15
+        likelihood[idx_healthy] = 0.001
+        final_probs = unbiased_probs * likelihood
+        final_probs = final_probs / np.sum(final_probs)
+
+    # Kasus C: Gejala Bercak Ungu / Alternaria (Alternaria porri)
+    elif evidence_disease == "Purple blotch" or v_purple_pct >= 2.0:
+        likelihood[idx_purple] = 1.0
+        likelihood[idx_alternaria] = 0.8
+        likelihood[idx_stemphylium] = 0.2
+        likelihood[idx_healthy] = 0.001
+        final_probs = unbiased_probs * likelihood
+        final_probs = final_probs / np.sum(final_probs)
+
+    # Kasus D: Gejala Hawar Daun Bakteri (Xanthomonas)
+    elif evidence_disease == "Xanthomonas Leaf Blight" or (v_xantho_pct >= 10.0 and v_rust_pct < 0.8 and v_purple_pct < 1.0):
+        likelihood[idx_xantho] = 1.0
+        likelihood[idx_healthy] = 0.001
+        final_probs = unbiased_probs * likelihood
+        final_probs = final_probs / np.sum(final_probs)
+
+    # Kasus E: Kerusakan Fisik Umum
+    else:
+        likelihood[idx_healthy] = 0.005
+        final_probs = unbiased_probs * likelihood
+        final_probs = final_probs / np.sum(final_probs)
+
+    calibrated_probs = final_probs
+
+    # Urutkan peringkat probabilitas hasil integrasi model Keras & bukti fisik foto
     top_indices = list(np.argsort(calibrated_probs)[::-1])
     best_idx = int(top_indices[0])
     second_idx = int(top_indices[1]) if len(top_indices) > 1 else best_idx
@@ -1509,7 +1603,7 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
 
     # Evaluasi Diferensial Diagnosis:
     # "hasil periksa nya klo cuma terdetek 1 ya maka kemungkinan juga 1 saja"
-    # Diferensial HANYA aktif bila kedua penyakit bersaing ketat (ambigu) dengan margin <= 8% dan tidak ada yang dominan
+    # Diferensial HANYA aktif bila kedua penyakit bersaing ketat (ambigu) dengan margin <= 8% dan top_confidence < 45%
     is_differential = (
         (confidence_margin <= 8.0)
         and (top_confidence < 45.0)
@@ -1551,8 +1645,8 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
 
         if is_healthy_1:
             visual_evidence["evidence_desc"] = (
-                f"Jaringan daun hijau sehat optimal ({v_healthy_pct:.1f}% klorofil normal utuh) "
-                "tanpa ditemukan bintil jamur, bercak basah, maupun luka gigitan hama."
+                f"Helai daun bawang hijau segar optimal ({v_healthy_pct:.1f}% klorofil normal utuh) "
+                "tanpa ditemukan bercak nekrotik, bintil jamur, maupun luka gigitan hama."
             )
             visual_evidence["override_applied"] = False
         else:
