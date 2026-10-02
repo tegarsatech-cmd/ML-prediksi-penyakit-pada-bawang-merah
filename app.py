@@ -2019,7 +2019,8 @@ with st.sidebar:
         <div style='text-align: center; padding: 0.5rem 0;'>
             <span style='font-size: 2.5rem;'>🧅</span>
             <h2 style='margin: 0.1rem 0; color: #1b5e20; font-weight: 800;'>AgroScan</h2>
-            <p style='color: #64748b; font-size: 0.88rem;'>Menu Pengaturan & Riwayat</p>
+            <p style='color: #64748b; font-size: 0.88rem; margin-bottom: 4px;'>Menu Pengaturan & Riwayat</p>
+            <span style='background-color: #e2e8f0; color: #334155; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700;'>v2.4.0 • Updated</span>
         </div>
     """, unsafe_allow_html=True)
 
@@ -2122,6 +2123,10 @@ st.markdown("""
     <div class="farmer-hero">
         <h1>🧅 Dokter Tanaman Bawang Merah</h1>
         <p>Periksa kesehatan daun bawang merah secara cepat, tepat, dan mudah langsung di sawah.</p>
+        <div style="margin-top: 0.6rem; display: inline-flex; gap: 8px; flex-wrap: wrap;">
+            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.35);">Versi 2.4.0 (Terbaru)</span>
+            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.35);">15 Kategori & CAM Multi-Penyakit</span>
+        </div>
     </div>
 """, unsafe_allow_html=True)
 

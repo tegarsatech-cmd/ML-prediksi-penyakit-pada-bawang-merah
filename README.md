@@ -1,4 +1,5 @@
 # 🧅 AgroScan - Pendeteksi Penyakit Daun Bawang Merah (MobileNetV2 Keras & AI Agro-Engine)
+![Version](https://img.shields.io/badge/Version-v2.4.0-success?style=flat-square) ![Status](https://img.shields.io/badge/Status-Live%20Production-blue?style=flat-square) ![Model](https://img.shields.io/badge/Model-MobileNetV2%2015%20Classes-orange?style=flat-square)
 
 Aplikasi sistem pakar diagnosis dan deteksi dini penyakit tanaman bawang merah (*Allium cepa*) berbasis Deep Learning MobileNetV2 (15 kategori) terintegrasi dengan Peta Atensi Lesi Konvolusi (CAM HUD Scanner) dan Rekomendasi Agronomi Resmi Balitsa / BPTP Kementerian Pertanian RI.
 
