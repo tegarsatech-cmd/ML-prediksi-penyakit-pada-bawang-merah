@@ -1170,11 +1170,11 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     mask_green = (h_val >= 27.0) & (h_val <= 86.0) & (s >= 28.0) & (v >= 28.0)
     # Daun menguning / klorotik
     mask_yellow = (h_val >= 17.0) & (h_val < 27.0) & (s >= 35.0) & (v >= 45.0)
-    # Bintil pustula karat (oranye / tembaga / merah karat: Hue 4..17, Saturation kuat, R > G > B)
+    # Bintil pustula karat (oranye / tembaga / merah karat: Hue 3..24, Saturation >= 35, Value >= 35, R > G)
     mask_rust_raw = (
-        (h_val >= 4.0) & (h_val <= 17.0) &
-        (s >= 60.0) & (v >= 50.0) &
-        (r > g * 1.15) & (g > b * 1.05)
+        (h_val >= 3.0) & (h_val <= 24.0) &
+        (s >= 35.0) & (v >= 35.0) &
+        (r > g * 1.06) & (g >= b * 0.95)
     )
     # Bercak trotol keunguan / nekrotik gelap (Alternaria / Stemphylium)
     mask_purple_dark = (
@@ -1195,6 +1195,7 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
         return {
             "has_visual_evidence": False,
             "evidence_disease": None,
+            "suspected_rust": False,
             "override_applied": False,
             "severity_pct": 0.0,
             "severity_level": "Normal",
@@ -1239,12 +1240,14 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
 
     evidence_disease = None
     has_strong_lesion = False
+    suspected_rust = False
     evidence_desc = ""
 
     # Karakterisasi Bukti Fisik Lesi dari Citra
-    if rust_pct >= 1.6 or (rust_pixels >= 120 and rust_pct > purple_pct * 0.7):
+    if rust_pct >= 0.8 or (rust_pixels >= 75 and rust_pct > purple_pct * 0.5):
         evidence_disease = "Rust"
         has_strong_lesion = True
+        suspected_rust = True
         evidence_desc = (
             f"Ditemukan kluster bintil pustula serbuk berwarna jingga-karat khas jamur *Puccinia allii* "
             f"seluas {rust_pct:.1f}% pada helai daun di foto (Tingkat Keparahan: {severity_level})."
@@ -1279,6 +1282,7 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
     return {
         "has_visual_evidence": True,
         "evidence_disease": evidence_disease,
+        "suspected_rust": suspected_rust,
         "override_applied": has_strong_lesion,
         "severity_pct": round(severity_pct, 1),
         "severity_level": severity_level,
@@ -1616,11 +1620,11 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     is_healthy_2 = CLASS_METADATA.get(second_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(second_class_name, {}).get("status") == "healthy"
 
     # Evaluasi Diferensial Diagnosis:
-    # Diferensial HANYA aktif bila kedua penyakit bersaing ketat (ambigu) dengan margin <= 12%, keyakinan < 55%, dan bukan daun sehat
+    # Diferensial aktif bila kedua penyakit bersaing ketat (ambigu) dengan margin <= 18%, keyakinan < 68%, dan bukan daun sehat
     is_differential = (
-        (confidence_margin <= 12.0)
-        and (top_confidence < 55.0)
-        and (second_confidence >= 25.0)
+        (confidence_margin <= 18.0)
+        and (top_confidence < 68.0)
+        and (second_confidence >= 22.0)
         and (not is_healthy_1) 
         and (not is_healthy_2) 
         and (raw_class_name != second_class_name)
@@ -1656,7 +1660,12 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
         v_sev_lvl = visual_evidence.get("severity_level", "Normal")
         v_healthy_pct = visual_evidence.get("healthy_pct", 100.0)
 
-        if is_healthy_1:
+        if visual_evidence.get("suspected_rust"):
+            visual_evidence["evidence_desc"] = (
+                f"Modul analisis visual mendeteksi kluster bintil spora serbuk jingga-karat seluas {visual_evidence.get('rust_pct', 0.0)}% "
+                f"(indikasi penyakit Karat Daun / Puccinia allii) dengan tingkat keparahan {v_sev_lvl}."
+            )
+        elif is_healthy_1:
             visual_evidence["evidence_desc"] = (
                 f"Helai daun bawang hijau segar optimal ({v_healthy_pct:.1f}% klorofil normal utuh) "
                 "tanpa ditemukan bercak nekrotik, bintil jamur, maupun luka gigitan hama."
@@ -2618,6 +2627,15 @@ if selected_image is not None:
                     st.metric(label="🟠 Bintil Pustula Karat", value=f"{v_rust_pct:.1f}%", help="Persentase kluster serbuk jingga-karat pada helai daun")
                 with col_v3:
                     st.metric(label="🌿 Jaringan Daun Hijau", value=f"{v_healthy_pct:.1f}%", help="Persentase area klorofil daun yang masih sehat")
+
+                if visual_evidence.get("suspected_rust", False):
+                    st.warning(
+                        "🟠 **Peringatan Fusi Fitur Fisik — Dugaan Penyakit Karat Daun (*Puccinia allii*):**\n\n"
+                        f"Modul analisis citra mendeteksi kluster bintil serbuk jingga-karat seluas **{v_rust_pct:.1f}%** pada helai daun.\n\n"
+                        "📌 **Catatan Model AI:** Model klasifikasi saat ini dilatih khusus pada **4 Kategori Spesifik** (`Busuk Daun`, `Moler`, `Sehat`, `Trotol`). "
+                        "Penyakit Karat Daun belum termasuk dalam 4 kelas latih tersebut, sehingga model neural mengarahkannya ke kelas bercak terdekat (**Trotol / Bercak Ungu**). "
+                        "Jika saat daun diusap dengan jari tertinggal serbuk halus warna jingga-karat, infeksi utama adalah **Karat Daun**."
+                    )
 
                 if v_override:
                     st.success(
