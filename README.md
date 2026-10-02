@@ -7,9 +7,10 @@ Aplikasi sistem pakar diagnosis dan deteksi dini penyakit tanaman bawang merah (
 
 ## 🚀 Fitur Unggulan Sistem
 
-1. **Inferensi Pola Konvolusi Murni 15 Kategori Model Keras & Kompensasi Bias Dataset**:
+1. **Inferensi Pola Konvolusi Murni 15 Kategori Model Keras & Fusi Adaptif**:
    - Menganalisis citra menggunakan model `model_bawang_final.keras` dengan 15 kelas klasifikasi penyakit dan kondisi sehat.
-   - Menggunakan tensor skala standar MobileNetV2 `[-1.0, 1.0]` (`mobilenet_v2.preprocess_input`) yang dipadukan dengan kompensasi bias frekuensi dataset latih dan matriks likelihood bukti fisik patologi daun (foto sehat akurat didiagnosis sehat 98%+, foto bergejala akurat didiagnosis penyakit yang sesuai).
+   - Mengalirkan tensor piksel alami `[0.0, 255.0]` langsung ke layer normalisasi internal Keras (`true_divide` & `subtract`) tanpa cacat *double-normalization*.
+   - **Konsolidasi Kelas Kembar Fitopatologi**: Mengharmonisasikan kelas identik (*Alternaria_D* & *Purple blotch*, serta *Healthy leaves* & *onion1*) agar tidak memecah nilai probabilitas (*probability splitting*).
    - **Multi-Crop TTA Cerdas (Test-Time Augmentation)**: Memindai helai daun dari beberapa perspektif (preservasi rasio aspek, pembesaran zona lesi tengah, dan ujung daun).
 
 2. **Diferensial Diagnosis (Kemungkinan A & Kemungkinan B) & Vonis Tunggal Presisi**:

@@ -825,13 +825,17 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
             crops.append(img_clean.resize(target_size, Image.Resampling.LANCZOS))
             weights.append(0.10)
 
-    # Susun batch tensor NumPy float32 dalam skala [-1.0, 1.0] (Standar MobileNetV2 mobilenet_v2.preprocess_input)
-    batch_array = np.stack([(np.array(c, dtype=np.float32) / 127.5) - 1.0 for c in crops], axis=0)
+    # Susun batch tensor NumPy float32 dalam skala alami [0.0, 255.0]
+    # Model Keras 'model_bawang_final.keras' telah memiliki layer internal:
+    # true_divide (dibagi 127.5) dan subtract (dikurangi 1.0).
+    # Oleh karena itu input ke model Keras HARUS berupa piksel float32 [0.0, 255.0]
+    # agar layer internal bekerja menghasilkan skala [-1.0, 1.0] yang presisi untuk MobileNetV2.
+    batch_array = np.stack([np.array(c, dtype=np.float32) for c in crops], axis=0)
 
     diag_info = {
         "orig_mode": orig_mode,
         "orig_size": orig_size,
-        "norm_mode_name": f"MobileNetV2 [-1, 1] + Multi-Crop TTA ({len(crops)} Perspektif)" if use_tta else "MobileNetV2 [-1, 1] (Single Letterbox)",
+        "norm_mode_name": f"MobileNetV2 Alami [0, 255] + Multi-Crop TTA ({len(crops)} Perspektif)" if use_tta else "MobileNetV2 Alami [0, 255] (Single Letterbox)",
         "num_views": len(crops),
         "min_pixel": float(np.min(batch_array)),
         "max_pixel": float(np.max(batch_array))
@@ -1499,9 +1503,8 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     calibrated_probs = np.sum(raw_preds * weights_norm[:, None], axis=0)
     calibrated_probs = calibrated_probs / np.sum(calibrated_probs)
 
-    # 2. Koreksi Prior Dataset & Penyelarasan Bukti Fisik Citra Daun Bawang (.keras & Foto):
-    # Mengoreksi bias dataset latih (di mana kelas Xanthomonas terlalu dominan secara frekuensi)
-    # dengan mengombinasikan aktivasi model Keras dan bukti patologi fisik nyata pada foto:
+    # 2. Kalibrasi Fusi Multi-Kandidat & Penyelarasan Bukti Fisik Lapangan:
+    # Mengombinasikan aktivasi model Keras dengan bukti patologi fisik makroskopis pada foto
     v_healthy_pct = visual_evidence.get("healthy_pct", 100.0)
     v_sev_pct = visual_evidence.get("severity_pct", 0.0)
     v_rust_pct = visual_evidence.get("rust_pct", 0.0)
@@ -1509,31 +1512,9 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     v_xantho_pct = visual_evidence.get("xantho_pct", 0.0)
     evidence_disease = visual_evidence.get("evidence_disease")
 
-    # Bobot prior frekuensi dataset latih untuk kompensasi bias
-    dataset_priors = np.array([
-        0.04,  # 0: Alternaria_D
-        0.03,  # 1: Botrytis Leaf Blight
-        0.03,  # 2: Bulb Rot
-        0.03,  # 3: Bulb_blight-D
-        0.04,  # 4: Caterpillar-P
-        0.04,  # 5: Downy mildew
-        0.04,  # 6: Fusarium-D
-        0.05,  # 7: Healthy leaves
-        0.04,  # 8: Iris yellow virus_augment
-        0.04,  # 9: Purple blotch
-        0.12,  # 10: Rust
-        0.03,  # 11: Virosis-D
-        0.40,  # 12: Xanthomonas Leaf Blight (overrepresented di dataset latih)
-        0.05,  # 13: onion1
-        0.05   # 14: stemphylium Leaf Blight
-    ], dtype=np.float32)
-
-    unbiased_probs = calibrated_probs / dataset_priors
-    unbiased_probs = unbiased_probs / np.sum(unbiased_probs)
-
-    # Matriks Likelihood Bukti Fisik Foto Daun Bawang
-    likelihood = np.ones(len(class_names), dtype=np.float32) * 0.05
+    # Indeks kelas kunci
     idx_healthy = class_names.index("Healthy leaves") if "Healthy leaves" in class_names else 7
+    idx_onion1 = class_names.index("onion1") if "onion1" in class_names else 13
     idx_rust = class_names.index("Rust") if "Rust" in class_names else 10
     idx_purple = class_names.index("Purple blotch") if "Purple blotch" in class_names else 9
     idx_alternaria = class_names.index("Alternaria_D") if "Alternaria_D" in class_names else 0
@@ -1541,73 +1522,103 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     idx_iris = class_names.index("Iris yellow virus_augment") if "Iris yellow virus_augment" in class_names else 8
     idx_stemphylium = class_names.index("stemphylium Leaf Blight") if "stemphylium Leaf Blight" in class_names else 14
 
-    # Kasus A: Foto Daun Sehat & Segar (Klorofil hijau utuh, tidak ada kerusakan fisik bermakna)
-    if (v_healthy_pct >= 85.0 and v_sev_pct < 5.0) or (evidence_disease == "Healthy leaves"):
-        likelihood[:] = 0.0005
-        likelihood[idx_healthy] = 1.0
-        final_probs = unbiased_probs * likelihood
-        final_probs = final_probs / np.sum(final_probs)
-        h_conf = min(max(0.94 + (v_healthy_pct - 85.0) * 0.003, 0.94), 0.988)
-        final_probs[idx_healthy] = h_conf
-        rem_sum = np.sum(final_probs) - h_conf
-        if rem_sum > 0:
-            for j in range(len(final_probs)):
-                if j != idx_healthy:
-                    final_probs[j] = (final_probs[j] / rem_sum) * (1.0 - h_conf)
+    # Pembobot adaptif berbasis bukti visual lapangan (Soft Multipliers)
+    multipliers = np.ones(len(class_names), dtype=np.float32)
 
-    # Kasus B: Gejala Bintil Karat Jingga (Puccinia allii)
-    elif evidence_disease == "Rust" or v_rust_pct >= 1.5:
-        likelihood[idx_rust] = 1.0
-        likelihood[idx_iris] = 0.15
-        likelihood[idx_healthy] = 0.001
-        final_probs = unbiased_probs * likelihood
-        final_probs = final_probs / np.sum(final_probs)
+    # A. Corroboration Daun Sehat & Segar
+    if (v_healthy_pct >= 82.0 and v_sev_pct < 6.0) or (evidence_disease == "Healthy leaves"):
+        multipliers[idx_healthy] *= 2.0
+        multipliers[idx_onion1] *= 1.8
+    elif v_sev_pct >= 15.0:
+        # Jika daun jelas memiliki kerusakan fisik nyata, redam kemungkinan daun sehat
+        multipliers[idx_healthy] *= 0.35
+        multipliers[idx_onion1] *= 0.35
 
-    # Kasus C: Gejala Bercak Ungu / Alternaria (Alternaria porri)
-    elif evidence_disease == "Purple blotch" or v_purple_pct >= 2.0:
-        likelihood[idx_purple] = 1.0
-        likelihood[idx_alternaria] = 0.8
-        likelihood[idx_stemphylium] = 0.2
-        likelihood[idx_healthy] = 0.001
-        final_probs = unbiased_probs * likelihood
-        final_probs = final_probs / np.sum(final_probs)
+    # B. Corroboration Bintil Karat Jingga (Puccinia allii)
+    if evidence_disease == "Rust" or v_rust_pct >= 1.5:
+        boost = 2.2 + min(float(v_rust_pct) * 0.4, 2.5)
+        multipliers[idx_rust] *= boost
+        multipliers[idx_healthy] *= 0.2
+        multipliers[idx_onion1] *= 0.2
 
-    # Kasus D: Gejala Hawar Daun Bakteri (Xanthomonas)
-    elif evidence_disease == "Xanthomonas Leaf Blight" or (v_xantho_pct >= 10.0 and v_rust_pct < 0.8 and v_purple_pct < 1.0):
-        likelihood[idx_xantho] = 1.0
-        likelihood[idx_healthy] = 0.001
-        final_probs = unbiased_probs * likelihood
-        final_probs = final_probs / np.sum(final_probs)
+    # C. Corroboration Bercak Ungu / Alternaria porri
+    if evidence_disease == "Purple blotch" or v_purple_pct >= 2.0:
+        boost = 2.0 + min(float(v_purple_pct) * 0.35, 2.5)
+        multipliers[idx_purple] *= boost
+        multipliers[idx_alternaria] *= boost
+        multipliers[idx_healthy] *= 0.2
+        multipliers[idx_onion1] *= 0.2
 
-    # Kasus E: Kerusakan Fisik Umum
+    # D. Corroboration Hawar Daun Bakteri (Xanthomonas)
+    if evidence_disease == "Xanthomonas Leaf Blight" or (v_xantho_pct >= 10.0 and v_rust_pct < 0.8 and v_purple_pct < 1.0):
+        multipliers[idx_xantho] *= 2.0
+        multipliers[idx_healthy] *= 0.3
+        multipliers[idx_onion1] *= 0.3
+
+    # Posterior probabilitas terkalibrasi
+    posterior = calibrated_probs * multipliers
+    posterior = posterior / np.sum(posterior)
+    calibrated_probs = posterior
+
+    # 3. Konsolidasi Kelas Kembar (Harmonisasi Label Identik)
+    # - "Alternaria_D" & "Purple blotch": Keduanya adalah patogen Alternaria porri (Bercak Ungu / Trotol)
+    # - "Healthy leaves" & "onion1": Keduanya adalah Daun Sehat & Normal
+    twin_pairs = {
+        idx_purple: idx_alternaria,
+        idx_alternaria: idx_purple,
+        idx_healthy: idx_onion1,
+        idx_onion1: idx_healthy
+    }
+
+    # Urutkan peringkat probabilitas
+    ranked_indices = list(np.argsort(calibrated_probs)[::-1])
+    best_idx = int(ranked_indices[0])
+
+    # Hitung confidence gabungan jika memiliki kelas kembar
+    if best_idx in twin_pairs:
+        twin_idx = twin_pairs[best_idx]
+        combined_conf = float(calibrated_probs[best_idx] + calibrated_probs[twin_idx])
+        top_confidence = round(min(combined_conf * 100.0, 98.8), 1)
+
+        # Cari second_idx yang berbeda secara fitopatologi (bukan kelas kembar dari peringkat 1)
+        second_idx = None
+        for idx in ranked_indices[1:]:
+            if idx != twin_idx:
+                second_idx = int(idx)
+                break
+        if second_idx is None:
+            second_idx = best_idx
     else:
-        likelihood[idx_healthy] = 0.005
-        final_probs = unbiased_probs * likelihood
-        final_probs = final_probs / np.sum(final_probs)
+        top_confidence = round(float(calibrated_probs[best_idx]) * 100.0, 1)
+        second_idx = int(ranked_indices[1]) if len(ranked_indices) > 1 else best_idx
 
-    calibrated_probs = final_probs
+    # Hitung confidence untuk second_idx (termasuk kelas kembarnya jika ada)
+    if second_idx in twin_pairs and second_idx != best_idx:
+        twin_2 = twin_pairs[second_idx]
+        second_conf_val = float(calibrated_probs[second_idx] + calibrated_probs[twin_2])
+        second_confidence = round(min(second_conf_val * 100.0, 95.0), 1)
+    else:
+        second_confidence = round(float(calibrated_probs[second_idx]) * 100.0, 1)
 
-    # Urutkan peringkat probabilitas hasil integrasi model Keras & bukti fisik foto
-    top_indices = list(np.argsort(calibrated_probs)[::-1])
-    best_idx = int(top_indices[0])
-    second_idx = int(top_indices[1]) if len(top_indices) > 1 else best_idx
+    confidence_margin = round(top_confidence - second_confidence, 1)
 
     raw_class_name = class_names[best_idx]
     second_class_name = class_names[second_idx]
-    top_confidence = round(float(calibrated_probs[best_idx]) * 100.0, 1)
-    second_confidence = round(float(calibrated_probs[second_idx]) * 100.0, 1)
-    confidence_margin = round(top_confidence - second_confidence, 1)
+
+    # Pastikan top_indices untuk tampilan visual memprioritaskan penyakit yang unik
+    twin_of_best = twin_pairs.get(best_idx, -1)
+    unique_top_indices = [best_idx, second_idx] + [i for i in ranked_indices if i not in (best_idx, second_idx, twin_of_best)]
+    top_indices = unique_top_indices
 
     is_healthy_1 = CLASS_METADATA.get(raw_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(raw_class_name, {}).get("status") == "healthy"
     is_healthy_2 = CLASS_METADATA.get(second_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(second_class_name, {}).get("status") == "healthy"
 
     # Evaluasi Diferensial Diagnosis:
-    # "hasil periksa nya klo cuma terdetek 1 ya maka kemungkinan juga 1 saja"
-    # Diferensial HANYA aktif bila kedua penyakit bersaing ketat (ambigu) dengan margin <= 8% dan top_confidence < 45%
+    # Diferensial HANYA aktif bila kedua penyakit bersaing ketat (ambigu) dengan margin <= 12%, keyakinan < 55%, dan bukan daun sehat
     is_differential = (
-        (confidence_margin <= 8.0)
-        and (top_confidence < 45.0)
-        and (second_confidence >= 35.0)
+        (confidence_margin <= 12.0)
+        and (top_confidence < 55.0)
+        and (second_confidence >= 25.0)
         and (not is_healthy_1) 
         and (not is_healthy_2) 
         and (raw_class_name != second_class_name)
@@ -2635,7 +2646,12 @@ if selected_image is not None:
                 for rank, idx in enumerate(top_indices[:3], start=1):
                     raw_k = class_names[idx]
                     info_k = CLASS_METADATA.get(raw_k, {"nama_id": raw_k})
-                    score_k = float(score[idx]) * 100.0
+                    if idx == top_indices[0]:
+                        score_k = top_confidence
+                    elif len(top_indices) > 1 and idx == top_indices[1]:
+                        score_k = second_confidence
+                    else:
+                        score_k = round(float(score[idx]) * 100.0, 1)
                     st.write(f"**{rank}. {info_k['nama_id']}** (`{raw_k}`) — `{score_k:.1f}%`")
                     st.progress(min(max(score_k / 100.0, 0.0), 1.0))
 
