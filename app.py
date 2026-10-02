@@ -1173,8 +1173,9 @@ def generate_keras_cam_map(image: Image.Image, model, target_class_idx: int, is_
     Menghasilkan Peta Deteksi Lesi Berbasis Pola Konvolusi Keras Asli (Class Activation Mapping / CAM):
     1. Mengambil peta aktivasi layer konvolusi terakhir (mobilenetv2_1.00_224, shape 7x7x1280).
     2. Menghitung dot product dengan vektor bobot dense layer untuk kelas yang didiagnosis.
-    3. Menghasilkan peta atensi neural tempat model Keras mendeteksi fitur bercak/penyakit.
-    4. Menggambar lingkaran penanda presisi HANYA di titik puncak aktivasi neural Keras (tidak asal melingkari).
+    3. Segmentasi Kanopi Daun (Leaf Canopy Masking): Memastikan penanda lesi HANYA berada di helai daun,
+       bukan pada latar belakang, meja, atau tanah.
+    4. Menggambar penanda modern High-Precision Agro-Tech Reticle (HUD Scanner) pada titik lesi aktif daun.
     5. Jika daun sehat, lingkaran tidak digambar untuk menjaga foto tetap bersih dan jernih.
     """
     img_rgb = image.convert("RGB")
@@ -1192,7 +1193,39 @@ def generate_keras_cam_map(image: Image.Image, model, target_class_idx: int, is_
         except Exception:
             backbone = model.layers[4]
 
-        # Siapkan input 224x224 skala alami [0, 255]
+        # 1. Segmentasi Kanopi Daun Bawang Merah pada Resolusi Asli
+        img_np = np.array(img_rgb, dtype=np.float32)
+        r, g, b = img_np[:, :, 0], img_np[:, :, 1], img_np[:, :, 2]
+        cmax = np.maximum(np.maximum(r, g), b)
+        cmin = np.minimum(np.minimum(r, g), b)
+        delta = cmax - cmin
+        delta_safe = np.where(delta == 0, 1.0, delta)
+
+        h_arr = np.zeros_like(delta)
+        mask_r = (cmax == r) & (delta > 0)
+        h_arr[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta_safe[mask_r]) % 6.0)
+        mask_g = (cmax == g) & (delta > 0)
+        h_arr[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta_safe[mask_g]) + 2.0)
+        mask_b = (cmax == b) & (delta > 0)
+        h_arr[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta_safe[mask_b]) + 4.0)
+
+        s_arr = np.where(cmax == 0, 0.0, delta / np.where(cmax == 0, 1.0, cmax))
+        v_arr = cmax / 255.0
+
+        is_green_leaf = (h_arr >= 42.0) & (h_arr <= 165.0) & (s_arr >= 0.20) & (v_arr >= 0.12) & (v_arr <= 0.88)
+        is_yellow_lesion = (h_arr >= 25.0) & (h_arr < 42.0) & (g >= r * 0.78) & (s_arr >= 0.22) & (v_arr >= 0.18)
+        is_rust_lesion = (h_arr >= 8.0) & (h_arr < 25.0) & (r > g * 1.1) & (s_arr >= 0.25) & (v_arr >= 0.16)
+        is_purple_lesion = ((h_arr <= 14.0) | (h_arr >= 285.0)) & (r > g * 1.15) & (s_arr >= 0.18) & (v_arr >= 0.10) & (v_arr <= 0.75)
+        leaf_mask = (is_green_leaf | is_yellow_lesion | is_rust_lesion | is_purple_lesion).astype(np.float32)
+
+        # Abaikan margin tepi bingkai terluar 4% agar tidak menempel pada bingkai foto
+        m_x, m_y = max(int(w * 0.04), 2), max(int(h * 0.04), 2)
+        leaf_mask[:m_y, :] = 0
+        leaf_mask[-m_y:, :] = 0
+        leaf_mask[:, :m_x] = 0
+        leaf_mask[:, -m_x:] = 0
+
+        # 2. Siapkan input 224x224 skala alami [0, 255]
         resized = img_rgb.resize((224, 224), Image.Resampling.LANCZOS)
         arr = np.expand_dims(np.array(resized, dtype=np.float32), 0)
 
@@ -1215,48 +1248,82 @@ def generate_keras_cam_map(image: Image.Image, model, target_class_idx: int, is_
         cam_pil = Image.fromarray((cam_norm * 255).astype(np.uint8)).resize((w, h), Image.Resampling.BILINEAR)
         cam_arr = np.array(cam_pil, dtype=np.float32) / 255.0
 
-        # Cari titik puncak aktivasi neural Keras
+        # Kunci atensi neural HANYA pada helai daun tanaman (membuang noise latar belakang)
+        has_leaf_tissue = np.sum(leaf_mask) > 100
+        cam_eval = (cam_arr * leaf_mask) if has_leaf_tissue else cam_arr
+
+        # Cari titik puncak aktivasi neural Keras secara presisi di helai daun
         from PIL import ImageDraw
         annotated = img_rgb.copy()
         draw = ImageDraw.Draw(annotated)
 
-        grid_rows, grid_cols = 7, 7
-        cell_h = max(h // grid_rows, 1)
-        cell_w = max(w // grid_cols, 1)
+        grid_n = 12
+        cell_h = max(h // grid_n, 1)
+        cell_w = max(w // grid_n, 1)
 
         peaks = []
-        for r in range(grid_rows):
-            for c in range(grid_cols):
-                y1, y2 = r * cell_h, min((r + 1) * cell_h, h)
-                x1, x2 = c * cell_w, min((c + 1) * cell_w, w)
-                patch = cam_arr[y1:y2, x1:x2]
+        for r_i in range(grid_n):
+            for c_i in range(grid_n):
+                y1, y2 = r_i * cell_h, min((r_i + 1) * cell_h, h)
+                x1, x2 = c_i * cell_w, min((c_i + 1) * cell_w, w)
+                patch = cam_eval[y1:y2, x1:x2]
                 max_p = float(np.max(patch))
-                if max_p >= 0.55:
+                if max_p > 0.15:
                     py, px = np.unravel_index(np.argmax(patch), patch.shape)
-                    peaks.append((int(x1 + px), int(y1 + py), max_p))
+                    real_x = int(x1 + px)
+                    real_y = int(y1 + py)
+                    if (not has_leaf_tissue) or (leaf_mask[real_y, real_x] > 0):
+                        peaks.append((real_x, real_y, max_p))
 
-        # Fallback jika aktivasi relatif merata: ambil titik puncak tertinggi
-        if not peaks and c_max > c_min:
-            py, px = np.unravel_index(np.argmax(cam_arr), cam_arr.shape)
-            peaks.append((int(px), int(py), 1.0))
+        # Fallback jika aktivasi sangat halus: ambil titik tertinggi yang berada di daun
+        if not peaks and has_leaf_tissue:
+            py, px = np.unravel_index(np.argmax(cam_eval), cam_eval.shape)
+            if leaf_mask[py, px] > 0:
+                peaks.append((int(px), int(py), float(cam_eval[py, px])))
 
-        # Urutkan puncak aktivasi dari tertinggi dan hindari lingkaran tumpang tindih
+        # Urutkan puncak aktivasi dari tertinggi dan terapkan Non-Maximum Suppression (NMS)
         peaks.sort(key=lambda p: p[2], reverse=True)
         merged = []
-        base_rad = max(18, int(min(w, h) * 0.048))
+        base_rad = max(18, int(min(w, h) * 0.045))
+        min_dist = max(32, int(min(w, h) * 0.085))
         for px, py, score in peaks:
-            if not any((px - mx)**2 + (py - my)**2 < (base_rad * 2.0)**2 for mx, my, _ in merged):
-                merged.append((px, py, base_rad))
-            if len(merged) >= 6:
+            if not any((px - mx)**2 + (py - my)**2 < min_dist**2 for mx, my, _, _ in merged):
+                merged.append((px, py, base_rad, score))
+            if len(merged) >= 4:
                 break
 
-        # Gambar lingkaran penanda merah bergaris tegas di titik neural Keras
-        marker_color = (239, 68, 68)  # Merah deteksi presisi
-        for cx, cy, rad in merged:
-            draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=marker_color, width=3)
-            draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=marker_color)
+        # Gambar Penanda Modern HUD Scanner (High-Precision Agro-Tech Reticle)
+        color_hud = (239, 68, 68)       # Merah Neon Presisi
+        color_inner = (254, 202, 202)   # Soft Glow
+        tick = 6
 
-        return annotated, merged
+        for idx_spot, (cx, cy, rad, score) in enumerate(merged, start=1):
+            # 1. Lingkaran luar presisi (HUD Ring)
+            draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=color_hud, width=2)
+            # 2. Lingkaran konsentris dalam halus
+            inner_r = max(rad - 4, 6)
+            draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], outline=color_inner, width=1)
+            # 3. Titik pusat fokus neural
+            draw.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=color_hud)
+            # 4. Crosshair 4 arah (Target Reticle)
+            draw.line([cx - rad - tick, cy, cx - rad + 3, cy], fill=color_hud, width=2)
+            draw.line([cx + rad - 3, cy, cx + rad + tick, cy], fill=color_hud, width=2)
+            draw.line([cx, cy - rad - tick, cx, cy - rad + 3], fill=color_hud, width=2)
+            draw.line([cx, cy + rad - 3, cx, cy + rad + tick], fill=color_hud, width=2)
+
+            # 5. Label Modern Badge [LESI #1]
+            badge_label = f"LESI #{idx_spot}" if idx_spot > 1 else "LESI UTAMA"
+            badge_w = 68 if idx_spot > 1 else 78
+            badge_h = 16
+            bx1 = cx - badge_w // 2
+            by1 = cy - rad - badge_h - 4
+            bx2 = bx1 + badge_w
+            by2 = by1 + badge_h
+            if by1 > 3:
+                draw.rectangle([bx1, by1, bx2, by2], fill=(220, 38, 38))
+                draw.text((bx1 + 4, by1 + 1), badge_label, fill=(255, 255, 255))
+
+        return annotated, [(c[0], c[1], c[2]) for c in merged]
     except Exception:
         return img_rgb, []
 
@@ -1584,37 +1651,118 @@ def get_groq_recommendation(
 
     return None, angle_title
 
+def get_disease_physical_checks(primary_name, second_name=None, is_differential=False):
+    """
+    Panduan Verifikasi Cek Fisik Langsung di Sawah:
+    100% diselaraskan dengan hasil diagnosis penyakit spesifik untuk membantu petani memvalidasi gejala di bedengan.
+    """
+    p_lower = str(primary_name).lower()
+
+    if is_differential and second_name:
+        s_lower = str(second_name).lower()
+        if "xanthomonas" in p_lower or "bakteri" in p_lower or "xanthomonas" in s_lower or "bakteri" in s_lower:
+            jamur_name = primary_name if ("bakteri" not in p_lower and "xanthomonas" not in p_lower) else second_name
+            return (
+                "* 🖐️ **Uji Raba & Kelicinan Daun:**\n"
+                "  • **Hawar Bakteri (Xanthomonas):** Daun lemas kebasah-basahan (*water-soaked*) seperti tersiram air mendidih. Saat pagi berembun terasa licin berlendir.\n"
+                f"  • **Penyakit Jamur ({jamur_name}):** Tidak berlendir. Teraba kasar berbintil debu serbuk (Karat) atau bercak melekuk kering bertingkat (Bercak Ungu).\n"
+                "* 👃 **Uji Aroma Daun:**\n"
+                "  • **Bakteri (Xanthomonas):** Saat daun dipetik dan diremas, tercium bau langu agak busuk menyengat.\n"
+                "  • **Jamur:** Tidak berbau busuk, hanya aroma khas dedaunan layu biasa.\n"
+                "* 🔍 **Uji Bekas Usapan Jari:**\n"
+                "  • Jika diusap jari meninggalkan debu/serbuk warna tembaga atau oranye karat, itu adalah **Karat Daun**, bukan bakteri!"
+            )
+        else:
+            return (
+                f"* 🖐️ **Uji Raba Permukaan Daun:**\n"
+                f"  • Periksa apakah bercak terasa kasar melepuh ({primary_name}) atau melekuk kering rapuh ({second_name}).\n"
+                f"* 🔍 **Uji Pola Bercak & Spora:**\n"
+                f"  • Amati dengan teliti: apakah tampak bintil debu spora menonjol, lingkaran cincin bertingkat, atau bercak memanjang kering di ujung daun.\n"
+                f"* 👃 **Uji Aroma:**\n"
+                f"  • Kedua penyakit jamur ini kering dan tidak mengeluarkan bau busuk basah."
+            )
+
+    # Penyakit Tunggal (Single Diagnosis)
+    if "karat" in p_lower or "rust" in p_lower:
+        return (
+            "* 🖐️ **Uji Raba Permukaan Daun:** Teraba bintil-bintil lepuh kecil menonjol yang terasa kasar saat diraba jari.\n"
+            "* 🔍 **Uji Usapan Jari:** Bila bercak diusap jari, meninggalkan debu/serbuk berwarna jingga atau merah tembaga seperti serbuk besi berkarat.\n"
+            "* 👃 **Uji Aroma Daun:** Kering dan tidak berlendir, mengeluarkan aroma dedaunan biasa tanpa bau busuk basah."
+        )
+    elif "ungu" in p_lower or "trotol" in p_lower or "alternaria" in p_lower or "blotch" in p_lower:
+        return (
+            "* 🖐️ **Uji Raba Permukaan Daun:** Bercak melekuk ke dalam (cekung), helai daun di sekitar lesi terasa kaku dan rapuh mudah patah.\n"
+            "* 🔍 **Uji Cincin Konsentris:** Terlihat lingkaran-lingkaran bertingkat konsentris menyerupai sasaran panah dengan pusat keunguan kelabu bertepung spora.\n"
+            "* 👃 **Uji Aroma Daun:** Kering tanpa lendir, tidak mengeluarkan aroma busuk menyengat."
+        )
+    elif "xanthomonas" in p_lower or "bakteri" in p_lower:
+        return (
+            "* 🖐️ **Uji Kelicinan Permukaan:** Helai daun terasa lemas kebasah-basahan (*water-soaked*) seperti tersiram air mendidih. Saat pagi hari berembun terasa licin berlendir.\n"
+            "* 👃 **Uji Aroma Daun:** Bila helai daun dipetik dan diremas dengan jari, tercium aroma langu agak busuk menyengat khas infeksi bakteri.\n"
+            "* 🔍 **Uji Urat Daun:** Lesi memanjang dari ujung daun ke bawah mengikuti alur urat daun berwarna hijau pucat hingga jerami tanpa adanya tepung spora jamur."
+        )
+    elif "moler" in p_lower or "fusarium" in p_lower or "layu" in p_lower:
+        return (
+            "* 🖐️ **Uji Bentuk Daun:** Helai daun melintir-lintir abnormal bergelombang (moler) dan menguning pucat dari ujung.\n"
+            "* 🔍 **Uji Cabut Tanaman:** Tanaman sangat gampang dicabut dari tanah karena sebagian besar akar membusuk kering berwarna cokelat kehitaman.\n"
+            "* 👃 **Uji Pangkal Batang:** Tercium bau tanah masam berjamur pada perakaran yang membusuk."
+        )
+    elif "embun" in p_lower or "downy" in p_lower or "mildew" in p_lower:
+        return (
+            "* 🖐️ **Uji Lapisan Beledu:** Pada pagi hari dingin berembun, permukaan helai daun dilapisi lapisan halus seperti beledu atau kapang tipis.\n"
+            "* 🔍 **Uji Warna Kapang:** Lapisan kapang berwarna putih kelabu hingga keunguan pucat di sela-sela lekukan helai daun.\n"
+            "* 👃 **Uji Aroma Daun:** Daun terasa basah dingin namun tidak berlendir kental dan tidak berbau busuk."
+        )
+    elif "stemphylium" in p_lower or "kering ujung" in p_lower:
+        return (
+            "* 🖐️ **Uji Ujung Daun:** Ujung helai daun mengering kaku berwarna cokelat jerami memanjang ke bawah.\n"
+            "* 🔍 **Uji Bintik Spora:** Di perbatasan antara area kering dan hijau terlihat bintik hitam kecil spora jamur saat cuaca kering.\n"
+            "* 👃 **Uji Bau:** Kering dan tidak berlendir."
+        )
+    elif "ulat" in p_lower or "caterpillar" in p_lower or "grayak" in p_lower:
+        return (
+            "* 🖐️ **Uji Tabung Daun:** Helai daun terasa tipis transparan seperti selaput kaca akibat jaringan hijau dikikis dari dalam.\n"
+            "* 🔍 **Uji Kotoran Ulat:** Belah tabung daun, terlihat butiran kotoran kecil (frass) berwarna hijau kehitaman dan ulat grayak di dalam rongga daun.\n"
+            "* 👃 **Uji Daun:** Daun yang bolong transparan mengering tanpa lendir pembusukan."
+        )
+    elif "umbi" in p_lower or "bulb" in p_lower or "rot" in p_lower:
+        return (
+            "* 🖐️ **Uji Pijit Leher Umbi:** Leher dan siung umbi terasa lembek berair saat dipijit ibu jari, lapisan kulit luar terkelupas busuk basah.\n"
+            "* 👃 **Uji Bau Busuk:** Mengeluarkan aroma busuk menyengat khas pembusukan jaringan umbi basah.\n"
+            "* 🔍 **Uji Daun Atas:** Daun bagian atas layu terkulai lunglai karena leher umbi penopang membusuk."
+        )
+    elif "virus" in p_lower or "virosis" in p_lower or "iysv" in p_lower:
+        return (
+            "* 🔍 **Uji Bentuk Lesi:** Terlihat bercak klorotik kuning berbentuk ketupat (belah ketupat) khas virus thrips, atau daun bergaris belang kuning kusam.\n"
+            "* 🖐️ **Uji Kelenturan Daun:** Helai daun berkerut kaku, rapuh, dan mudah patah bila ditekuk.\n"
+            "* 👃 **Uji Bau:** Bersih tanpa lendir dan tidak berbau busuk."
+        )
+    elif "putih" in p_lower or "botrytis" in p_lower:
+        return (
+            "* 🖐️ **Uji Bintik Daun:** Bintik-bintik putih kecil (1-2 mm) melekuk di helai daun, ujung daun memutih kering seperti terbakar.\n"
+            "* 🔍 **Uji Tekstur:** Kering tanpa lendir, tidak basah berair.\n"
+            "* 👃 **Uji Bau:** Tidak berbau busuk."
+        )
+    else:
+        return (
+            f"* 🖐️ **Uji Raba Permukaan Daun:** Periksa apakah bercak pada daun {primary_name} terasa basah berlendir (bakteri) atau kering bertepung (jamur).\n"
+            "* 👃 **Uji Aroma Daun:** Daun yang terinfeksi bakteri biasanya mengeluarkan bau langu busuk saat diremas.\n"
+            "* 🔍 **Uji Bentuk Lesi:** Periksa apakah bercak berbentuk cincin bertingkat, bintil serbuk spora menonjol, atau lesi memanjang."
+        )
+
 def get_groq_physical_verification(primary_name, second_name=None, is_differential=False):
     """
-    Modul Validasi Karakteristik Fisik Menggunakan Groq LLM:
+    Modul Validasi Karakteristik Fisik:
     Menghasilkan panduan verifikasi fisik lapangan berbasis riset agronomi
-    untuk membantu petani membedakan penyakit yang mirip secara visual di kamera HP
-    (terutama Hawar Daun Bakteri Xanthomonas vs Karat Daun / Bercak Jamur).
+    diselaraskan 100% dengan diagnosis penyakit.
+    Jika Groq API offline atau kuota habis, otomatis menggunakan Database Mandiri Sistem.
     """
-    import requests
+    fallback_content = get_disease_physical_checks(primary_name, second_name, is_differential)
     api_key = get_groq_api_key()
-    
-    # Fallback lokal terverifikasi Balitsa jika kuota Groq habis atau offline
-    fallback_diff = (
-        "* 🖐️ **Uji Raba & Tekstur Permukaan:**\n"
-        "  - **Hawar Daun Bakteri (Xanthomonas):** Bercak kebasah-basahan (*water-soaked*) seperti tersiram air mendidih. Pada pagi hari berembun terasa licin berlendir.\n"
-        "  - **Penyakit Jamur (Karat / Bercak Ungu / Stemphylium):** Tidak berlendir. Karat meninggalkan serbuk oranye kemerahan di jari, sedangkan Bercak Ungu kering dengan lingkaran cincin konsentris.\n"
-        "* 👃 **Uji Aroma Daun:**\n"
-        "  - **Bakteri (Xanthomonas):** Saat helai daun dipetik dan diremas, tercium bau langu agak busuk menyengat.\n"
-        "  - **Jamur:** Tidak berbau busuk, hanya aroma khas dedaunan mengering biasa.\n"
-        "* 🔍 **Uji Bekas Usap Jari:**\n"
-        "  - Jika diusap jari meninggalkan debu/serbuk warna tembaga atau oranye karat, itu adalah **Karat Daun (Jamur Puccinia)**, bukan bakteri!"
-    )
-
-    fallback_single = (
-        "* 🖐️ **Uji Sentuh Daun:** Periksa apakah bercak terasa basah berlendir (tanda infeksi bakteri) atau kering bertepung (tanda infeksi jamur).\n"
-        "* 👃 **Uji Aroma Daun:** Daun yang terserang bakteri umumnya mengeluarkan aroma langu busuk saat diremas.\n"
-        "* 🔍 **Uji Cincin & Spora:** Amati tepi bercak dengan cermat; infeksi jamur biasanya membentuk cincin melingkar konsentris atau bintil serbuk spora."
-    )
-
     if not api_key:
-        return fallback_diff if is_differential else fallback_single
+        return fallback_content
 
+    import requests
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -1663,7 +1811,7 @@ def get_groq_physical_verification(primary_name, second_name=None, is_differenti
         except Exception:
             continue
 
-    return fallback_diff if is_differential else fallback_single
+    return fallback_content
 
 def get_system_agronomy_recommendation(info, second_info=None, is_differential=False, angle_title=None):
     """
@@ -2239,7 +2387,7 @@ if selected_image is not None:
                     with st.expander("🖼️ Peta Deteksi Lesi pada Foto (Titik Atensi Neural Model Keras)", expanded=True):
                         st.image(
                             visual_evidence["overlay_img"],
-                            caption="Peta Atensi: Lingkaran merah menandai titik pusat atensi konvolusi (Class Activation Mapping) dari model Keras tempat pola penyakit terdeteksi.",
+                            caption=f"Peta Target Lesi: Retikel scanner modern (lingkaran merah berteknologi HUD dengan crosshair) menandai titik pusat lesi aktif pada daun {info['nama_id']} yang dipelajari lapisan konvolusi MobileNetV2 Keras.",
                             use_container_width=True
                         )
                         num_spots = visual_evidence.get("num_spots_detected", 0)
@@ -2247,12 +2395,11 @@ if selected_image is not None:
                             st.success("✅ **Daun Sehat & Normal:** Model konvolusi Keras mengonfirmasi helai daun segar dan tidak menemukan titik lesi penyakit aktif.")
                         elif num_spots > 0:
                             st.caption(
-                                f"💡 **Petunjuk Deteksi ({num_spots} Titik Atensi Terdeteksi):** Lingkaran merah di atas dihasilkan langsung dari aktivasi lapisan konvolusi MobileNetV2 Keras pada foto helai daun Anda (mempelajari pola fitur neural asli, bukan penandaan acak). "
-                                "Fokuskan sanitasi pemangkasan daun sakit dan penyemprotan obat pada area yang ditandai tersebut."
+                                f"💡 **Petunjuk Deteksi ({num_spots} Titik Lesi Terdeteksi):** Retikel scanner modern di atas memetakan fokus atensi jaringan konvolusi MobileNetV2 secara tepat pada helai daun tanaman. Area bertanda **[LESI UTAMA]** menunjukkan konsentrasi kerusakan tertinggi tempat infeksi aktif berkembang. Fokuskan sanitasi pemangkasan daun sakit dan penyemprotan obat pada titik-titik tersebut."
                             )
                         else:
                             st.caption(
-                                "💡 **Petunjuk Deteksi:** Lingkaran penanda dihasilkan langsung dari aktivasi lapisan konvolusi model Keras pada foto helai daun Anda."
+                                "💡 **Petunjuk Deteksi:** Retikel scanner presisi dihasilkan langsung dari aktivasi lapisan konvolusi model Keras pada foto helai daun Anda."
                             )
 
             # Distribusi Probabilitas Top-3 (Pola Model Keras 15 Kategori)
@@ -2266,7 +2413,7 @@ if selected_image is not None:
                     st.progress(min(max(score_k / 100.0, 0.0), 1.0))
 
             # ==============================================================================
-            # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN (GROQ LLM)
+            # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN
             # ==============================================================================
             if not is_healthy:
                 phys_cache_key = f"phys_{top_class_raw}_{second_class_raw}_{is_differential}"
@@ -2280,14 +2427,20 @@ if selected_image is not None:
                 phys_content = st.session_state[phys_cache_key]
                 html_phys = format_card_text_to_html(phys_content)
 
+                phys_sub_text = (
+                    f"Cocokkan tanda fisik berikut langsung di bedengan untuk memastikan apakah daun terserang <strong>{info['nama_id']}</strong> atau <strong>{second_info['nama_id']}</strong>:"
+                    if is_differential
+                    else f"Cocokkan tanda fisik berikut langsung pada tanaman di sawah untuk memastikan gejala penyakit <strong>{info['nama_id']}</strong>:"
+                )
+
                 st.markdown(f"""
                     <div style="background: #FFFFFF; border-radius: 16px; border: 1.5px solid #CBD5E1; padding: 1.15rem 1.25rem; margin: 1rem 0; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
                         <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem;">
                             <span style="font-size: 1.35rem;">🔬</span>
-                            <span style="font-size: 1.1rem; font-weight: 800; color: #0F172A;">Verifikasi Karakteristik Fisik Langsung di Sawah (Groq AI)</span>
+                            <span style="font-size: 1.1rem; font-weight: 800; color: #0F172A;">Verifikasi Karakteristik Fisik Langsung di Sawah</span>
                         </div>
                         <div style="font-size: 0.88rem; color: #475569; margin-bottom: 0.85rem; line-height: 1.55;">
-                            Gunakan panduan fisik berikut untuk memvalidasi gejala langsung pada daun bawang merah (mencegah kesalahan klasifikasi visual kamera HP antara <strong>Hawar Daun Bakteri (Xanthomonas)</strong> dan <strong>Karat Daun / Bercak Jamur</strong>):
+                            {phys_sub_text}
                         </div>
                         <div style="background: #F8FAFC; border-radius: 12px; padding: 0.95rem 1.1rem; border-left: 4px solid #0284C7; font-size: 0.92rem; color: #1E293B; line-height: 1.65;">
                             {html_phys}
