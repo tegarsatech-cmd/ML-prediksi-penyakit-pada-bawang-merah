@@ -126,6 +126,71 @@ st.markdown("""
         }
     }
 
+    /* Anti-Crop & Responsive Metric Card Styling */
+    .metric-anti-crop {
+        background: #FFFFFF !important;
+        border: 1.5px solid #CBD5E1 !important;
+        border-radius: 14px !important;
+        padding: 0.85rem 1rem !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        min-height: 88px !important;
+        box-sizing: border-box !important;
+        word-break: break-word !important;
+        overflow: visible !important;
+    }
+    .metric-anti-crop-label {
+        font-size: 0.82rem !important;
+        font-weight: 700 !important;
+        color: #475569 !important;
+        margin-bottom: 4px !important;
+        line-height: 1.25 !important;
+    }
+    .metric-anti-crop-val {
+        font-size: 1.30rem !important;
+        font-weight: 900 !important;
+        line-height: 1.2 !important;
+        word-break: break-word !important;
+        overflow: visible !important;
+    }
+    .metric-anti-crop-delta {
+        font-size: 0.78rem !important;
+        font-weight: 700 !important;
+        margin-top: 4px !important;
+        line-height: 1.2 !important;
+        word-break: break-word !important;
+    }
+
+    /* Universal Anti-Crop Override untuk Streamlit Metric */
+    [data-testid="stMetric"] {
+        background: #FFFFFF !important;
+        border: 1.5px solid #CBD5E1 !important;
+        border-radius: 14px !important;
+        padding: 0.75rem 0.95rem !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
+        overflow: visible !important;
+        word-break: break-word !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.22rem !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+        overflow: visible !important;
+        line-height: 1.25 !important;
+        color: #0F172A !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.85rem !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+        color: #475569 !important;
+    }
+    [data-testid="stMetricDelta"] {
+        white-space: normal !important;
+        word-break: break-word !important;
+    }
     /* 2. Standar Tipografi Kontras Tinggi (Minimal 18px) */
     html, body, .stApp, .main {
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
@@ -1093,17 +1158,26 @@ def validate_onion_image(image: Image.Image, api_key: str | None = None, min_rat
 # Alias untuk kompatibilitas
 validate_with_groq_vision = validate_onion_image
 
-def inspect_visual_leaf_symptoms(image: Image.Image, target_disease: str = "", is_healthy: bool = False) -> dict:
+def inspect_visual_leaf_symptoms(
+    image: Image.Image,
+    target_disease: str = "",
+    is_healthy: bool = False,
+    is_pure_healthy: bool = False,
+    diag_mode: str = "single",
+    secondary_disease: str = "",
+    tertiary_disease: str = ""
+) -> dict:
     """
     Modul Inspeksi Fitur Visual Citra Daun Bawang Merah:
-    Menganalisis karakteristik visual fisik helai daun secara sinkron dengan vonis AI.
-    Jika daun sehat (is_healthy=True), secara tegas menetapkan kerusakan 0% dan kondisi sehat prima
-    tanpa memunculkan peringatan karat atau penyakit palsu.
+    Menganalisis karakteristik visual fisik helai daun secara sinkron dengan hasil prediksi model.
+    Jika daun sehat murni (is_pure_healthy=True), secara tegas menetapkan kerusakan 0% dan kondisi sehat prima.
+    Jika terdeteksi gejala penyakit (meskipun sehat berada di peringkat 1 namun bersaing dengan hawar/virus),
+    sistem menghitung kerusakan piksel nyata dari helai daun secara presisi tanpa angka fiktif.
     """
-    if is_healthy or "sehat" in target_disease.lower():
+    if is_pure_healthy or (is_healthy and diag_mode == "single" and not secondary_disease):
         return {
             "has_visual_evidence": True,
-            "evidence_disease": "Healthy leaves",
+            "evidence_disease": "Daun Sehat & Normal",
             "suspected_rust": False,
             "override_applied": False,
             "severity_pct": 0.0,
@@ -1176,29 +1250,25 @@ def inspect_visual_leaf_symptoms(image: Image.Image, target_disease: str = "", i
                 "overlay_img": image
             }
 
-        # Filter lesi spesifik
-        name_lower = (target_disease or "").lower()
+        name_lower = f"{target_disease} {secondary_disease} {tertiary_disease}".lower()
+        is_les = np.zeros(h_arr.shape, dtype=bool)
+
         if "rust" in name_lower or "karat" in name_lower:
-            is_les = (h_arr >= 7.0) & (h_arr <= 28.0) & (r > g * 1.08) & (s_arr >= 0.22) & (v_arr >= 0.15) & (v_arr <= 0.85)
-            metric_label = "Karat"
-        elif "trotol" in name_lower or "bercak" in name_lower or "alternaria" in name_lower:
-            is_les = ((h_arr <= 16.0) | (h_arr >= 265.0)) & (r > g * 1.05) & (s_arr >= 0.15) & (v_arr >= 0.08) & (v_arr <= 0.70)
-            metric_label = "Bercak Ungu"
-        elif "hawar" in name_lower or "stemphylium" in name_lower or "colletotrichum" in name_lower:
-            is_les = (h_arr >= 18.0) & (h_arr <= 42.0) & (s_arr >= 0.12) & (v_arr >= 0.15) & (g >= r * 0.70)
-            metric_label = "Hawar Daun"
-        elif "moler" in name_lower or "fusarium" in name_lower or "inul" in name_lower:
-            is_les = (h_arr >= 26.0) & (h_arr <= 50.0) & (s_arr >= 0.15) & (v_arr >= 0.20)
-            metric_label = "Layu Moler"
-        elif "virus" in name_lower or "iysv" in name_lower or "mildew" in name_lower:
-            is_les = (h_arr >= 25.0) & (h_arr <= 55.0) & (s_arr >= 0.12) & (v_arr >= 0.30)
-            metric_label = "Klorosis Daun"
-        else:
+            is_les |= ((h_arr >= 7.0) & (h_arr <= 28.0) & (r > g * 1.08) & (s_arr >= 0.22) & (v_arr >= 0.15) & (v_arr <= 0.85))
+        if "trotol" in name_lower or "bercak" in name_lower or "alternaria" in name_lower:
+            is_les |= (((h_arr <= 16.0) | (h_arr >= 265.0)) & (r > g * 1.05) & (s_arr >= 0.15) & (v_arr >= 0.08) & (v_arr <= 0.70))
+        if "hawar" in name_lower or "stemphylium" in name_lower or "colletotrichum" in name_lower:
+            is_les |= ((h_arr >= 18.0) & (h_arr <= 42.0) & (s_arr >= 0.12) & (v_arr >= 0.15) & (g >= r * 0.70))
+        if "moler" in name_lower or "fusarium" in name_lower or "inul" in name_lower:
+            is_les |= ((h_arr >= 26.0) & (h_arr <= 50.0) & (s_arr >= 0.15) & (v_arr >= 0.20))
+        if "virus" in name_lower or "iysv" in name_lower or "mildew" in name_lower or "embun" in name_lower:
+            is_les |= ((h_arr >= 25.0) & (h_arr <= 55.0) & (s_arr >= 0.12) & (v_arr >= 0.30))
+
+        if not np.any(is_les):
             is_les = (h_arr >= 10.0) & (h_arr <= 45.0) & (s_arr >= 0.15) & (v_arr >= 0.12)
-            metric_label = "Lesi Patogen"
 
         les_pixels = int(np.count_nonzero(is_les & is_plant))
-        severity_pct = round(min(max((les_pixels / total_plant) * 100.0, 3.0), 92.0), 1)
+        severity_pct = round(min(max((les_pixels / total_plant) * 100.0, 3.5), 92.0), 1)
         healthy_pct = round(max(100.0 - severity_pct, 5.0), 1)
 
         if severity_pct < 10.0:
@@ -1210,11 +1280,24 @@ def inspect_visual_leaf_symptoms(image: Image.Image, target_disease: str = "", i
         else:
             severity_level = "Berat / Kritis (> 50%)"
 
-        ev_desc = (
-            f"Pemindaian visual mengonfirmasi gejala khas {target_disease} "
-            f"dengan tingkat keparahan {severity_level} (estimasi jaringan daun terdampak: {severity_pct}%, "
-            f"jaringan daun hijau tersisa: {healthy_pct}%)."
-        )
+        if diag_mode == "three_way":
+            ev_desc = (
+                f"Pemindaian visual helai daun mendeteksi sekitar {severity_pct}% area daun memperlihatkan "
+                f"gejala perubahan warna, klorosis, dan pengeringan ujung (indikasi infeksi awal {secondary_disease} "
+                f"dan {tertiary_disease}), sementara {healthy_pct}% jaringan daun hijau masih utuh."
+            )
+        elif diag_mode == "two_way":
+            ev_desc = (
+                f"Pemindaian visual mengonfirmasi gejala infeksi fisik {target_disease} / {secondary_disease} "
+                f"dengan tingkat keparahan {severity_level} (estimasi jaringan terdampak: {severity_pct}%, "
+                f"jaringan daun hijau tersisa: {healthy_pct}%)."
+            )
+        else:
+            ev_desc = (
+                f"Pemindaian visual mengonfirmasi gejala khas {target_disease} "
+                f"dengan tingkat keparahan {severity_level} (estimasi jaringan daun terdampak: {severity_pct}%, "
+                f"jaringan daun hijau tersisa: {healthy_pct}%)."
+            )
 
         return {
             "has_visual_evidence": True,
@@ -1231,7 +1314,7 @@ def inspect_visual_leaf_symptoms(image: Image.Image, target_disease: str = "", i
             "evidence_desc": ev_desc,
             "overlay_img": image
         }
-    except Exception as e:
+    except Exception:
         return {
             "has_visual_evidence": True,
             "evidence_disease": target_disease,
@@ -1281,280 +1364,344 @@ def generate_lesion_hud_map(
     target_class_idx: int = 0,
     is_healthy: bool = False,
     second_class_idx: int | None = None,
+    third_class_idx: int | None = None,
     primary_name: str = "Penyakit A",
     second_name: str | None = None,
+    third_name: str | None = None,
     is_differential: bool = False,
     has_multi_disease: bool = False,
+    has_three_diseases: bool = False,
+    is_pure_healthy: bool = False,
     model=None,
     **kwargs
 ):
     """
-    Peta HUD Scanner Titik Kerusakan Daun Bawang Merah (v5 - True Leaf-Locked Lesion Detection).
-    Mendeteksi posisi bercak / pustule / nekrosis spesifik penyakit langsung pada helai daun,
-    mengabaikan latar belakang, tanah sawah, pantulan cahaya, dan tangan petani.
+    Peta HUD Scanner Titik Kerusakan Daun Bawang Merah (v7 - Adaptive Multi-Rank 1-2-3 Detection).
+    Menandai 1, 2, atau 3 penyakit/kondisi tergantung distribusi keyakinan model.
     """
     img_rgb = image.convert("RGB")
     W, H = img_rgb.size
 
-    try:
-        if cv2 is None:
-            raise RuntimeError("OpenCV tidak tersedia")
+    scale = min(1.0, 512.0 / float(max(W, H)))
+    ww, hh = max(8, int(round(W * scale))), max(8, int(round(H * scale)))
+    work = img_rgb.resize((ww, hh), Image.Resampling.BILINEAR) if scale < 1.0 else img_rgb
+    arr_u8 = cv2.GaussianBlur(np.asarray(work, dtype=np.uint8), (3, 3), 0)
+    arr = arr_u8.astype(np.float32)
+    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
 
-        scale = min(1.0, 512.0 / float(max(W, H)))
-        ww, hh = max(8, int(round(W * scale))), max(8, int(round(H * scale)))
-        work = img_rgb.resize((ww, hh), Image.Resampling.BILINEAR) if scale < 1.0 else img_rgb
-        arr_u8 = cv2.GaussianBlur(np.asarray(work, dtype=np.uint8), (3, 3), 0)
-        arr = arr_u8.astype(np.float32)
-        r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    hsv = cv2.cvtColor(arr_u8, cv2.COLOR_RGB2HSV).astype(np.float32)
+    hue = hsv[:, :, 0] * 2.0
+    sat = hsv[:, :, 1] / 255.0
+    val = hsv[:, :, 2] / 255.0
+    total = r + g + b + 1.0
+    gn = g / total
+    rn = r / total
+    exg = 2.0 * g - r - b
+    g_over_r = g / (r + 1.0)
+    min_side = min(ww, hh)
+    img_area = float(ww * hh)
 
-        hsv = cv2.cvtColor(arr_u8, cv2.COLOR_RGB2HSV).astype(np.float32)
-        hue = hsv[:, :, 0] * 2.0
-        sat = hsv[:, :, 1] / 255.0
-        val = hsv[:, :, 2] / 255.0
-        total = r + g + b + 1.0
-        gn = g / total
-        rn = r / total
-        exg = 2.0 * g - r - b
-        g_over_r = g / (r + 1.0)
-        min_side = min(ww, hh)
-        img_area = float(ww * hh)
+    # 1. Deteksi objek non-daun (kulit tangan, tanah sawah, pantulan cahaya, kegelapan)
+    is_skin = (
+        (hue >= 4.0) & (hue <= 30.0) & (sat >= 0.15) & (sat <= 0.62) &
+        (val >= 0.30) & (r > g * 1.10) & (g > b * 1.02) & (rn >= 0.38)
+    )
+    is_soil = (
+        (hue >= 8.0) & (hue <= 42.0) & (sat >= 0.15) & (sat <= 0.50) &
+        (g_over_r < 0.86) & (exg < 12.0) & (r - b < 70.0)
+    )
+    is_neutral = (sat < 0.10) & ((val > 0.85) | (val < 0.10))
+    is_specular = (sat < 0.12) & (val > 0.90)
+    is_too_dark = val < 0.07
 
-        # 1. Deteksi objek non-daun yang wajib dibuang
-        is_skin = (
-            (hue >= 4.0) & (hue <= 30.0) & (sat >= 0.15) & (sat <= 0.62) &
-            (val >= 0.30) & (r > g * 1.10) & (g > b * 1.02) & (rn >= 0.38)
-        )
-        # Tanah sawah: kusam, tidak jenuh tinggi (sat < 0.50), bukan oranye karat cerah
-        is_soil = (
-            (hue >= 8.0) & (hue <= 42.0) & (sat >= 0.15) & (sat <= 0.50) &
-            (g_over_r < 0.86) & (exg < 12.0) & (r - b < 70.0)
-        )
-        is_neutral = (sat < 0.10) & ((val > 0.85) | (val < 0.10))
-        is_specular = (sat < 0.12) & (val > 0.90)
-        is_too_dark = val < 0.07
+    # 2. Daun hijau inti (green core) & jaringan kuning terhubung
+    green_core = (
+        (hue >= 42.0) & (hue <= 170.0) & (sat >= 0.12) & (val >= 0.08) &
+        (gn >= 0.355) & (exg > 6.0) & (~is_skin) & (~is_soil)
+    )
+    yellow_tissue = (
+        (hue >= 36.0) & (hue <= 72.0) & (sat >= 0.16) & (val >= 0.28) &
+        (g_over_r >= 0.84) & (~is_skin) & (~is_soil)
+    )
 
-        # 2. Daun hijau inti (green core) & jaringan kuning terhubung
-        green_core = (
-            (hue >= 42.0) & (hue <= 170.0) & (sat >= 0.12) & (val >= 0.08) &
-            (gn >= 0.355) & (exg > 6.0) & (~is_skin) & (~is_soil)
-        )
-        yellow_tissue = (
-            (hue >= 36.0) & (hue <= 72.0) & (sat >= 0.16) & (val >= 0.28) &
-            (g_over_r >= 0.84) & (~is_skin) & (~is_soil)
-        )
+    k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    green_u8 = cv2.morphologyEx(green_core.astype(np.uint8), cv2.MORPH_OPEN, k3)
+    tissue = ((green_u8 > 0) | yellow_tissue).astype(np.uint8)
 
-        k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        green_u8 = cv2.morphologyEx(green_core.astype(np.uint8), cv2.MORPH_OPEN, k3)
-        tissue = ((green_u8 > 0) | yellow_tissue).astype(np.uint8)
+    n_t, lab_t, stats_t, _ = cv2.connectedComponentsWithStats(tissue, connectivity=8)
+    keep = np.zeros(n_t, dtype=bool)
+    if n_t > 1:
+        green_count = np.bincount(lab_t.ravel(), weights=(green_u8.ravel() > 0), minlength=n_t)
+        for i in range(1, n_t):
+            if green_count[i] >= max(12.0, 0.08 * stats_t[i, cv2.CC_STAT_AREA]):
+                keep[i] = True
+        if not keep[1:].any():
+            keep[1 + int(np.argmax(stats_t[1:, cv2.CC_STAT_AREA]))] = True
+    leaf_core = keep[lab_t] if n_t > 1 else np.zeros((hh, ww), dtype=bool)
 
-        n_t, lab_t, stats_t, _ = cv2.connectedComponentsWithStats(tissue, connectivity=8)
-        keep = np.zeros(n_t, dtype=bool)
-        if n_t > 1:
-            green_count = np.bincount(lab_t.ravel(), weights=(green_u8.ravel() > 0), minlength=n_t)
-            for i in range(1, n_t):
-                if green_count[i] >= max(12.0, 0.08 * stats_t[i, cv2.CC_STAT_AREA]):
-                    keep[i] = True
-            if not keep[1:].any():
-                keep[1 + int(np.argmax(stats_t[1:, cv2.CC_STAT_AREA]))] = True
-        leaf_core = keep[lab_t] if n_t > 1 else np.zeros((hh, ww), dtype=bool)
+    core_u8 = cv2.morphologyEx(leaf_core.astype(np.uint8), cv2.MORPH_CLOSE, k3)
+    n_c, lab_c, stats_c, _ = cv2.connectedComponentsWithStats(core_u8, connectivity=8)
+    if n_c > 1:
+        areas = stats_c[1:, cv2.CC_STAT_AREA]
+        min_keep = max(0.08 * float(areas.max()), 0.002 * img_area)
+        valid = np.zeros(n_c, dtype=bool)
+        valid[1:] = areas >= min_keep
+        core_u8 = valid[lab_c].astype(np.uint8)
 
-        core_u8 = cv2.morphologyEx(leaf_core.astype(np.uint8), cv2.MORPH_CLOSE, k3)
-        n_c, lab_c, stats_c, _ = cv2.connectedComponentsWithStats(core_u8, connectivity=8)
-        if n_c > 1:
-            areas = stats_c[1:, cv2.CC_STAT_AREA]
-            min_keep = max(0.08 * float(areas.max()), 0.002 * img_area)
-            valid = np.zeros(n_c, dtype=bool)
-            valid[1:] = areas >= min_keep
-            core_u8 = valid[lab_c].astype(np.uint8)
+    k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (_hud_odd(min_side * 0.03), _hud_odd(min_side * 0.03)))
+    closed = cv2.morphologyEx(core_u8, cv2.MORPH_CLOSE, k_close)
 
-        # Tutup celah lesi di DALAM helai daun menggunakan closing morfologi
-        k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (_hud_odd(min_side * 0.03), _hud_odd(min_side * 0.03)))
-        closed = cv2.morphologyEx(core_u8, cv2.MORPH_CLOSE, k_close)
+    leaf_region = closed.astype(bool)
+    inv_closed = (closed == 0).astype(np.uint8)
+    n_h, lab_h, stats_h, _ = cv2.connectedComponentsWithStats(inv_closed, connectivity=8)
+    for i in range(1, n_h):
+        area_h = stats_h[i, cv2.CC_STAT_AREA]
+        x0, y0 = stats_h[i, cv2.CC_STAT_LEFT], stats_h[i, cv2.CC_STAT_TOP]
+        w0, h0 = stats_h[i, cv2.CC_STAT_WIDTH], stats_h[i, cv2.CC_STAT_HEIGHT]
+        is_border = (x0 == 0) or (y0 == 0) or (x0 + w0 >= ww) or (y0 + h0 >= hh)
+        if (not is_border) and (area_h < 0.035 * img_area):
+            leaf_region |= (lab_h == i)
 
-        # Isi HANYA lubang internal kecil (area < 3.5% img_area) di dalam masing-masing daun
-        leaf_region = closed.astype(bool)
-        inv_closed = (closed == 0).astype(np.uint8)
-        n_h, lab_h, stats_h, _ = cv2.connectedComponentsWithStats(inv_closed, connectivity=8)
-        for i in range(1, n_h):
-            area_h = stats_h[i, cv2.CC_STAT_AREA]
-            x0, y0 = stats_h[i, cv2.CC_STAT_LEFT], stats_h[i, cv2.CC_STAT_TOP]
-            w0, h0 = stats_h[i, cv2.CC_STAT_WIDTH], stats_h[i, cv2.CC_STAT_HEIGHT]
-            is_border = (x0 == 0) or (y0 == 0) or (x0 + w0 >= ww) or (y0 + h0 >= hh)
-            if (not is_border) and (area_h < 0.035 * img_area):
-                leaf_region |= (lab_h == i)
+    leaf_region &= ~(is_soil | is_skin | is_neutral | is_specular | is_too_dark)
 
-        leaf_region &= ~(is_soil | is_skin | is_neutral | is_specular | is_too_dark)
+    mx, my = max(2, int(ww * 0.015)), max(2, int(hh * 0.015))
+    leaf_region[:my, :] = False
+    leaf_region[-my:, :] = False
+    leaf_region[:, :mx] = False
+    leaf_region[:, -mx:] = False
 
-        mx, my = max(2, int(ww * 0.015)), max(2, int(hh * 0.015))
-        leaf_region[:my, :] = False
-        leaf_region[-my:, :] = False
-        leaf_region[:, :mx] = False
-        leaf_region[:, -mx:] = False
+    if leaf_region.sum() < max(60, int(0.004 * img_area)):
+        leaf_region = (~is_skin) & (~is_soil) & (~is_too_dark)
 
-        if leaf_region.sum() < max(60, int(0.004 * img_area)):
-            leaf_region = (~is_skin) & (~is_soil) & (~is_too_dark)
+    healthy_green = green_core & leaf_region & (sat >= 0.18)
+    ref_px = healthy_green if healthy_green.sum() >= 40 else leaf_region
+    med_v = float(np.median(val[ref_px])) if ref_px.any() else 0.5
+    med_s = float(np.median(sat[ref_px])) if ref_px.any() else 0.4
+    med_v = max(med_v, 0.12)
+    med_s = max(med_s, 0.10)
+    rel_v = val / med_v
+    rel_s = sat / med_s
 
-        healthy_green = green_core & leaf_region & (sat >= 0.18)
-        ref_px = healthy_green if healthy_green.sum() >= 40 else leaf_region
-        med_v = float(np.median(val[ref_px])) if ref_px.any() else 0.5
-        med_s = float(np.median(sat[ref_px])) if ref_px.any() else 0.4
-        med_v = max(med_v, 0.12)
-        med_s = max(med_s, 0.10)
-        rel_v = val / med_v
-        rel_s = sat / med_s
+    greenness = np.clip((gn - 0.33) / 0.10, 0.0, 1.0) * np.clip(exg / 40.0, 0.0, 1.0)
+    not_green = 1.0 - greenness
 
-        greenness = np.clip((gn - 0.33) / 0.10, 0.0, 1.0) * np.clip(exg / 40.0, 0.0, 1.0)
-        not_green = 1.0 - greenness
-
-        # 3. Model Penilaian Warna dan Pola Lesi Spesifik Setiap Penyakit
-        def disease_score_map(name: str) -> np.ndarray:
-            n = (name or "").lower()
-            if "karat" in n or "rust" in n or "puccinia" in n:
-                rust_col = (hue >= 12.0) & (hue <= 48.0) & (r > g * 1.04) & (r > b * 1.20) & (sat >= 0.26)
-                s = np.where(rust_col, clip01((r - g) / 35.0) * clip01((sat - 0.25) / 0.35), 0.0)
-            elif "trotol" in n or "bercak" in n or "alternaria" in n or "purple" in n:
-                purple = ((hue >= 240.0) | (hue <= 24.0)) & (sat >= 0.10)
-                dark_sunken = (rel_v < 0.72) & (not_green > 0.25)
-                match = purple | dark_sunken
-                s = np.where(match, 0.50 * clip01((0.75 - rel_v) / 0.40) + 0.35 * purple.astype(np.float32) + 0.15 * not_green, 0.0)
-            elif "embun" in n or "mildew" in n or "peronospora" in n:
-                pale = (hue >= 30.0) & (hue <= 110.0) & (sat <= 0.35) & (val >= 0.25) & (val <= 0.90)
-                s = np.where(pale, 0.50 * clip01((0.36 - sat) / 0.25) + 0.30 * clip01(1.0 - np.abs(rel_v - 1.0) / 0.5) + 0.20 * not_green, 0.0)
-            elif "hawar" in n or "blight" in n or "stemphylium" in n or "colletotrichum" in n:
-                tan = (hue >= 16.0) & (hue <= 62.0) & (sat >= 0.10) & (sat <= 0.65) & (val >= 0.30) & (not_green > 0.35)
-                s = np.where(tan, 0.45 * not_green + 0.35 * clip01((val - 0.30) / 0.40) + 0.20 * clip01((r - b) / 40.0), 0.0)
-            elif "moler" in n or "fusarium" in n or "inul" in n:
-                yellow = (hue >= 38.0) & (hue <= 68.0) & (sat >= 0.26) & (val >= 0.35) & (g > b * 1.15)
-                s = np.where(yellow, 0.50 * clip01((sat - 0.24) / 0.35) + 0.30 * clip01((val - 0.35) / 0.45) + 0.20 * not_green, 0.0)
-            elif "virus" in n or "iysv" in n:
-                straw = (hue >= 26.0) & (hue <= 64.0) & (sat >= 0.10) & (sat <= 0.55) & (val >= 0.35) & (not_green > 0.35)
-                s = np.where(straw, 0.45 * not_green + 0.35 * clip01((val - 0.32) / 0.40) + 0.20 * clip01((0.55 - sat) / 0.35), 0.0)
-            else:
-                s = np.where(not_green > 0.30, 0.7 * not_green + 0.3 * clip01(np.abs(1.0 - rel_v) / 0.5), 0.0)
-
-            # Lesi wajib berada di dalam area daun yang terisolasi dari tanah/kulit
-            s = np.where(leaf_region, s.astype(np.float32), 0.0)
-            return s
-
-        base_rad_w = max(9, int(min_side * 0.045))
-        min_dist_w = max(18, int(min_side * 0.12))
-
-        def find_peak_spot(score_map, exclude_mask=None):
-            sm = score_map.copy()
-            if exclude_mask is not None:
-                sm = np.where(exclude_mask, 0.0, sm)
-            if sm.max() <= 0.05:
-                # Fallback jika warna spesifik sangat tipis: cari area paling terdegradasi di helai daun
-                fallback_score = np.where(leaf_region, not_green, 0.0)
-                if exclude_mask is not None:
-                    fallback_score = np.where(exclude_mask, 0.0, fallback_score)
-                sm = fallback_score
-
-            smoothed = cv2.GaussianBlur(sm.astype(np.float32), (11, 11), 0)
-            iy, ix = np.unravel_index(np.argmax(smoothed), smoothed.shape)
-            val_peak = float(smoothed[iy, ix])
-            if val_peak <= 0.01:
-                # Titik tengah daun jika tidak terdeteksi kerusakan
-                cnts, _ = cv2.findContours(leaf_region.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                if cnts:
-                    M = cv2.moments(cnts[0])
-                    if M["m00"] > 0:
-                        return {"x": int(M["m10"] / M["m00"]), "y": int(M["m01"] / M["m00"]), "r": base_rad_w, "score": 0.0}
-                return {"x": ww // 2, "y": hh // 2, "r": base_rad_w, "score": 0.0}
-
-            local_thr = max(0.12, val_peak * 0.55)
-            local_mask = (smoothed >= local_thr).astype(np.uint8)
-            n_l, lab_l, stats_l, _ = cv2.connectedComponentsWithStats(local_mask, connectivity=8)
-            target_lab = lab_l[iy, ix]
-            if target_lab > 0:
-                area_l = stats_l[target_lab, cv2.CC_STAT_AREA]
-                rad_l = int(np.clip(np.sqrt(area_l / np.pi) * 1.25, base_rad_w, int(min_side * 0.09)))
-            else:
-                rad_l = base_rad_w
-
-            return {"x": int(ix), "y": int(iy), "r": rad_l, "score": val_peak}
-
-        spots_w = []
-        is_healthy_leaf = is_healthy or "sehat" in (primary_name or "").lower() or "healthy" in (primary_name or "").lower()
-        second_ok = bool(second_name) and ("sehat" not in second_name.lower()) and ("healthy" not in second_name.lower())
-
-        if is_healthy_leaf:
-            hg = (healthy_green if healthy_green.sum() >= 20 else leaf_region).astype(np.uint8)
-            dist = cv2.distanceTransform(hg, cv2.DIST_L2, 3)
-            iy, ix = np.unravel_index(int(np.argmax(dist)), dist.shape)
-            spots_w.append((int(ix), int(iy), base_rad_w, "[OK] Daun Sehat", "green"))
+    def disease_score_map(name: str) -> np.ndarray:
+        n = (name or "").lower()
+        if "karat" in n or "rust" in n or "puccinia" in n:
+            rust_col = (hue >= 12.0) & (hue <= 48.0) & (r > g * 1.04) & (r > b * 1.20) & (sat >= 0.26)
+            s = np.where(rust_col, clip01((r - g) / 35.0) * clip01((sat - 0.25) / 0.35), 0.0)
+        elif "trotol" in n or "bercak" in n or "alternaria" in n or "purple" in n:
+            purple = ((hue >= 240.0) | (hue <= 24.0)) & (sat >= 0.10)
+            dark_sunken = (rel_v < 0.72) & (not_green > 0.25)
+            match = purple | dark_sunken
+            s = np.where(match, 0.50 * clip01((0.75 - rel_v) / 0.40) + 0.35 * purple.astype(np.float32) + 0.15 * not_green, 0.0)
+        elif "embun" in n or "mildew" in n or "peronospora" in n:
+            pale = (hue >= 30.0) & (hue <= 110.0) & (sat <= 0.35) & (val >= 0.25) & (val <= 0.90)
+            s = np.where(pale, 0.50 * clip01((0.36 - sat) / 0.25) + 0.30 * clip01(1.0 - np.abs(rel_v - 1.0) / 0.5) + 0.20 * not_green, 0.0)
+        elif "hawar" in n or "blight" in n or "stemphylium" in n or "colletotrichum" in n:
+            tan = (hue >= 16.0) & (hue <= 62.0) & (sat >= 0.10) & (sat <= 0.65) & (val >= 0.30) & (not_green > 0.35)
+            s = np.where(tan, 0.45 * not_green + 0.35 * clip01((val - 0.30) / 0.40) + 0.20 * clip01((r - b) / 40.0), 0.0)
+        elif "moler" in n or "fusarium" in n or "inul" in n:
+            yellow = (hue >= 38.0) & (hue <= 68.0) & (sat >= 0.26) & (val >= 0.35) & (g > b * 1.15)
+            s = np.where(yellow, 0.50 * clip01((sat - 0.24) / 0.35) + 0.30 * clip01((val - 0.35) / 0.45) + 0.20 * not_green, 0.0)
+        elif "virus" in n or "iysv" in n:
+            straw = (hue >= 24.0) & (hue <= 64.0) & (sat >= 0.10) & (sat <= 0.55) & (val >= 0.30) & (not_green > 0.30)
+            s = np.where(straw, 0.45 * not_green + 0.35 * clip01((val - 0.30) / 0.40) + 0.20 * clip01((0.55 - sat) / 0.35), 0.0)
+        elif "sehat" in n or "healthy" in n:
+            s = np.where(green_core, 0.7 * greenness + 0.3 * sat, 0.0)
         else:
-            title_1 = get_short_disease_title(primary_name)
-            score_1 = disease_score_map(primary_name)
-            spot_1 = find_peak_spot(score_1)
-            spots_w.append((spot_1["x"], spot_1["y"], spot_1["r"], f"[1] {title_1}", "red"))
+            s = np.where(not_green > 0.30, 0.7 * not_green + 0.3 * clip01(np.abs(1.0 - rel_v) / 0.5), 0.0)
 
-            yy, xx = np.ogrid[:hh, :ww]
-            excl = (xx - spot_1["x"]) ** 2 + (yy - spot_1["y"]) ** 2 < max(min_dist_w, spot_1["r"] * 2) ** 2
+        s = np.where(leaf_region, s.astype(np.float32), 0.0)
+        return s
 
-            if (has_multi_disease or is_differential) and second_ok:
-                title_2 = get_short_disease_title(second_name)
-                score_2 = disease_score_map(second_name)
-                spot_2 = find_peak_spot(score_2, exclude_mask=excl)
-                if spot_2 and spot_2["score"] >= 0.10:
-                    spots_w.append((spot_2["x"], spot_2["y"], spot_2["r"], f"[2] {title_2}", "orange"))
-            else:
-                # Deteksi lesi kedua dari penyakit yang sama bila terdapat lesi sekunder yang signifikan
-                spot_2 = find_peak_spot(score_1, exclude_mask=excl)
-                if spot_2 and spot_2["score"] >= max(0.20, spot_1["score"] * 0.45):
-                    spots_w.append((spot_2["x"], spot_2["y"], spot_2["r"], f"[1] {title_1} #2", "red"))
+    base_rad_w = max(9, int(min_side * 0.045))
+    min_dist_w = max(18, int(min_side * 0.12))
 
-        # 4. Skala balik ke resolusi gambar asli & gambar HUD
-        inv = 1.0 / scale
-        spots = [
-            (int(round(x * inv)), int(round(y * inv)), max(10, int(round(rad * inv))), label, color)
-            for (x, y, rad, label, color) in spots_w
-        ]
+    def find_peak_spot(score_map, exclude_mask=None):
+        sm = score_map.copy()
+        if exclude_mask is not None:
+            sm = np.where(exclude_mask, 0.0, sm)
+        if sm.max() <= 0.05:
+            fallback_score = np.where(leaf_region, not_green, 0.0)
+            if exclude_mask is not None:
+                fallback_score = np.where(exclude_mask, 0.0, fallback_score)
+            sm = fallback_score
 
-        annotated = img_rgb.copy()
-        draw = ImageDraw.Draw(annotated)
-        palette = {
-            "green": ((16, 185, 129), (167, 243, 208), (5, 150, 105)),
-            "orange": ((245, 158, 11), (254, 240, 138), (217, 119, 6)),
-            "red": ((239, 68, 68), (254, 202, 202), (220, 38, 38)),
-        }
-        min_wh = min(W, H)
-        line_w = max(2, int(min_wh * 0.005))
-        tick = max(8, int(min_wh * 0.018))
-        dot_r = max(3, int(min_wh * 0.007))
-        font_px = max(11, int(min_wh * 0.028))
-        try:
-            font = ImageFont.load_default(size=font_px)
-        except TypeError:
-            font = ImageFont.load_default()
+        smoothed = cv2.GaussianBlur(sm.astype(np.float32), (11, 11), 0)
+        iy, ix = np.unravel_index(np.argmax(smoothed), smoothed.shape)
+        val_peak = float(smoothed[iy, ix])
+        if val_peak <= 0.01:
+            cnts, _ = cv2.findContours(leaf_region.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if cnts:
+                M = cv2.moments(cnts[0])
+                if M["m00"] > 0:
+                    return {"x": int(M["m10"] / M["m00"]), "y": int(M["m01"] / M["m00"]), "r": base_rad_w, "score": 0.0}
+            return {"x": ww // 2, "y": hh // 2, "r": base_rad_w, "score": 0.0}
 
-        for cx, cy, rad, label, color_type in spots:
-            c_hud, c_in, c_bg = palette.get(color_type, palette["red"])
-            draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=c_hud, width=line_w)
-            inner_r = max(rad - line_w * 2, 6)
-            draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], outline=c_in, width=max(1, line_w - 1))
-            draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r], fill=c_hud)
-            draw.line([cx - rad - tick, cy, cx - rad + 3, cy], fill=c_hud, width=line_w)
-            draw.line([cx + rad - 3, cy, cx + rad + tick, cy], fill=c_hud, width=line_w)
-            draw.line([cx, cy - rad - tick, cx, cy - rad + 3], fill=c_hud, width=line_w)
-            draw.line([cx, cy + rad - 3, cx, cy + rad + tick], fill=c_hud, width=line_w)
+        local_thr = max(0.12, val_peak * 0.55)
+        local_mask = (smoothed >= local_thr).astype(np.uint8)
+        n_l, lab_l, stats_l, _ = cv2.connectedComponentsWithStats(local_mask, connectivity=8)
+        target_lab = lab_l[iy, ix]
+        if target_lab > 0:
+            area_l = stats_l[target_lab, cv2.CC_STAT_AREA]
+            rad_l = int(np.clip(np.sqrt(area_l / np.pi) * 1.25, base_rad_w, int(min_side * 0.09)))
+        else:
+            rad_l = base_rad_w
 
-            tb = draw.textbbox((0, 0), label, font=font)
-            tw, th = tb[2] - tb[0], tb[3] - tb[1]
-            pad = max(4, font_px // 3)
-            bw_, bh_ = tw + pad * 2, th + pad * 2
-            bx1 = int(np.clip(cx - bw_ // 2, 2, max(2, W - bw_ - 2)))
-            by1 = cy - rad - tick - bh_ - 2
-            if by1 < 2:
-                by1 = cy + rad + tick + 2
-            by1 = int(np.clip(by1, 2, max(2, H - bh_ - 2)))
-            draw.rounded_rectangle([bx1, by1, bx1 + bw_, by1 + bh_], radius=max(3, pad), fill=c_bg)
-            draw.text((bx1 + pad - tb[0], by1 + pad - tb[1]), label, fill=(255, 255, 255), font=font)
+        return {"x": int(ix), "y": int(iy), "r": rad_l, "score": val_peak}
 
-        return annotated, spots
-    except Exception:
-        return img_rgb, [(W // 2, H // 2, 25, "[1] Daun", "red")]
+    def find_healthy_spot(exclude_mask=None):
+        hg = healthy_green.copy()
+        if exclude_mask is not None:
+            hg &= ~exclude_mask
+        if hg.sum() < 20:
+            hg = leaf_region.copy()
+            if exclude_mask is not None:
+                hg &= ~exclude_mask
+        dist = cv2.distanceTransform(hg.astype(np.uint8), cv2.DIST_L2, 3)
+        iy, ix = np.unravel_index(int(np.argmax(dist)), dist.shape)
+        return {"x": int(ix), "y": int(iy), "r": base_rad_w, "score": 1.0}
 
+    spots_w = []
+    p1_is_healthy = ("sehat" in (primary_name or "").lower()) or ("healthy" in (primary_name or "").lower())
+    p2_is_healthy = bool(second_name) and (("sehat" in second_name.lower()) or ("healthy" in second_name.lower()))
+    p3_is_healthy = bool(third_name) and (("sehat" in third_name.lower()) or ("healthy" in third_name.lower()))
+
+    # KONDISI A: DAUN SEHAT MURNI (Dominan Sehat)
+    if is_pure_healthy or (p1_is_healthy and not (has_three_diseases or has_multi_disease or is_differential)):
+        sp_h = find_healthy_spot()
+        spots_w.append((sp_h["x"], sp_h["y"], base_rad_w, "[OK] Daun Sehat", "green"))
+
+    # KONDISI B: 3 KEMUNGKINAN BERSAING (Top 1, 2, 3 Tinggi/Mendekati)
+    elif has_three_diseases and second_name and third_name:
+        yy, xx = np.ogrid[:hh, :ww]
+        # Spot 1
+        title_1 = get_short_disease_title(primary_name)
+        if p1_is_healthy:
+            sp1 = find_healthy_spot()
+            c1 = "green"
+            l1 = f"[1] {title_1}"
+        else:
+            sp1 = find_peak_spot(disease_score_map(primary_name))
+            c1 = "red"
+            l1 = f"[1] {title_1}"
+        spots_w.append((sp1["x"], sp1["y"], sp1["r"], l1, c1))
+        excl_1 = (xx - sp1["x"]) ** 2 + (yy - sp1["y"]) ** 2 < max(min_dist_w, sp1["r"] * 2) ** 2
+
+        # Spot 2
+        title_2 = get_short_disease_title(second_name)
+        if p2_is_healthy:
+            sp2 = find_healthy_spot(exclude_mask=excl_1)
+            c2 = "green"
+            l2 = f"[2] {title_2}"
+        else:
+            sp2 = find_peak_spot(disease_score_map(second_name), exclude_mask=excl_1)
+            c2 = "orange"
+            l2 = f"[2] {title_2}"
+        spots_w.append((sp2["x"], sp2["y"], sp2["r"], l2, c2))
+        excl_2 = excl_1 | ((xx - sp2["x"]) ** 2 + (yy - sp2["y"]) ** 2 < max(min_dist_w, sp2["r"] * 2) ** 2)
+
+        # Spot 3
+        title_3 = get_short_disease_title(third_name)
+        if p3_is_healthy:
+            sp3 = find_healthy_spot(exclude_mask=excl_2)
+            c3 = "green"
+            l3 = f"[3] {title_3}"
+        else:
+            sp3 = find_peak_spot(disease_score_map(third_name), exclude_mask=excl_2)
+            c3 = "blue"
+            l3 = f"[3] {title_3}"
+        spots_w.append((sp3["x"], sp3["y"], sp3["r"], l3, c3))
+
+    # KONDISI C: 2 KEMUNGKINAN BERSAING (Top 2 Tinggi / Diferensial)
+    elif (has_multi_disease or is_differential) and second_name:
+        yy, xx = np.ogrid[:hh, :ww]
+        title_1 = get_short_disease_title(primary_name)
+        if p1_is_healthy:
+            sp1 = find_healthy_spot()
+            c1 = "green"
+            l1 = f"[1] {title_1}"
+        else:
+            sp1 = find_peak_spot(disease_score_map(primary_name))
+            c1 = "red"
+            l1 = f"[1] {title_1}"
+        spots_w.append((sp1["x"], sp1["y"], sp1["r"], l1, c1))
+        excl_1 = (xx - sp1["x"]) ** 2 + (yy - sp1["y"]) ** 2 < max(min_dist_w, sp1["r"] * 2) ** 2
+
+        title_2 = get_short_disease_title(second_name)
+        if p2_is_healthy:
+            sp2 = find_healthy_spot(exclude_mask=excl_1)
+            c2 = "green"
+            l2 = f"[2] {title_2}"
+        else:
+            sp2 = find_peak_spot(disease_score_map(second_name), exclude_mask=excl_1)
+            c2 = "orange"
+            l2 = f"[2] {title_2}"
+        spots_w.append((sp2["x"], sp2["y"], sp2["r"], l2, c2))
+
+    # KONDISI D: 1 PENYAKIT DOMINAN (Single Diagnosis Tinggi)
+    else:
+        title_1 = get_short_disease_title(primary_name)
+        score_1 = disease_score_map(primary_name)
+        spot_1 = find_peak_spot(score_1)
+        spots_w.append((spot_1["x"], spot_1["y"], spot_1["r"], f"[1] {title_1}", "red"))
+
+        yy, xx = np.ogrid[:hh, :ww]
+        excl = (xx - spot_1["x"]) ** 2 + (yy - spot_1["y"]) ** 2 < max(min_dist_w, spot_1["r"] * 2) ** 2
+        # Hanya cari spot kedua jika benar-benar ada lesi lain dari penyakit yang sama
+        spot_2 = find_peak_spot(score_1, exclude_mask=excl)
+        if spot_2 and spot_2["score"] >= max(0.25, spot_1["score"] * 0.50):
+            spots_w.append((spot_2["x"], spot_2["y"], spot_2["r"], f"[1] {title_1} #2", "red"))
+
+    inv = 1.0 / scale
+    spots = [
+        (int(round(x * inv)), int(round(y * inv)), max(10, int(round(rad * inv))), label, color)
+        for (x, y, rad, label, color) in spots_w
+    ]
+
+    annotated = img_rgb.copy()
+    draw = ImageDraw.Draw(annotated)
+    palette = {
+        "green": ((16, 185, 129), (167, 243, 208), (5, 150, 105)),
+        "orange": ((245, 158, 11), (254, 240, 138), (217, 119, 6)),
+        "red": ((239, 68, 68), (254, 202, 202), (220, 38, 38)),
+        "blue": ((2, 132, 199), (186, 230, 253), (3, 105, 161)),
+    }
+    min_wh = min(W, H)
+    line_w = max(2, int(min_wh * 0.005))
+    tick = max(8, int(min_wh * 0.018))
+    dot_r = max(3, int(min_wh * 0.007))
+    font_px = max(11, int(min_wh * 0.028))
+    try:
+        font = ImageFont.load_default(size=font_px)
+    except TypeError:
+        font = ImageFont.load_default()
+
+    for cx, cy, rad, label, color_type in spots:
+        c_hud, c_in, c_bg = palette.get(color_type, palette["red"])
+        draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=c_hud, width=line_w)
+        inner_r = max(rad - line_w * 2, 6)
+        draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], outline=c_in, width=max(1, line_w - 1))
+        draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r], fill=c_hud)
+        draw.line([cx - rad - tick, cy, cx - rad + 3, cy], fill=c_hud, width=line_w)
+        draw.line([cx + rad - 3, cy, cx + rad + tick, cy], fill=c_hud, width=line_w)
+        draw.line([cx, cy - rad - tick, cx, cy - rad + 3], fill=c_hud, width=line_w)
+        draw.line([cx, cy + rad - 3, cx, cy + rad + tick], fill=c_hud, width=line_w)
+
+        tb = draw.textbbox((0, 0), label, font=font)
+        tw, th = tb[2] - tb[0], tb[3] - tb[1]
+        pad = max(4, font_px // 3)
+        bw_, bh_ = tw + pad * 2, th + pad * 2
+        bx1 = int(np.clip(cx - bw_ // 2, 2, max(2, W - bw_ - 2)))
+        by1 = cy - rad - tick - bh_ - 2
+        if by1 < 2:
+            by1 = cy + rad + tick + 2
+        by1 = int(np.clip(by1, 2, max(2, H - bh_ - 2)))
+        draw.rounded_rectangle([bx1, by1, bx1 + bw_, by1 + bh_], radius=max(3, pad), fill=c_bg)
+        draw.text((bx1 + pad - tb[0], by1 + pad - tb[1]), label, fill=(255, 255, 255), font=font)
+
+    return annotated, spots
 # Alias kompatibilitas
 generate_keras_cam_map = generate_lesion_hud_map
 
@@ -1660,31 +1807,62 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
 
     probs_np = probs_tensor.cpu().numpy()
     sorted_indices = [int(i) for i in np.argsort(probs_np)[::-1]]
+    top_idx = sorted_indices[0]
     second_idx = sorted_indices[1] if len(sorted_indices) > 1 else top_idx
+    third_idx = sorted_indices[2] if len(sorted_indices) > 2 else second_idx
+
+    top_confidence = round(float(probs_np[top_idx]) * 100.0, 1)
     second_confidence = round(float(probs_np[second_idx]) * 100.0, 1)
+    third_confidence = round(float(probs_np[third_idx]) * 100.0, 1)
+
+    raw_class_name = class_labels[top_idx]
     second_class_name = class_labels[second_idx]
+    third_class_name = class_labels[third_idx]
+
     confidence_margin = round(top_confidence - second_confidence, 1)
+    margin_top_third = round(top_confidence - third_confidence, 1)
 
     is_healthy_1 = (raw_class_name == "Sehat") or CLASS_METADATA.get(raw_class_name, {}).get("is_healthy", False)
     is_healthy_2 = (second_class_name == "Sehat") or CLASS_METADATA.get(second_class_name, {}).get("is_healthy", False)
+    is_healthy_3 = (third_class_name == "Sehat") or CLASS_METADATA.get(third_class_name, {}).get("is_healthy", False)
 
-    is_differential = (
-        (not uncertain)
-        and (confidence_margin <= 18.0)
-        and (top_confidence < 68.0)
-        and (second_confidence >= 22.0)
-        and (not is_healthy_1)
-        and (not is_healthy_2)
-        and (raw_class_name != second_class_name)
+    # Evaluasi Adaptif Peringkat 1, 2, atau 3 Kemungkinan:
+    # 1. Peringkat 1 Dominan:
+    #    Jika peringkat 1 sangat tinggi (>= 65%) ATAU selisih jauh (margin >= 25%) ATAU peringkat 2 sangat kecil (< 15%)
+    is_single_dominant = (
+        (top_confidence >= 65.0) or
+        (confidence_margin >= 25.0) or
+        (second_confidence < 15.0)
     )
 
-    has_multi_disease = (
-        (not uncertain)
-        and (not is_healthy_1)
-        and (not is_healthy_2)
-        and (raw_class_name != second_class_name)
-        and (is_differential or second_confidence >= 15.0 or (top_confidence < 75.0 and second_confidence >= 12.0))
+    # 2. 3 Kemungkinan Bersaing / Terdeteksi Banyak:
+    #    Jika bukan dominan tunggal, peringkat 3 cukup tinggi (>= 15%) dan mendekati peringkat 1 (selisih <= 22%)
+    is_three_way = (
+        (not is_single_dominant) and
+        (not uncertain) and
+        (third_confidence >= 15.0) and
+        (margin_top_third <= 22.0)
     )
+
+    # 3. 2 Kemungkinan Bersaing (Diferensial):
+    is_two_way = (
+        (not is_single_dominant) and
+        (not is_three_way) and
+        (not uncertain) and
+        (second_confidence >= 16.0)
+    )
+
+    if is_three_way:
+        diag_mode = "three_way"
+    elif is_two_way:
+        diag_mode = "two_way"
+    else:
+        diag_mode = "single"
+
+    is_pure_healthy = is_healthy_1 and (diag_mode == "single")
+    is_differential = (diag_mode == "two_way")
+    has_three_diseases = (diag_mode == "three_way")
+    has_multi_disease = (diag_mode in ("two_way", "three_way"))
 
     metadata = CLASS_METADATA.get(raw_class_name, {
         "nama_id": raw_class_name,
@@ -1710,28 +1888,49 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
         "rekomendasi_singkat": "Lakukan sanitasi daun sakit."
     })
 
-    # 7. Ekstraksi Bukti Visual yang Sinkron 100% dengan Hasil Prediksi Model
+    third_metadata = CLASS_METADATA.get(third_class_name, {
+        "nama_id": third_class_name,
+        "latin": "-",
+        "status": "healthy" if is_healthy_3 else "disease",
+        "is_healthy": is_healthy_3,
+        "ciri_lapangan": "Periksa kondisi helai daun dan bercak secara teliti.",
+        "gejala": "Pangkas daun yang bergejala dan bersihkan bedengan.",
+        "pencegahan": "Jaga drainase parit dan sanitasi pematang.",
+        "solusi": "Gunakan obat yang sesuai.",
+        "rekomendasi_singkat": "Lakukan sanitasi daun sakit."
+    })
+
+    # 7. Ekstraksi Bukti Visual yang Sinkron Presisi dengan Hasil Prediksi Model
     visual_evidence = inspect_visual_leaf_symptoms(
         image=image,
         target_disease=metadata["nama_id"],
-        is_healthy=is_healthy_1
+        is_healthy=is_healthy_1,
+        is_pure_healthy=is_pure_healthy,
+        diag_mode=diag_mode,
+        secondary_disease=second_metadata["nama_id"] if has_multi_disease else "",
+        tertiary_disease=third_metadata["nama_id"] if has_three_diseases else ""
     )
 
-    # Peta HUD Scanner Lesi Multi-Kondisi & Multi-Penyakit
+    # Peta HUD Scanner Lesi Multi-Kondisi & Multi-Penyakit (Adaptif 1, 2, atau 3 Titik)
     annotated_cam, cam_spots = generate_lesion_hud_map(
         image=image,
         target_class_idx=top_idx,
         is_healthy=is_healthy_1,
-        second_class_idx=second_idx if (has_multi_disease or is_differential) else None,
+        second_class_idx=second_idx if has_multi_disease else None,
+        third_class_idx=third_idx if has_three_diseases else None,
         primary_name=metadata["nama_id"],
-        second_name=second_metadata["nama_id"] if (has_multi_disease or is_differential) else None,
+        second_name=second_metadata["nama_id"] if has_multi_disease else None,
+        third_name=third_metadata["nama_id"] if has_three_diseases else None,
         is_differential=is_differential,
-        has_multi_disease=has_multi_disease
+        has_multi_disease=has_multi_disease,
+        has_three_diseases=has_three_diseases,
+        is_pure_healthy=is_pure_healthy
     )
     visual_evidence["overlay_img"] = annotated_cam
     visual_evidence["num_spots_detected"] = len(cam_spots)
     visual_evidence["hud_spots"] = cam_spots
     visual_evidence["has_multi_disease"] = has_multi_disease
+    visual_evidence["has_three_diseases"] = has_three_diseases
 
     diag_info = {
         "orig_mode": image.mode,
@@ -1744,9 +1943,16 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
         "min_pixel": 0.0,
         "max_pixel": 1.0,
         "api_output": api_output,
-        "uncertain": uncertain
+        "uncertain": uncertain,
+        "diag_mode": diag_mode,
+        "is_pure_healthy": is_pure_healthy,
+        "third_class_raw": third_class_name,
+        "third_confidence": third_confidence,
+        "third_metadata": third_metadata,
+        "has_three_diseases": has_three_diseases,
+        "has_multi_disease": has_multi_disease,
+        "is_single_dominant": is_single_dominant
     }
-
     return (
         probs_np,
         sorted_indices,
@@ -2034,14 +2240,31 @@ def get_disease_physical_checks(primary_name, second_name=None, is_differential=
             "* 🔍 **Uji Bentuk Lesi:** Periksa apakah bercak berbentuk cincin bertingkat, bintil serbuk spora menonjol, atau lesi memanjang."
         )
 
-def get_groq_physical_verification(primary_name, second_name=None, is_differential=False):
+def get_groq_physical_verification(
+    primary_name: str,
+    second_name: str | None = None,
+    is_differential: bool = False,
+    third_name: str | None = None,
+    is_three_way: bool = False
+) -> str:
     """
-    Modul Validasi Karakteristik Fisik:
-    Menghasilkan panduan verifikasi fisik lapangan berbasis riset agronomi
-    diselaraskan 100% dengan diagnosis penyakit.
-    Jika Groq API offline atau kuota habis, otomatis menggunakan Database Mandiri Sistem.
+    Memanggil Groq API untuk menyusun panduan verifikasi fisik lapangan singkat & padat
+    agar petani dapat langsung mencocokkan gejala khas di kebun bawang merah.
     """
-    fallback_content = get_disease_physical_checks(primary_name, second_name, is_differential)
+    if is_three_way and second_name and third_name:
+        fallback_content = (
+            f"• 🖐️ Uji Raba & Tekstur Daun: Periksa apakah helai daun berlendir basah khas {second_name}, berbercak kering/klorotik khas {third_name}, atau masih tegar sehat seperti {primary_name}.\n"
+            f"• 👃 Uji Aroma & Kelembapan: Jika tercium aroma langu/busuk menyengat di pagi hari, waspadai serangan bakteri/hawar basah. Jika tanpa aroma busuk melainkan bercak kering, waspadai jamur atau virus.\n"
+            f"• 🔍 Uji Bentuk Bercak: Amati pola bercak apakah meluas dari ujung daun (hawar), membentuk garis klorosis memanjang (virus), atau bercak cincin konsentris (trotol)."
+        )
+    else:
+        fallback_content = (
+            f"• 🖐️ Uji Raba Daun: Rasakan permukaan bercak pada helai daun. "
+            f"Jika basah berlendir dan bau busuk, kuat mengarah ke bakteri. Jika kering bertepung atau bintil kasar, mengarah ke jamur.\n"
+            f"• 👃 Uji Bau & Lendir: Daun yang terinfeksi bakteri busuk basah mengeluarkan aroma menyengat khas pembusukan sayur.\n"
+            f"• 🔍 Uji Bentuk Bercak: Cermati tepi bercak di bawah sinar terang; bercak jamur biasanya memiliki batas konsentris atau bintil oranye khas karat."
+        )
+
     api_key = get_groq_api_key()
     if not api_key:
         return fallback_content
@@ -2053,7 +2276,16 @@ def get_groq_physical_verification(primary_name, second_name=None, is_differenti
         "User-Agent": "AgroScan-Validator/1.0"
     }
 
-    if is_differential and second_name:
+    if is_three_way and second_name and third_name:
+        prompt = (
+            f"Anda adalah Konsultan Proteksi Tanaman Bawang Merah (merujuk Balitsa Lembang & BPTP).\n"
+            f"Bantu petani mengidentifikasi 3 kemungkinan kondisi yang bersaing di kamera HP: '{primary_name}' vs '{second_name}' vs '{third_name}'.\n"
+            "Tuliskan panduan verifikasi fisik langsung di bedengan sawah dalam 3 poin ringkas dan padat:\n"
+            "1. 🖐️ Uji Raba & Tekstur Daun (Lendir basah licin vs serbuk tepung/bintil kering kasar vs helai licin sehat)\n"
+            "2. 👃 Uji Aroma Daun (Bau langu busuk bakteri vs daun kering jamur vs aroma segar)\n"
+            "3. 🔍 Uji Bentuk Bercak Lapangan (Kering ujung vs klorosis/belang virus vs bercak ungu konsentris)"
+        )
+    elif is_differential and second_name:
         prompt = (
             f"Anda adalah Konsultan Proteksi Tanaman Bawang Merah (merujuk Balitsa Lembang & BPTP).\n"
             f"Bantu petani membedakan dua penyakit yang tampak mirip di kamera HP: '{primary_name}' vs '{second_name}'.\n"
@@ -2096,7 +2328,6 @@ def get_groq_physical_verification(primary_name, second_name=None, is_differenti
             continue
 
     return fallback_content
-
 def get_system_agronomy_recommendation(info, second_info=None, is_differential=False, angle_title=None):
     """
     Sistem Database Agronomi Mandiri (Built-in Agro-Engine):
@@ -2810,6 +3041,13 @@ if selected_image is not None and not file_error:
             # Selaraskan alias variabel agar konsisten (mencegah NameError)
             metadata = info
             second_metadata = second_info
+            diag_mode = diag_info.get("diag_mode", "single")
+            is_pure_healthy = diag_info.get("is_pure_healthy", False)
+            third_class_raw = diag_info.get("third_class_raw", "")
+            third_confidence = diag_info.get("third_confidence", 0.0)
+            third_info = diag_info.get("third_metadata", {})
+            third_metadata = third_info
+            has_three_diseases = diag_info.get("has_three_diseases", False)
 
         # ==============================================================================
         # TAHAP 3: EVALUASI KEPUTUSAN MODEL / THRESHOLD
@@ -2908,18 +3146,84 @@ if selected_image is not None and not file_error:
                     with col_crop2:
                         st.image(selected_image, caption="Foto Asli Sebelum Dipotong", use_container_width=True)
 
-            is_healthy = info.get("status") == "healthy" or info.get("is_healthy", False)
+            is_healthy = is_pure_healthy
             is_pest = info.get("status") == "pest"
 
-            if is_differential:
+            if diag_mode == "three_way":
                 # ------------------------------------------------------------------
-                # TAMPILAN DIFERENSIAL DIAGNOSIS (MULTIDIAGNOSIS KARENA GEJALA MIRIP)
-                # Gunakan native Streamlit alerts & columns agar bebas risiko kebocoran tag HTML/markdown code block
+                # TAMPILAN 3 KEMUNGKINAN BERSAING (PERINGKAT 1, 2, & 3)
+                # ------------------------------------------------------------------
+                p1_is_h = ("sehat" in info.get("nama_id", "").lower())
+                header_title = (
+                    "⚠️ **Waspada Gejala Awal: Terdeteksi 3 Kemungkinan Bersaing**"
+                    if p1_is_h else
+                    "🚨 **Terdeteksi 3 Kemungkinan Penyakit Bersaing**"
+                )
+                st.warning(
+                    f"{header_title}\n\n"
+                    f"Model mencatat distribusi probabilitas yang tersebar pada 3 kemungkinan dengan selisih mendekati "
+                    f"(Peringkat 1: **{top_confidence:.1f}%**, Peringkat 2: **{second_confidence:.1f}%**, Peringkat 3: **{third_confidence:.1f}%**). "
+                    f"Sistem menyajikan 3 kemungkinan agar petani dapat memverifikasi langsung di bedengan sawah:"
+                )
+
+                col_top1, col_top2, col_top3 = st.columns(3)
+                with col_top1:
+                    b_color_1 = "#16a34a" if p1_is_h else "#dc2626"
+                    badge_text_1 = "🥇 PREDIKSI TERPILIH (SEHAT)" if p1_is_h else "🥇 PERINGKAT 1"
+                    st.markdown(f"""
+                        <div style="background: #ffffff; border: 2.5px solid {b_color_1}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                            <span style="background: {b_color_1}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_1}</span>
+                            <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{info['nama_id']}</div>
+                            <div style="font-size: 0.90rem; color: {b_color_1}; font-weight: 800; margin-bottom: 8px;">Kepastian: {top_confidence:.1f}%</div>
+                            <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
+                                <strong>🔍 Ciri di Sawah:</strong><br>{info.get('ciri_lapangan', '-')}
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                with col_top2:
+                    b_color_2 = "#ea580c"
+                    badge_text_2 = "🥈 PERINGKAT 2"
+                    st.markdown(f"""
+                        <div style="background: #ffffff; border: 2.5px solid {b_color_2}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                            <span style="background: {b_color_2}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_2}</span>
+                            <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{second_info['nama_id']}</div>
+                            <div style="font-size: 0.90rem; color: {b_color_2}; font-weight: 800; margin-bottom: 8px;">Kepastian: {second_confidence:.1f}%</div>
+                            <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
+                                <strong>🔍 Ciri di Sawah:</strong><br>{second_info.get('ciri_lapangan', '-')}
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                with col_top3:
+                    b_color_3 = "#0284c7"
+                    badge_text_3 = "🥉 PERINGKAT 3"
+                    st.markdown(f"""
+                        <div style="background: #ffffff; border: 2.5px solid {b_color_3}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                            <span style="background: {b_color_3}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_3}</span>
+                            <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{third_info.get('nama_id', third_class_raw)}</div>
+                            <div style="font-size: 0.90rem; color: {b_color_3}; font-weight: 800; margin-bottom: 8px;">Kepastian: {third_confidence:.1f}%</div>
+                            <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
+                                <strong>🔍 Ciri di Sawah:</strong><br>{third_info.get('ciri_lapangan', '-')}
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                st.info(
+                    "💡 **Panduan Identifikasi 3 Titik Gejala di Kebun:**\n\n"
+                    "• **Titik [1] (Hijau/Merah):** Cek kondisi daun dominan apakah masih berklorofil tegar atau sudah berpusat lesi.\n\n"
+                    f"• **Titik [2] (Oranye):** Cek apakah tampak gejala khas **{second_info['nama_id']}** (misal: ujung daun menguning kering atau bercak basah).\n\n"
+                    f"• **Titik [3] (Biru):** Cek apakah tampak gejala **{third_info.get('nama_id', third_class_raw)}** (misal: garis klorosis virus atau bercak cincin jamur)."
+                )
+
+            elif diag_mode == "two_way":
+                # ------------------------------------------------------------------
+                # TAMPILAN 2 KEMUNGKINAN BERSAING (DIFERENSIAL)
                 # ------------------------------------------------------------------
                 st.warning(
                     f"⚠️ **Gejala Ganda / Memerlukan Konfirmasi Fisik**\n\n"
                     f"### Terdeteksi 2 Kemungkinan Penyakit Serupa\n\n"
-                    f"Model visual menemukan kemiripan tinggi dengan selisih probabilitas sangat tipis (hanya **{confidence_margin:.1f}%**). "
+                    f"Model visual menemukan kemiripan tinggi dengan selisih probabilitas tipis (hanya **{confidence_margin:.1f}%**). "
                     f"Petani disarankan mencocokkan ciri fisik langsung di kebun:"
                 )
 
@@ -2951,9 +3255,9 @@ if selected_image is not None and not file_error:
                 )
             else:
                 # ------------------------------------------------------------------
-                # TAMPILAN SATU VONIS TUNGGAL (KEPASTIAN TINGGI)
+                # TAMPILAN SATU VONIS TUNGGAL (DOMINAN TINGGI)
                 # ------------------------------------------------------------------
-                if is_healthy:
+                if is_pure_healthy:
                     status_card_class = "status-card-healthy"
                     badge_class = "badge-healthy-tag"
                     badge_text = "✅ DAUN SEHAT & NORMAL"
@@ -2991,13 +3295,19 @@ if selected_image is not None and not file_error:
                     st.button("✅ Hasil Sudah Disimpan di Riwayat", disabled=True, use_container_width=True)
                 else:
                     if st.button("💾 Simpan Hasil ke Riwayat", type="primary", use_container_width=True):
-                        rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) & {second_info['nama_id']} ({second_confidence:.1f}%)" if is_differential else info["nama_id"]
+                        if diag_mode == "three_way":
+                            rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) | {second_info['nama_id']} ({second_confidence:.1f}%) | {third_info.get('nama_id', third_class_raw)} ({third_confidence:.1f}%)"
+                        elif diag_mode == "two_way":
+                            rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) & {second_info['nama_id']} ({second_confidence:.1f}%)"
+                        else:
+                            rec_name = info["nama_id"]
+
                         save_diagnosis_to_history(
                             disease_code=top_class_raw,
                             display_name=rec_name,
                             confidence=top_confidence,
                             recommendation=info.get("rekomendasi_singkat", ""),
-                            is_healthy=is_healthy,
+                            is_healthy=is_pure_healthy,
                             notes="Pemeriksaan Lapangan",
                             location="Kebun Bawang"
                         )
@@ -3011,7 +3321,7 @@ if selected_image is not None and not file_error:
                     st.rerun()
 
             # ==============================================================================
-            # MODUL BUKTI VISUAL NYATA DARI FOTO (REAL VISUAL LESION AUDIT)
+            # MODUL BUKTI ANALISIS VISUAL NYATA DARI FOTO (REAL VISUAL LESION AUDIT)
             # ==============================================================================
             if visual_evidence and visual_evidence.get("has_visual_evidence"):
                 v_sev_pct = visual_evidence.get("severity_pct", 0.0)
@@ -3022,37 +3332,115 @@ if selected_image is not None and not file_error:
                 st.markdown("### 🔬 Bukti Analisis Visual Nyata dari Foto Daun")
                 st.caption("Hasil pemindaian fitur fisik piksel langsung dari foto yang diunggah:")
 
-                col_v1, col_v2, col_v3 = st.columns(3)
-                if is_healthy:
-                    with col_v1:
-                        st.metric(label="🩺 Luas Kerusakan Daun", value="0.0%", delta="Sehat Prima")
-                    with col_v2:
-                        st.metric(label="🌿 Jaringan Daun Sehat", value="100.0%", delta="Normal")
-                    with col_v3:
-                        st.metric(label="🛡️ Kondisi Tanaman", value="Bebas Patogen")
+                # Konfigurasi Nilai Kartu Secara Realistis & Anti-Ngawur
+                if is_pure_healthy:
+                    c1_title = "🩺 Luas Kerusakan Daun"
+                    c1_val = "0.0%"
+                    c1_delta = "Sehat Prima"
+                    c1_color = "#16a34a"
+
+                    c2_title = "🌿 Jaringan Daun Sehat"
+                    c2_val = "100.0%"
+                    c2_delta = "Klorofil Utuh"
+                    c2_color = "#16a34a"
+
+                    c3_title = "🛡️ Kondisi Tanaman"
+                    c3_val = "Bebas Patogen"
+                    c3_delta = "Aman Terkendali"
+                    c3_color = "#16a34a"
+                elif diag_mode == "three_way":
+                    c1_title = "🩺 Luas Gejala Visual"
+                    c1_val = f"{v_sev_pct:.1f}%"
+                    c1_delta = v_sev_lvl
+                    c1_color = "#ea580c"
+
+                    c2_title = "🌿 Jaringan Hijau Tersisa"
+                    c2_val = f"{v_healthy_pct:.1f}%"
+                    c2_delta = "Klorofil Bertahan"
+                    c2_color = "#16a34a"
+
+                    c3_title = "🛡️ Kondisi Tanaman"
+                    c3_val = "Waspada Gejala Awal"
+                    c3_delta = "3 Penyakit Bersaing"
+                    c3_color = "#ea580c"
+                elif diag_mode == "two_way":
+                    c1_title = "🩺 Luas Kerusakan Daun"
+                    c1_val = f"{v_sev_pct:.1f}%"
+                    c1_delta = v_sev_lvl
+                    c1_color = "#dc2626"
+
+                    c2_title = "🌿 Jaringan Hijau Tersisa"
+                    c2_val = f"{v_healthy_pct:.1f}%"
+                    c2_delta = "Area Sehat"
+                    c2_color = "#16a34a"
+
+                    c3_title = "🛡️ Kondisi Tanaman"
+                    c3_val = "Suspek Ganda"
+                    c3_delta = "Konfirmasi Ciri Lapangan"
+                    c3_color = "#dc2626"
+                else:
+                    c1_title = "🩺 Luas Kerusakan Daun"
+                    c1_val = f"{v_sev_pct:.1f}%"
+                    c1_delta = v_sev_lvl
+                    c1_color = "#dc2626"
+
+                    c2_title = "🌿 Jaringan Hijau Tersisa"
+                    c2_val = f"{v_healthy_pct:.1f}%"
+                    c2_delta = "Area Sehat"
+                    c2_color = "#16a34a"
+
+                    short_target = info['nama_id'].split('/')[0].strip()
+                    c3_title = "🛡️ Kondisi Tanaman"
+                    c3_val = f"Terinfeksi {short_target}"
+                    c3_delta = "Butuh Penanganan"
+                    c3_color = "#dc2626"
+
+                # Responsive Anti-Crop Metric Cards Grid (Anti-Potong di HP / Tablet / PC)
+                st.markdown(f"""
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 10px 0 16px 0;">
+                        <div class="metric-anti-crop">
+                            <div class="metric-anti-crop-label">{c1_title}</div>
+                            <div class="metric-anti-crop-val" style="color: {c1_color};">{c1_val}</div>
+                            <div class="metric-anti-crop-delta" style="color: #64748b;">{c1_delta}</div>
+                        </div>
+                        <div class="metric-anti-crop">
+                            <div class="metric-anti-crop-label">{c2_title}</div>
+                            <div class="metric-anti-crop-val" style="color: {c2_color};">{c2_val}</div>
+                            <div class="metric-anti-crop-delta" style="color: #64748b;">{c2_delta}</div>
+                        </div>
+                        <div class="metric-anti-crop">
+                            <div class="metric-anti-crop-label">{c3_title}</div>
+                            <div class="metric-anti-crop-val" style="color: {c3_color}; font-size: 1.15rem;">{c3_val}</div>
+                            <div class="metric-anti-crop-delta" style="color: #64748b;">{c3_delta}</div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                if is_pure_healthy:
                     st.success("✅ **Daun Sehat & Normal:** Pemindaian visual mengonfirmasi helai daun segar merata, berlilin alami, dan tidak ditemukan bercak lesi patogen aktif.")
                 else:
-                    with col_v1:
-                        st.metric(label="🩺 Luas Kerusakan Daun", value=f"{v_sev_pct:.1f}%", delta=v_sev_lvl, delta_color="inverse")
-                    with col_v2:
-                        st.metric(label="🌿 Jaringan Hijau Tersisa", value=f"{v_healthy_pct:.1f}%", help="Persentase area klorofil daun yang masih sehat")
-                    with col_v3:
-                        st.metric(label="🎯 Patogen Terdeteksi", value=info['nama_id'].split('/')[0].strip())
                     st.info(f"📋 **Karakteristik Fisik Daun pada Foto:**\n\n{v_desc}")
 
                 if visual_evidence.get("overlay_img") is not None:
                     with st.expander("🖼️ Peta Titik Kerusakan pada Foto Daun (HUD Lesion Scanner)", expanded=True):
                         title_1 = get_short_disease_title(info.get('nama_id', 'Penyakit'))
                         title_2 = get_short_disease_title(second_info.get('nama_id', 'Penyakit')) if second_info else ""
-                        has_multi = visual_evidence.get("has_multi_disease", False) or is_differential
-                        is_healthy_2 = bool(second_info) and (
-                            second_info.get("is_healthy", False) or second_info.get("status") == "healthy"
-                        )
+                        title_3 = get_short_disease_title(third_info.get('nama_id', 'Penyakit')) if third_info else ""
+                        num_spots = visual_evidence.get("num_spots_detected", 0)
 
-                        if is_healthy:
-                            map_caption = "Peta Verifikasi Jaringan Daun: Retikel Hijau [OK] memverifikasi helai daun bawang dalam kondisi sehat optimal berklorofil tinggi bebas lesi patogen."
-                        elif has_multi and second_info and not is_healthy_2:
-                            map_caption = f"Peta Titik Kerusakan Multi-Penyakit: Retikel Merah [1] {title_1} ({top_confidence}%) & Retikel Oranye [2] {title_2} ({second_confidence}%) menandai lokasi infeksi fisik pada helai daun."
+                        if is_pure_healthy:
+                            map_caption = "Peta Verifikasi Jaringan Daun: Retikel Hijau [OK] memverifikasi helai daun dalam kondisi sehat optimal berklorofil tinggi bebas lesi patogen."
+                        elif diag_mode == "three_way":
+                            map_caption = (
+                                f"Peta Titik Kerusakan 3 Kemungkinan: Retikel [1] {title_1} ({top_confidence}%), "
+                                f"[2] {title_2} ({second_confidence}%), dan [3] {title_3} ({third_confidence}%) "
+                                f"menandai posisi fisik macam penyakit pada helai daun."
+                            )
+                        elif diag_mode == "two_way":
+                            map_caption = (
+                                f"Peta Titik Kerusakan Multi-Penyakit: Retikel Merah [1] {title_1} ({top_confidence}%) & "
+                                f"Retikel Oranye [2] {title_2} ({second_confidence}%) menandai lokasi infeksi fisik pada helai daun."
+                            )
                         else:
                             map_caption = f"Peta Titik Kerusakan: Retikel scanner presisi tinggi menandai titik pusat lesi aktif [1] {title_1} pada helai daun."
 
@@ -3061,10 +3449,19 @@ if selected_image is not None and not file_error:
                             caption=map_caption,
                             use_container_width=True
                         )
-                        num_spots = visual_evidence.get("num_spots_detected", 0)
-                        if is_healthy:
+
+                        if is_pure_healthy:
                             st.success(f"✅ **Daun Sehat & Normal ({num_spots} Titik Diverifikasi):** Retikel hijau memvalidasi helai daun sehat prima, berklorofil merata, dan bebas dari bercak lesi patogen aktif.")
-                        elif has_multi and second_info and not is_healthy_2:
+                        elif diag_mode == "three_way":
+                            c1_icon = "🟢" if ("sehat" in info.get("nama_id", "").lower()) else "🔴"
+                            st.warning(
+                                f"⚠️ **Deteksi 3 Kemungkinan Bersaing ({num_spots} Titik Ditandai):**\n\n"
+                                f"• {c1_icon} **[1] {title_1} ({top_confidence}%):** Retikel Peringkat 1 menandai area helai daun utama.\n"
+                                f"• 🟠 **[2] {title_2} ({second_confidence}%):** Retikel Oranye Peringkat 2 menandai titik potensi infeksi kedua.\n"
+                                f"• 🔵 **[3] {title_3} ({third_confidence}%):** Retikel Biru Peringkat 3 menandai titik potensi infeksi ketiga.\n\n"
+                                f"💡 **Petunjuk Lapangan:** Cocokkan ketiga posisi retikel scanner di atas langsung pada helai daun di bedengan sawah untuk memastikan perlakuan obat semprot dan sanitasi secara terarah."
+                            )
+                        elif diag_mode == "two_way":
                             st.warning(
                                 f"⚠️ **Deteksi Infeksi Ganda (Multi-Penyakit Terdeteksi {num_spots} Titik):**\n\n"
                                 f"• 🔴 **[1] {title_1} ({top_confidence}%):** Ditandai dengan retikel Merah pada titik lesi penyakit utama.\n"
@@ -3079,8 +3476,6 @@ if selected_image is not None and not file_error:
                             st.caption(
                                 "💡 **Petunjuk Deteksi:** Retikel scanner presisi dihasilkan langsung dari pemindaian densitas lesi pada foto helai daun Anda."
                             )
-
-            # Distribusi Probabilitas Model PyTorch TorchScript
             with st.expander("📊 Distribusi Probabilitas Model (TorchScript EfficientNet-B0 - 7 Kelas)", expanded=True):
                 st.caption("Distribusi probabilitas softmax terkalibrasi (temperature-scaled) untuk seluruh 7 kelas:")
                 probs_dict = api_output.get("probabilities", {})
@@ -3113,17 +3508,17 @@ if selected_image is not None and not file_error:
             # ==============================================================================
             # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN
             # ==============================================================================
-            if not is_healthy:
-                phys_cache_key = f"phys_{top_class_raw}_{second_class_raw}_{is_differential}"
+            if not is_pure_healthy:
+                phys_cache_key = f"phys_{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}"
                 if phys_cache_key not in st.session_state:
                     with st.spinner("🔬 Menyiapkan panduan verifikasi fisik lapangan..."):
                         st.session_state[phys_cache_key] = get_groq_physical_verification(
-                            primary_name=info["nama_id"],
-                            second_name=second_info["nama_id"] if is_differential else None,
-                            is_differential=is_differential
+                            primary_name=info['nama_id'],
+                            second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way')) else None,
+                            is_differential=(diag_mode == 'two_way'),
+                            third_name=third_info.get('nama_id', third_class_raw) if diag_mode == 'three_way' else None,
+                            is_three_way=(diag_mode == 'three_way')
                         )
-                phys_content = st.session_state[phys_cache_key]
-                html_phys = format_card_text_to_html(phys_content)
 
                 phys_sub_text = (
                     f"Cocokkan tanda fisik berikut langsung di bedengan untuk memastikan apakah daun terserang <strong>{info['nama_id']}</strong> atau <strong>{second_info['nama_id']}</strong>:"
@@ -3157,7 +3552,7 @@ if selected_image is not None and not file_error:
             """, unsafe_allow_html=True)
 
             # Logika Pengambilan Saran Groq AI
-            ai_token_now = f"{top_class_raw}_{second_class_raw if is_differential else 'single'}_{round(top_confidence, 1)}"
+            ai_token_now = f"{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}_{round(top_confidence, 1)}"
             if st.session_state.get("ai_token_saved") != ai_token_now or "ai_text_saved" not in st.session_state:
                 with st.spinner("🤖 Dokter Tanaman AI sedang meracik resep obat dan panduan perawatan..."):
                     ai_text, ai_angle = get_groq_recommendation(
