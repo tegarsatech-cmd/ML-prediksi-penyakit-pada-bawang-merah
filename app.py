@@ -991,7 +991,7 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
 
 def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.02) -> tuple[bool, str, float]:
     """
-    Validasi Citra Daun Bawang Merah sebelum masuk ke MobileNetV2 (Pre-Inference Guard):
+    Validasi Citra Daun Bawang Merah (Pre-Inference Guard):
     Memeriksa spektrum kromatisitas jaringan tanaman bawang merah (Allium cepa)
     menggunakan analisis HSV dan perbandingan kanal RGB.
     Mencegah input non-tanaman: wajah, tangan, tanah polos, dinding, pakaian, kendaraan, hewan.
@@ -1780,7 +1780,7 @@ def validate_onion_leaf(image: Image.Image, top_confidence: float, threshold: fl
     1. Filter Analisis Citra Digital Warna Tanaman (Hue/Chrominance Masking):
        Memeriksa apakah citra mengandung spektrum vegetasi/daun bawang merah (>= 12%).
     2. Filter Ambang Batas Keyakinan Model (OOD Rejection):
-       Jika model 15 kelas memiliki top_confidence < threshold (bawaan 40%),
+       Jika model memiliki top_confidence < threshold (bawaan 40%),
        objek dipastikan bukan bagian daun/umbi bawang merah yang dapat diidentifikasi.
     """
     # 1. Validasi Spektrum Warna Daun/Tanaman
