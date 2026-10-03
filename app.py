@@ -2237,6 +2237,30 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
         )
         ratio_rust = np.count_nonzero(is_rust_pustule) / total_leaf_px
 
+        # Ciri 4: Daun hijau segar prima (Daun Sehat)
+        is_healthy_green = (
+            (chk_hue >= 45.0) & (chk_hue <= 160.0) &
+            (chk_sat >= 0.14) & (chk_val >= 0.12) &
+            (chk_g > chk_r * 1.08) & (chk_g > chk_b * 1.05)
+        )
+        ratio_healthy = np.count_nonzero(is_healthy_green) / total_leaf_px
+
+        # Ciri 5: Klorosis kuning pucat menyeluruh (Layu Moler / Fusarium)
+        is_moler_yellow = (
+            (chk_hue >= 36.0) & (chk_hue <= 68.0) &
+            (chk_sat >= 0.22) & (chk_val >= 0.35) &
+            (chk_g > chk_b * 1.15)
+        )
+        ratio_moler = np.count_nonzero(is_moler_yellow) / total_leaf_px
+
+        # Ciri 6: Bercak jerami pucat terlokalisasi (Virus Iris Kuning / IYSV)
+        is_iysv_straw = (
+            (chk_hue >= 24.0) & (chk_hue <= 62.0) &
+            (chk_sat >= 0.10) & (chk_sat <= 0.55) &
+            (chk_val >= 0.30)
+        )
+        ratio_iysv = np.count_nonzero(is_iysv_straw) / total_leaf_px
+
         # --- PENGAMAN 1: KOREKSI BIAS TROTOL VS DOWNY MILDEW ---
         # Jika ada lesi melekuk ungu/cokelat konsentris dengan halo kuning, itu 100% Trotol, bukan Downy Mildew
         if ratio_purple >= 0.015 and ratio_yellow >= 0.02:
@@ -2261,6 +2285,28 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
             p_rust = probs_tensor[6].item()
             if p_rust > 0.05 and p_rust < 0.65:
                 probs_tensor[6] = max(p_rust, 0.75)
+                probs_tensor = probs_tensor / probs_tensor.sum()
+
+        # --- PENGAMAN 4: PENGUATAN DAUN SEHAT JIKA DAUN HIJAU PRIMA BEBAS PENYAKIT ---
+        # Jika daun hijau sehat > 80% dan sama sekali tidak ada spora hitam, karat, atau lesi ungu
+        if ratio_healthy >= 0.80 and ratio_purple < 0.005 and ratio_spores < 0.005 and ratio_rust < 0.005:
+            p_sehat = probs_tensor[1].item()
+            if p_sehat >= 0.25:
+                probs_tensor[1] = max(p_sehat, 0.88)
+                probs_tensor = probs_tensor / probs_tensor.sum()
+
+        # --- PENGAMAN 5: PENGUATAN LAYU MOLER PADA KLOROSIS KUNING FUSARIUM ---
+        if ratio_moler >= 0.08 and ratio_purple < 0.01 and ratio_rust < 0.005:
+            p_moler = probs_tensor[4].item()
+            if p_moler >= 0.15 and p_moler < 0.65:
+                probs_tensor[4] = max(p_moler, 0.68)
+                probs_tensor = probs_tensor / probs_tensor.sum()
+
+        # --- PENGAMAN 6: PENGUATAN IYSV PADA BERCAK JERAMI TANPA KARAT ---
+        if ratio_iysv >= 0.03 and ratio_rust < 0.005 and ratio_purple < 0.01:
+            p_iysv = probs_tensor[2].item()
+            if p_iysv >= 0.15 and p_iysv < 0.65:
+                probs_tensor[2] = max(p_iysv, 0.66)
                 probs_tensor = probs_tensor / probs_tensor.sum()
 
     except Exception:
