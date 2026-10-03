@@ -1923,12 +1923,11 @@ def generate_lesion_hud_map(
         spot_2 = find_peak_spot(score_1, exclude_mask=excl)
         if spot_2 and spot_2["score"] >= max(0.25, spot_1["score"] * 0.50):
             spots_w.append((spot_2["x"], spot_2["y"], spot_2["r"], f"[1] {title_1} #2", "red"))
-
     inv = 1.0 / scale
     leaf_orig = cv2.resize(leaf_region.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST)
     leaf_dist_orig = cv2.distanceTransform(leaf_orig, cv2.DIST_L2, 3)
     leaf_orig_mask = (leaf_dist_orig > 0)
-
+    min_wh = min(W, H)
     spots = []
     for (x, y, rad, label, color) in spots_w:
         ox = int(np.clip(round(x * inv), 0, W - 1))

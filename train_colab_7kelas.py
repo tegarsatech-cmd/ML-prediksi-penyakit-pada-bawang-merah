@@ -27,11 +27,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torchvision import models, transforms
-from torchvision.datasets import ImageFolder
+from torchvision import models, transforms  # type: ignore
+from torchvision.datasets import ImageFolder  # type: ignore
 from tqdm import tqdm
 from sklearn.metrics import classification_report
-import kagglehub
+import kagglehub  # type: ignore
 
 # ------------------------------------------------------------------------------
 # 2. Inisialisasi Device & Bersihkan Cache GPU
@@ -310,7 +310,7 @@ with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
 print("✅ File ZIP berhasil dibuat:", zip_path)
 
 try:
-    from google.colab import files
+    from google.colab import files  # type: ignore
     files.download(zip_path)
     print("\n🎉 SELESAI! File 'model_bawang_7kelas_balanced.zip' otomatis diunduh ke laptop Anda!")
 except ImportError:
