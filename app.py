@@ -2282,7 +2282,8 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
                 probs_tensor = probs_tensor / probs_tensor.sum()
 
         # --- PENGAMAN 3: PENGUATAN KARAT DAUN JIKA PUSTULA TERDETEKSI JELAS ---
-        if ratio_rust >= 0.008:
+        # Hanya diperkuat jika lesi ungu (Trotol) tidak dominan, karena pusat lesi trotol kering bisa menyerupai warna karat
+        if ratio_rust >= 0.008 and ratio_purple < 0.04 and probs_tensor[5].item() < 0.45:
             p_rust = probs_tensor[6].item()
             if p_rust > 0.05 and p_rust < 0.65:
                 probs_tensor[6] = max(p_rust, 0.75)
