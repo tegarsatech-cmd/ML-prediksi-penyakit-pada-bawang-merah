@@ -1212,13 +1212,14 @@ def generate_lesion_hud_map(
             (r > g * 1.12) & (g > b * 1.08) &
             (np.abs(r - g) < 85)
         )
-        is_neutral_bg = (s_arr < 0.09) & ((v_arr > 0.82) | (v_arr < 0.08))
+        is_neutral_bg = (s_arr < 0.09) & ((v_arr > 0.80) | (v_arr < 0.08))
+        is_glare = (s_arr < 0.11) & (v_arr > 0.82)
 
         # Kanopi daun bawang merah: mencakup daun hijau segar, klorosis kuning, hingga nekrosis lesi
-        is_green = (exg > 0.0) | ((h_arr >= 35.0) & (h_arr <= 165.0) & (s_arr >= 0.12) & (v_arr >= 0.12))
-        is_yellow = (h_arr >= 20.0) & (h_arr < 35.0) & (s_arr >= 0.15) & (v_arr >= 0.18)
-        is_necrotic = ((h_arr <= 20.0) | (h_arr >= 265.0)) & (s_arr >= 0.10) & (v_arr >= 0.08) & (v_arr <= 0.75)
-        is_plant = (is_green | is_yellow | is_necrotic) & (~is_skin) & (~is_neutral_bg)
+        is_green = (exg > 2.0) | ((h_arr >= 35.0) & (h_arr <= 165.0) & (s_arr >= 0.12) & (v_arr >= 0.09))
+        is_yellow = (h_arr >= 22.0) & (h_arr < 35.0) & (g >= r * 0.70) & (s_arr >= 0.15) & (v_arr >= 0.14)
+        is_necrotic = ((h_arr <= 20.0) | (h_arr >= 265.0)) & (s_arr >= 0.12) & (v_arr >= 0.08) & (v_arr <= 0.75) & (g >= r * 0.40)
+        is_plant = (is_green | is_yellow | is_necrotic) & (~is_skin) & (~is_neutral_bg) & (~is_glare)
 
         # Abaikan margin tepi foto 2.5% agar retikel tidak melengser ke batas bingkai kamera
         m_x = max(int(w * 0.025), 2)
@@ -1267,7 +1268,7 @@ def generate_lesion_hud_map(
                 )
             elif "rust" in name or "karat" in name:
                 # Karat Daun: Pustula jingga-oranye kemerahan menonjol
-                is_sym = (h_arr >= 7.0) & (h_arr <= 35.0) & (r > g) & (s_arr >= 0.18)
+                is_sym = (h_arr >= 7.0) & (h_arr <= 36.0) & (r > g * 1.04) & (s_arr >= 0.18)
                 score = np.where(
                     is_sym,
                     0.40 +
@@ -1371,14 +1372,43 @@ def generate_lesion_hud_map(
             valid_c = [c for c in contours if cv2.contourArea(c) >= max(15, int(w * h * 0.00010))]
 
             if len(valid_c) > 0:
-                valid_c.sort(key=cv2.contourArea, reverse=True)
+                def contour_score(c):
+                    mask_c = np.zeros((h, w), dtype=np.uint8)
+                    cv2.drawContours(mask_c, [c], -1, 1, -1)
+                    vals = h_eff[mask_c > 0]
+                    if len(vals) == 0:
+                        return 0.0
+                    return float(np.max(vals) * 0.70 + np.mean(vals) * 0.30)
+
+                valid_c.sort(key=contour_score, reverse=True)
                 top_c = valid_c[0]
+                area = cv2.contourArea(top_c)
+                r_calc = max(base_rad, min(int(np.sqrt(area / np.pi) * 1.15), max_rad))
+
+                # Cari titik pusat massa gejala (Weighted Intensity Centroid) persis di dalam kontur lesi
+                mask_top = np.zeros((h, w), dtype=np.uint8)
+                cv2.drawContours(mask_top, [top_c], -1, 1, -1)
+                heat_in_c = np.where(mask_top > 0, h_eff, 0.0)
+                pts_y, pts_x = np.where(heat_in_c > 0.01)
+                if len(pts_y) > 0:
+                    weights = np.power(heat_in_c[pts_y, pts_x], 2)
+                    w_sum = float(np.sum(weights))
+                    if w_sum > 0:
+                        cx = int(np.round(np.sum(pts_x * weights) / w_sum))
+                        cy = int(np.round(np.sum(pts_y * weights) / w_sum))
+                        # Verifikasi titik berada di kanopi daun (jika sedikit keluar batas, kunci ke piksel kanopi terdekat)
+                        if is_plant[min(max(cy, 0), h - 1), min(max(cx, 0), w - 1)]:
+                            return cx, cy, r_calc
+                        else:
+                            pts = top_c.reshape(-1, 2)
+                            dists = (pts[:, 0] - cx)**2 + (pts[:, 1] - cy)**2
+                            best_idx = np.argmin(dists)
+                            return int(pts[best_idx, 0]), int(pts[best_idx, 1]), r_calc
+
                 M = cv2.moments(top_c)
                 if M["m00"] > 0:
                     cx = int(M["m10"] / M["m00"])
                     cy = int(M["m01"] / M["m00"])
-                    area = cv2.contourArea(top_c)
-                    r_calc = max(base_rad, min(int(np.sqrt(area / np.pi) * 1.15), max_rad))
                     # Verifikasi titik berada di kanopi daun (jika melengser keluar, kunci ke piksel kanopi terdekat)
                     if not is_plant[min(max(cy, 0), h - 1), min(max(cx, 0), w - 1)]:
                         pts = top_c.reshape(-1, 2)
@@ -1387,7 +1417,18 @@ def generate_lesion_hud_map(
                         cx, cy = int(pts[best_idx, 0]), int(pts[best_idx, 1])
                     return cx, cy, r_calc
 
-            # Fallback terjamin: Ambil titik dengan skor panas tertinggi langsung pada kanopi daun
+            # Fallback terjamin: Ambil weighted centroid dari piksel bergejala tertinggi di kanopi daun
+            max_val = np.max(h_eff)
+            if max_val > 0.05:
+                top_thresh = max_val * 0.85
+                pts_y, pts_x = np.where((h_eff >= top_thresh) & is_plant)
+                if len(pts_y) > 0:
+                    weights = np.power(h_eff[pts_y, pts_x], 2)
+                    w_sum = float(np.sum(weights))
+                    if w_sum > 0:
+                        cx = int(np.round(np.sum(pts_x * weights) / w_sum))
+                        cy = int(np.round(np.sum(pts_y * weights) / w_sum))
+                        return cx, cy, base_rad
             max_pos = np.argmax(h_eff)
             cy, cx = divmod(max_pos, w)
             return int(cx), int(cy), base_rad
@@ -2221,7 +2262,7 @@ with st.sidebar:
     st.divider()
 
     # --------------------------------------------------------------------------
-    # FITUR BARU: BUKU PANDUAN PENGGUNAAN FITUR WEB (SINGKAT, PADAT & JELAS)
+    # FITUR 1: BUKU PANDUAN PENGGUNAAN FITUR WEB (OPERASIONAL APLIKASI)
     # --------------------------------------------------------------------------
     with st.expander("📖 Buku Panduan Penggunaan Web", expanded=False):
         st.markdown("""
@@ -2230,37 +2271,62 @@ with st.sidebar:
         <strong style="color: #166534;">📸 1. Cara Ambil / Unggah Foto:</strong>
         <ul style="margin: 4px 0 8px 16px; padding: 0;">
             <li><strong>Jarak Ideal:</strong> 10–20 cm tegak lurus ke helai daun.</li>
-            <li><strong>Fokus Tajam:</strong> Pastikan helai daun / lesi jelas dan tidak buram/goyang.</li>
-            <li><strong>Pencahayaan:</strong> Terang alami (pagi/siang), hindari bayangan gelap atau backlight silau.</li>
-            <li><strong>Posisi Objek:</strong> Jangan tutupi bercak lesi dengan telapak tangan atau jari.</li>
+            <li><strong>Fokus Tajam:</strong> Pastikan helai daun / bercak penyakit fokus tajam, tidak buram atau goyang.</li>
+            <li><strong>Pencahayaan:</strong> Terang alami (pagi/siang), hindari bayangan gelap pekat atau silau berlebih.</li>
+            <li><strong>Posisi:</strong> Jangan menutupi bercak lesi dengan telapak tangan atau jari saat memegang daun.</li>
         </ul>
 
-        <strong style="color: #166534;">⚙️ 2. Pengaturan Validasi Foto:</strong>
-        <ul style="margin: 4px 0 8px 16px; padding: 0;">
-            <li><strong>Batas Keyakinan (Default 65%):</strong> Ambang kepastian AI. Jika foto buram atau bukan daun bawang, sistem menolak diagnosis sembarangan.</li>
-            <li><strong>Sensitivitas Daun (Default 8%):</strong> Luas minimal kanopi daun pada foto. Naikkan (15–25%) jika ingin lebih ketat menyaring foto non-daun.</li>
-            <li><strong>Validasi AI Vision:</strong> Menapis otomatis objek asing (manusia, hewan, tanah kosong, atau tanaman selain bawang).</li>
-        </ul>
-
-        <strong style="color: #166534;">🖼️ 3. Membaca Retikel HUD Lesion Scanner:</strong>
+        <strong style="color: #166534;">🖼️ 2. Membaca Retikel HUD Lesion Scanner:</strong>
         <ul style="margin: 4px 0 8px 16px; padding: 0;">
             <li><span style="color: #dc2626; font-weight: 700;">🔴 Retikel Merah:</span> Mengunci titik pusat lesi aktif penyakit utama pada daun (presisi tinggi seperti Bulu Embun).</li>
             <li><span style="color: #d97706; font-weight: 700;">🟠 Retikel Oranye:</span> Menandai fokus penyakit kedua saat terjadi gejala ganda (diferensial).</li>
             <li><span style="color: #16a34a; font-weight: 700;">🟢 Retikel Hijau:</span> Memverifikasi helai daun berklorofil sehat prima bebas patogen.</li>
         </ul>
 
-        <strong style="color: #166534;">💾 4. Riwayat Pemeriksaan:</strong>
+        <strong style="color: #166534;">💾 3. Riwayat Pemeriksaan:</strong>
         <ul style="margin: 4px 0 8px 16px; padding: 0;">
             <li>Klik tombol <strong>💾 Simpan Hasil ke Riwayat</strong> untuk menyimpan diagnosis ke penyimpanan lokal browser.</li>
             <li>Hapus butir riwayat satu per satu secara fleksibel dengan tombol <strong>🗑️</strong> di daftar riwayat sidebar.</li>
         </ul>
 
-        <strong style="color: #166534;">💊 5. Resep & Rekomendasi Obat:</strong>
+        <strong style="color: #166534;">💊 4. Resep & Rekomendasi Obat:</strong>
         <ul style="margin: 4px 0 8px 16px; padding: 0;">
-            <li><strong>Tindakan 24 Jam:</strong> Pemangkasan dan sanitasi darurat daun sakit.</li>
-            <li><strong>Obat Semprot:</strong> Bahan aktif resmi Balitsa/Kementan (Mankozeb, Difenokonazol, dll.) dengan takaran sendok per tangki 16L.</li>
+            <li><strong>Tindakan 24 Jam:</strong> Prosedur darurat pemangkasan presisi dan sanitasi daun sakit.</li>
+            <li><strong>Obat Semprot:</strong> Bahan aktif resmi Balitsa/Kementan dengan takaran sendok per tangki 16L.</li>
         </ul>
         
+        </div>
+        """, unsafe_allow_html=True)
+
+    # --------------------------------------------------------------------------
+    # FITUR 2: PANDUAN & TOLOK UKUR VALIDASI FOTO (TERPISAH & DETAIL PERSEN)
+    # --------------------------------------------------------------------------
+    with st.expander("🎯 Panduan & Tolok Ukur Validasi Foto", expanded=False):
+        st.markdown("""
+        <div style="font-size: 0.82rem; line-height: 1.55; color: #334155;">
+        
+        <strong style="color: #166534;">📊 1. Batas Keyakinan (Confidence Threshold):</strong>
+        <p style="margin: 2px 0 6px 0; color: #64748b;">Kriteria persentase kepastian AI sebelum menetapkan diagnosis:</p>
+        <ul style="margin: 0 0 10px 16px; padding: 0;">
+            <li><strong style="color: #b45309;">🟡 40% – 55% (Mode Toleran / Sore / Dini):</strong><br>
+            <em>Cocok untuk:</em> Foto sore hari, cuaca mendung, pencahayaan redup, gejala awal yang masih sangat tipis, atau kamera sedikit bergetar. Sistem lebih toleran menerima foto.</li>
+            <li><strong style="color: #15803d;">🟢 60% – 70% (Standar Lapangan Sawah - Rekomendasi Balitsa 65%):</strong><br>
+            <em>Cocok untuk:</em> Pemantauan harian di bedengan sawah dengan cahaya alami terang. Memberikan akurasi optimal dan mencegah tebak sembarangan.</li>
+            <li><strong style="color: #b91c1c;">🔴 75% – 90% (Mode Super Ketat / Laboratorium):</strong><br>
+            <em>Cocok untuk:</em> Foto makro sangat tajam, pencahayaan studio/lampu terang, sertifikasi mutu benih. Menolak tegas jika ada keraguan sedikit pun.</li>
+        </ul>
+
+        <strong style="color: #166534;">🍃 2. Sensitivitas Daun Bawang (Minimal Leaf Ratio):</strong>
+        <p style="margin: 2px 0 6px 0; color: #64748b;">Kriteria persentase minimal kanopi daun yang wajib ada pada foto:</p>
+        <ul style="margin: 0 0 6px 16px; padding: 0;">
+            <li><strong style="color: #b45309;">🟡 3% – 6% (Toleransi Kanopi Kecil / Jarak Jauh):</strong><br>
+            <em>Cocok untuk:</em> Satu helai daun kecil dipegang tangan, bibit muda 1–2 minggu, atau foto dari jarak agak jauh (> 30 cm).</li>
+            <li><strong style="color: #15803d;">🟢 8% – 15% (Standar Rumpun Sawah Normal):</strong><br>
+            <em>Cocok untuk:</em> Rumpun daun bawang normal umur 3–8 minggu. Latar tanah dan pematang otomatis tersaring.</li>
+            <li><strong style="color: #b91c1c;">🔴 18% – 35% (Mode Makro Daun Penuh):</strong><br>
+            <em>Cocok untuk:</em> Foto jarak dekat helai daun yang memenuhi bidang foto. Sangat ketat menolak jika latar belakang tanah/pot mendominasi.</li>
+        </ul>
+
         </div>
         """, unsafe_allow_html=True)
 
@@ -2288,27 +2354,101 @@ with st.sidebar:
 
     default_conf_pct = int(round(float(meta_config.get("conf_threshold", 0.65)) * 100))
     st.markdown("### ⚙️ Validasi Foto Bawang")
+    st.caption("Pilih preset cepat atau geser slider sesuai kondisi foto lapangan:")
+
+    # Tombol Preset Cepat Langsung Sinkron ke Web
+    col_pre1, col_pre2, col_pre3 = st.columns(3)
+    with col_pre1:
+        if st.button("🌾 Standar", help="Preset Standar Sawah (65% / 8%)", use_container_width=True):
+            st.session_state["conf_slider"] = 65
+            st.session_state["leaf_slider"] = 8
+            st.rerun()
+    with col_pre2:
+        if st.button("☁️ Redup", help="Preset Foto Sore / Gejala Dini (50% / 5%)", use_container_width=True):
+            st.session_state["conf_slider"] = 50
+            st.session_state["leaf_slider"] = 5
+            st.rerun()
+    with col_pre3:
+        if st.button("🔬 Ketat", help="Preset Super Ketat Lab (80% / 20%)", use_container_width=True):
+            st.session_state["conf_slider"] = 80
+            st.session_state["leaf_slider"] = 20
+            st.rerun()
+
+    # Inisialisasi default jika belum ada di session_state
+    if "conf_slider" not in st.session_state:
+        st.session_state["conf_slider"] = default_conf_pct
+    if "leaf_slider" not in st.session_state:
+        st.session_state["leaf_slider"] = 8
+
     conf_threshold_pct = st.slider(
         "Batas Keyakinan / Confidence Threshold (%)",
         min_value=20,
         max_value=90,
-        value=default_conf_pct,
+        value=st.session_state["conf_slider"],
         step=5,
+        key="conf_slider",
         help="Jika kepastian model di bawah nilai ini, foto akan ditandai 'Tidak yakin, foto kurang jelas atau bukan daun bawang'."
     )
     conf_threshold = conf_threshold_pct / 100.0
-    st.caption(f"Ambang batas kepastian: **{conf_threshold_pct}%** (Default: {default_conf_pct}%)")
+
+    # Kriteria dinamis real-time untuk Batas Keyakinan
+    if conf_threshold_pct < 55:
+        c_badge_bg = "#fefce8"
+        c_badge_border = "#eab308"
+        c_badge_color = "#713f12"
+        c_badge_txt = f"🟡 <strong>Mode Sensitif ({conf_threshold_pct}%):</strong> Menerima foto sore/mendung & gejala bercak dini yang masih tipis."
+    elif conf_threshold_pct <= 72:
+        c_badge_bg = "#f0fdf4"
+        c_badge_border = "#22c55e"
+        c_badge_color = "#14532d"
+        c_badge_txt = f"🟢 <strong>Standar Sawah ({conf_threshold_pct}%):</strong> Keseimbangan optimal untuk pemantauan harian di bedengan (Rekomendasi)."
+    else:
+        c_badge_bg = "#fef2f2"
+        c_badge_border = "#ef4444"
+        c_badge_color = "#7f1d1d"
+        c_badge_txt = f"🔴 <strong>Mode Super Ketat ({conf_threshold_pct}%):</strong> Hanya menerima foto sangat tajam & tanpa sedikit pun keraguan."
+
+    st.markdown(
+        f"<div style='background: {c_badge_bg}; border-left: 4px solid {c_badge_border}; color: {c_badge_color}; padding: 6px 10px; border-radius: 6px; font-size: 0.77rem; margin-top: -6px; margin-bottom: 12px; line-height: 1.4;'>"
+        f"{c_badge_txt}"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
     min_leaf_ratio_pct = st.slider(
         "Sensitivitas Daun Bawang (%)",
         min_value=3,
         max_value=35,
-        value=8,
+        value=st.session_state["leaf_slider"],
         step=1,
+        key="leaf_slider",
         help="Persentase minimal kanopi daun bawang merah yang harus ada pada foto. Naikkan jika ingin validasi lebih ketat menolak foto selain bawang."
     )
     min_leaf_ratio = min_leaf_ratio_pct / 100.0
-    st.caption(f"Batas luas daun minimal: **{min_leaf_ratio_pct}%**")
+
+    # Kriteria dinamis real-time untuk Sensitivitas Daun
+    if min_leaf_ratio_pct < 7:
+        l_badge_bg = "#fefce8"
+        l_badge_border = "#eab308"
+        l_badge_color = "#713f12"
+        l_badge_txt = f"🟡 <strong>Toleransi Tinggi ({min_leaf_ratio_pct}%):</strong> Menerima satu helai daun kecil / bibit muda / foto agak jauh."
+    elif min_leaf_ratio_pct <= 16:
+        l_badge_bg = "#f0fdf4"
+        l_badge_border = "#22c55e"
+        l_badge_color = "#14532d"
+        l_badge_txt = f"🟢 <strong>Standar Rumpun Sawah ({min_leaf_ratio_pct}%):</strong> Ideal untuk tanaman bawang merah umur 3–8 minggu."
+    else:
+        l_badge_bg = "#fef2f2"
+        l_badge_border = "#ef4444"
+        l_badge_color = "#7f1d1d"
+        l_badge_txt = f"🔴 <strong>Filter Makro Ketat ({min_leaf_ratio_pct}%):</strong> Wajib helai daun mendominasi foto, tolak latar tanah luas."
+
+    st.markdown(
+        f"<div style='background: {l_badge_bg}; border-left: 4px solid {l_badge_border}; color: {l_badge_color}; padding: 6px 10px; border-radius: 6px; font-size: 0.77rem; margin-top: -6px; margin-bottom: 8px; line-height: 1.4;'>"
+        f"{l_badge_txt}"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
     st.divider()
     st.markdown("### 📋 Riwayat Pemeriksaan")
