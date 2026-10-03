@@ -518,11 +518,26 @@ st.markdown("""
     [data-testid="stFileUploader"] {
         background-color: #FFFFFF !important;
         border: 2px dashed #64748B !important;
-        border-radius: 14px !important;
-        padding: 1rem !important;
+        border-radius: 12px !important;
+        padding: 0.75rem !important;
+        width: 100% !important;
+        overflow: visible !important;
     }
     [data-testid="stFileUploader"] * {
         color: #0F172A !important;
+    }
+    [data-testid="stFileUploaderDropzone"] {
+        padding: 0.5rem !important;
+        background-color: transparent !important;
+        border: none !important;
+        width: 100% !important;
+        overflow: visible !important;
+    }
+    [data-testid="stFileUploaderDropzone"] button {
+        white-space: normal !important;
+        word-break: break-word !important;
+        font-weight: 700 !important;
+        border-radius: 8px !important;
     }
     [data-testid="stCameraInput"] {
         background-color: #FFFFFF !important;
@@ -534,29 +549,96 @@ st.markdown("""
         color: #0F172A !important;
     }
 
-    /* 8. Expander & Alert */
+    /* Ikon Ganti Kamera Depan/Belakang di HP / Mobile (Wajib Hitam Pekat, Kontras Tinggi & Tidak Samar) */
+    [data-testid="stCameraInput"] button:not([kind="primary"]) svg,
+    [data-testid="stCameraInput"] button:not([kind="primary"]) path,
+    [data-testid="stCameraInput"] button[aria-label*="switch" i] svg,
+    [data-testid="stCameraInput"] button[aria-label*="switch" i] path,
+    [data-testid="stCameraInput"] button[aria-label*="camera" i] svg,
+    [data-testid="stCameraInput"] button[aria-label*="camera" i] path,
+    [data-testid="stCameraInput"] button[title*="switch" i] svg,
+    [data-testid="stCameraInput"] button[title*="switch" i] path,
+    [data-testid="stCameraInput"] button[title*="camera" i] svg,
+    [data-testid="stCameraInput"] button[title*="camera" i] path,
+    [data-testid="stCameraInput"] [data-testid*="switch" i] svg,
+    [data-testid="stCameraInput"] [data-testid*="camera" i] svg {
+        color: #000000 !important;
+        fill: #000000 !important;
+        stroke: #000000 !important;
+        opacity: 1 !important;
+        filter: drop-shadow(0px 1px 1px rgba(255,255,255,0.9)) !important;
+    }
+    [data-testid="stCameraInput"] button:not([kind="primary"]) {
+        background-color: #FFFFFF !important;
+        border: 2px solid #000000 !important;
+        border-radius: 999px !important;
+        color: #000000 !important;
+        opacity: 1 !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.25) !important;
+    }
+
+    /* 8. Expander & Alert (Dikecilkan Ramping & Proporsional di Mobile & Desktop) */
     [data-testid="stExpander"] {
         background-color: #FFFFFF !important;
-        border: 2px solid #CBD5E1 !important;
-        border-radius: 14px !important;
-        margin-bottom: 1rem !important;
+        border: 1.5px solid #CBD5E1 !important;
+        border-radius: 10px !important;
+        margin-bottom: 0.5rem !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.03) !important;
     }
     [data-testid="stExpander"] summary {
         background-color: #F8FAFC !important;
-        padding: 0.75rem 1rem !important;
-        border-radius: 12px !important;
+        padding: 0.45rem 0.75rem !important;
+        border-radius: 8px !important;
+        min-height: unset !important;
+        gap: 8px !important;
     }
     [data-testid="stExpander"] summary * {
         color: #0F172A !important;
-        font-weight: 800 !important;
-        font-size: 1.1rem !important;
+        font-weight: 700 !important;
+        font-size: 0.88rem !important;
     }
     [data-testid="stExpanderDetails"] {
         background-color: #FFFFFF !important;
-        padding: 1rem !important;
+        padding: 0.65rem 0.85rem !important;
     }
     [data-testid="stExpanderDetails"] * {
         color: #0F172A !important;
+    }
+
+    /* Kotak Khusus Panduan & Kategori Sidebar (Dikecilkan Lebih Ramping di Mobile & Desktop) */
+    [data-testid="stSidebar"] [data-testid="stExpander"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 8px !important;
+        margin-bottom: 0.35rem !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.02) !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary {
+        background-color: #F8FAFC !important;
+        padding: 0.32rem 0.55rem !important;
+        border-radius: 7px !important;
+        min-height: unset !important;
+        gap: 6px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary * {
+        color: #0F172A !important;
+        font-weight: 700 !important;
+        font-size: 0.80rem !important;
+        line-height: 1.3 !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary svg {
+        width: 14px !important;
+        height: 14px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] {
+        background-color: #FFFFFF !important;
+        padding: 0.45rem 0.6rem !important;
+        font-size: 0.78rem !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] * {
+        color: #1E293B !important;
+        font-size: 0.78rem !important;
+        line-height: 1.4 !important;
     }
 
     /* Sidebar Terang Berbatas Tegas */
@@ -2659,34 +2741,35 @@ with st.sidebar:
     # --------------------------------------------------------------------------
     # FITUR 1: BUKU PANDUAN PENGGUNAAN FITUR WEB (OPERASIONAL APLIKASI)
     # --------------------------------------------------------------------------
-    with st.expander("📖 Panduan Singkat Penggunaan Web", expanded=False):
+    with st.expander("📖 Panduan Penggunaan Web", expanded=False):
         st.markdown("""
-        <div style="font-size: 0.82rem; line-height: 1.5; color: #334155;">
+        <div style="font-size: 0.76rem; line-height: 1.38; color: #334155;">
         
         <strong style="color: #166534;">📸 1. Pengambilan Foto:</strong>
-        <ul style="margin: 2px 0 6px 14px; padding: 0;">
+        <ul style="margin: 1px 0 4px 12px; padding: 0;">
             <li><strong>Jarak:</strong> 10–20 cm tegak lurus daun, fokus tajam & tidak blur.</li>
-            <li><strong>Cahaya:</strong> Terang alami, hindari bayangan pekat & silau lilin daun.</li>
+            <li><strong>Cahaya:</strong> Terang alami, hindari bayangan pekat & silau.</li>
             <li><strong>Posisi:</strong> Jangan tutupi bercak lesi dengan jari/tangan.</li>
         </ul>
 
         <strong style="color: #166534;">🎯 2. Arti Retikel HUD Scanner:</strong>
-        <ul style="margin: 2px 0 6px 14px; padding: 0;">
-            <li><span style="color: #dc2626; font-weight: 700;">🔴 Merah:</span> Pusat lesi aktif penyakit utama.</li>
-            <li><span style="color: #d97706; font-weight: 700;">🟠 Oranye:</span> Gejala penyakit kedua (pada infeksi ganda).</li>
-            <li><span style="color: #16a34a; font-weight: 700;">🟢 Hijau:</span> Jaringan helai daun sehat prima.</li>
+        <ul style="margin: 1px 0 4px 12px; padding: 0;">
+            <li><span style="color: #dc2626; font-weight: 700;">🔴 [1] Merah:</span> Lesi aktif penyakit utama.</li>
+            <li><span style="color: #d97706; font-weight: 700;">🟠 [2] Oranye:</span> Lesi penyakit kedua.</li>
+            <li><span style="color: #0284c7; font-weight: 700;">🔵 [3] Biru:</span> Lesi penyakit ketiga.</li>
+            <li><span style="color: #16a34a; font-weight: 700;">🟢 [OK] Hijau:</span> Jaringan daun sehat prima.</li>
         </ul>
 
         <strong style="color: #166534;">💾 3. Riwayat Diagnosa:</strong>
-        <ul style="margin: 2px 0 6px 14px; padding: 0;">
-            <li>Klik tombol <strong>💾 Simpan Hasil</strong> untuk menyimpan riwayat ke browser.</li>
-            <li>Tombol <strong>🗑️</strong> di daftar riwayat untuk menghapus satu per satu.</li>
+        <ul style="margin: 1px 0 4px 12px; padding: 0;">
+            <li>Klik <strong>💾 Simpan Hasil</strong> untuk mencatat riwayat di browser.</li>
+            <li>Tombol <strong>🗑️</strong> di riwayat untuk menghapus per entri.</li>
         </ul>
 
         <strong style="color: #166534;">💊 4. Penanganan Tanaman:</strong>
-        <ul style="margin: 2px 0 2px 14px; padding: 0;">
-            <li><strong>Darurat 24 Jam:</strong> Pangkas & musnahkan helai daun sakit.</li>
-            <li><strong>Obat Semprot:</strong> Bahan aktif resmi Balitsa takaran sendok per tangki 16L.</li>
+        <ul style="margin: 1px 0 1px 12px; padding: 0;">
+            <li><strong>24 Jam:</strong> Pangkas & musnahkan daun sakit ke luar sawah.</li>
+            <li><strong>Obat Semprot:</strong> Bahan aktif Balitsa per tangki 16L.</li>
         </ul>
         
         </div>
@@ -2695,43 +2778,49 @@ with st.sidebar:
     # --------------------------------------------------------------------------
     # FITUR 2: PANDUAN & TOLOK UKUR VALIDASI FOTO (TERPISAH & DETAIL PERSEN)
     # --------------------------------------------------------------------------
-    with st.expander("🎯 Panduan & Tolok Ukur Validasi Foto", expanded=False):
+    with st.expander("🎯 Panduan Validasi Foto", expanded=False):
         st.markdown("""
-        <div style="font-size: 0.82rem; line-height: 1.5; color: #334155;">
+        <div style="font-size: 0.76rem; line-height: 1.38; color: #334155;">
         
-        <strong style="color: #166534;">📊 1. Batas Keyakinan (Confidence Threshold):</strong>
-        <ul style="margin: 2px 0 6px 14px; padding: 0;">
-            <li><strong style="color: #b45309;">40% – 55% (Redup/Dini):</strong> Foto sore, cuaca mendung, atau bercak awal tipis.</li>
-            <li><strong style="color: #15803d;">65% (Standar Balitsa - Rekomendasi):</strong> Keseimbangan optimal untuk pemantauan harian sawah.</li>
-            <li><strong style="color: #b91c1c;">75% – 90% (Super Ketat):</strong> Foto makro studio / sertifikasi benih; tolak segala keraguan.</li>
+        <strong style="color: #166534;">📊 1. Batas Keyakinan Model:</strong>
+        <ul style="margin: 1px 0 4px 12px; padding: 0;">
+            <li><strong style="color: #b45309;">40% – 55% (Redup/Dini):</strong> Foto sore, mendung, atau bercak tipis.</li>
+            <li><strong style="color: #15803d;">65% (Standar Balitsa - Rekomendasi):</strong> Pemantauan harian sawah.</li>
+            <li><strong style="color: #b91c1c;">75% – 90% (Super Ketat):</strong> Standar sertifikasi benih / makro.</li>
         </ul>
 
-        <strong style="color: #166534;">🍃 2. Sensitivitas Daun Bawang (Minimal Rasio):</strong>
-        <ul style="margin: 2px 0 2px 14px; padding: 0;">
-            <li><strong style="color: #b45309;">3% – 6% (Toleran):</strong> Satu helai daun kecil dipegang tangan, bibit muda, atau foto agak jauh.</li>
-            <li><strong style="color: #15803d;">8% – 15% (Standar Sawah - Rekomendasi):</strong> Rumpun bawang normal umur 3–8 minggu. Tanah tersaring.</li>
-            <li><strong style="color: #b91c1c;">18% – 35% (Makro Penuh):</strong> Daun harus mendominasi foto; tolak latar tanah luas.</li>
+        <strong style="color: #166534;">🍃 2. Sensitivitas Daun Bawang:</strong>
+        <ul style="margin: 1px 0 1px 12px; padding: 0;">
+            <li><strong style="color: #b45309;">3% – 6% (Toleran):</strong> Daun tunggal / bibit muda / dipegang tangan.</li>
+            <li><strong style="color: #15803d;">8% – 15% (Standar Sawah):</strong> Rumpun bawang normal umur 3–8 minggu.</li>
+            <li><strong style="color: #b91c1c;">18% – 35% (Makro Penuh):</strong> Daun harus mendominasi layar foto.</li>
         </ul>
 
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("### 🔬 Model PyTorch TorchScript")
-    st.caption("EfficientNet-B0 (TorchScript) dengan Test-Time Augmentation (TTA) Flip Horizontal.")
+    st.markdown("""
+        <div style="font-size: 0.86rem; font-weight: 800; color: #0F172A; margin: 0.35rem 0 0.1rem 0;">
+            🔬 Model PyTorch TorchScript
+        </div>
+        <div style="font-size: 0.75rem; color: #475569; margin-bottom: 0.3rem; line-height: 1.3;">
+            EfficientNet-B0 (TorchScript) + TTA Flip Horizontal.
+        </div>
+    """, unsafe_allow_html=True)
 
-    # Tampilkan 7 Kategori yang Dideteksi di Sidebar
+    # Tampilkan 7 Kategori yang Dideteksi di Sidebar (Ukuran Dikecilkan Ramping)
     with st.expander("📋 7 Kategori yang Dideteksi AI", expanded=False):
         for item in SUPPORTED_DISEASES_7:
             status_color = "#15803d" if item["is_healthy"] else ("#b45309" if item["status"] == "virus" else "#b91c1c")
             tag_text = "SEHAT" if item["is_healthy"] else ("VIRUS" if item["status"] == "virus" else "PENYAKIT")
             st.markdown(
-                f"<div style='margin-bottom: 8px; font-size: 0.84rem; background: #ffffff; padding: 7px 10px; border-radius: 8px; border: 1px solid #e2e8f0;'>"
+                f"<div style='margin-bottom: 4px; font-size: 0.76rem; background: #ffffff; padding: 4px 7px; border-radius: 6px; border: 1px solid #e2e8f0;'>"
                 f"<div style='display: flex; justify-content: space-between; align-items: center;'>"
-                f"<strong>{item['icon']} {item['nama_id']}</strong>"
-                f"<span style='background: {status_color}; color: #fff; font-size: 0.70rem; font-weight: 700; padding: 1px 6px; border-radius: 4px;'>{tag_text}</span>"
+                f"<strong style='font-size: 0.78rem;'>{item['icon']} {item['nama_id']}</strong>"
+                f"<span style='background: {status_color}; color: #fff; font-size: 0.62rem; font-weight: 700; padding: 1px 5px; border-radius: 4px;'>{tag_text}</span>"
                 f"</div>"
-                f"<span style='color: {status_color}; font-size: 0.76rem;'>• <em>{item['latin']}</em></span><br>"
-                f"<span style='color: #475569; font-size: 0.78rem;'>🔍 {item['ciri_lapangan']}</span>"
+                f"<span style='color: {status_color}; font-size: 0.70rem;'>• <em>{item['latin']}</em></span><br>"
+                f"<span style='color: #475569; font-size: 0.72rem; line-height: 1.3;'>🔍 {item['ciri_lapangan']}</span>"
                 f"</div>",
                 unsafe_allow_html=True
             )
@@ -2966,13 +3055,48 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-tab_camera, tab_upload = st.tabs(["📸 Ambil Foto Langsung (Kamera HP)", "📁 Pilih dari Galeri HP"])
+if "input_source_mode" not in st.session_state:
+    st.session_state["input_source_mode"] = "camera"
+
+# Tombol Pilihan Mode Input (Anti-Crop & Auto-Refresh Antar Mode Kamera vs Galeri)
+col_src1, col_src2 = st.columns(2)
+is_cam_mode = (st.session_state["input_source_mode"] == "camera")
+is_upload_mode = (st.session_state["input_source_mode"] == "upload")
+
+with col_src1:
+    btn_cam = st.button(
+        "📸 Ambil Foto Kamera",
+        type="primary" if is_cam_mode else "secondary",
+        use_container_width=True,
+        key="btn_switch_to_camera"
+    )
+    if btn_cam and not is_cam_mode:
+        st.session_state["input_source_mode"] = "camera"
+        st.session_state["upload_key_ver"] = st.session_state.get("upload_key_ver", 0) + 1
+        if "has_inspected_current" in st.session_state:
+            del st.session_state["has_inspected_current"]
+        st.rerun()
+
+with col_src2:
+    btn_upload = st.button(
+        "📁 Pilih dari Galeri",
+        type="primary" if is_upload_mode else "secondary",
+        use_container_width=True,
+        key="btn_switch_to_upload"
+    )
+    if btn_upload and not is_upload_mode:
+        st.session_state["input_source_mode"] = "upload"
+        st.session_state["cam_key_ver"] = st.session_state.get("cam_key_ver", 0) + 1
+        if "has_inspected_current" in st.session_state:
+            del st.session_state["has_inspected_current"]
+        st.rerun()
 
 selected_image = None
 file_error = False
 
-with tab_camera:
-    cam_file = st.camera_input("Arahkan kamera dekat ke bagian daun yang sakit:", key="input_camera_field")
+if is_cam_mode:
+    cam_key = f"cam_field_v{st.session_state.get('cam_key_ver', 0)}"
+    cam_file = st.camera_input("Arahkan kamera dekat ke bagian daun yang sakit:", key=cam_key)
     if cam_file is not None:
         if cam_file.size > MAX_FILE_SIZE_BYTES:
             st.error(f"❌ Ukuran foto ({cam_file.size / (1024*1024):.1f} MB) melebihi batas maksimal {MAX_FILE_SIZE_MB} MB. Silakan ambil ulang dengan resolusi wajar.")
@@ -2983,11 +3107,12 @@ with tab_camera:
             except (ValueError, OSError) as err:
                 st.error(f"Gagal membaca foto kamera: {err}")
 
-with tab_upload:
+elif is_upload_mode:
+    upload_key = f"upload_field_v{st.session_state.get('upload_key_ver', 0)}"
     uploaded_file = st.file_uploader(
         f"Pilih file foto dari galeri (JPG, JPEG, PNG, WEBP - Maksimal {MAX_FILE_SIZE_MB} MB):",
         type=["jpg", "jpeg", "png", "webp"],
-        key="input_file_field"
+        key=upload_key
     )
     if uploaded_file is not None:
         if uploaded_file.size > MAX_FILE_SIZE_BYTES:
