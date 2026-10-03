@@ -242,6 +242,25 @@ st.markdown("""
         background-color: #0369A1 !important;
     }
 
+    /* Tombol Khusus Sidebar (Bebas Terpotong/Anti-Crop, Font Pas & Terbaca Jelas) */
+    [data-testid="stSidebar"] div.stButton > button {
+        min-height: 42px !important;
+        font-size: 0.88rem !important;
+        font-weight: 700 !important;
+        padding: 0.45rem 0.5rem !important;
+        border-radius: 10px !important;
+        white-space: normal !important;
+        word-break: normal !important;
+        line-height: 1.25 !important;
+        text-overflow: clip !important;
+    }
+    [data-testid="stSidebar"] div.stButton > button p {
+        font-size: 0.88rem !important;
+        margin: 0 !important;
+        line-height: 1.25 !important;
+        white-space: normal !important;
+    }
+
     /* 4. Tab Navigasi Kamera & Galeri (Kontras Jelas) */
     .stTabs [data-baseweb="tab-list"] {
         background-color: #E2E8F0 !important;
@@ -989,7 +1008,7 @@ def get_groq_api_key() -> str:
 
     return ""
 
-def validate_onion_image(image: Image.Image, api_key: str | None = None, min_ratio: float = 0.08) -> tuple[bool, str]:
+def validate_onion_image(image: Image.Image, api_key: str | None = None, min_ratio: float = 0.08):
     """
     Sistem Validasi Guardrail Gatekeeper Citra Tanaman Bawang Merah:
     Memverifikasi keaslian foto daun bawang merah sebelum proses diagnosa.
@@ -997,9 +1016,15 @@ def validate_onion_image(image: Image.Image, api_key: str | None = None, min_rat
     Tetap mengizinkan anomali wajar seperti daun bawang yang dipegang tangan petani di kebun.
     """
     is_plant, reason, ratio = check_shallot_leaf_mask(image, min_ratio=min_ratio)
+    info = {
+        "plant_ratio": ratio,
+        "min_ratio": min_ratio,
+        "is_ratio_rejection": (not is_plant and "Rasio daun bawang pada foto hanya" in reason),
+        "reason": reason
+    }
     if not is_plant:
-        return False, f"INVALID: {reason}"
-    return True, f"VALID (Rasio Kanopi Daun: {ratio*100:.1f}%)"
+        return False, f"INVALID: {reason}", info
+    return True, f"VALID (Rasio Kanopi Daun: {ratio*100:.1f}%)", info
 
 # Alias untuk kompatibilitas
 validate_with_groq_vision = validate_onion_image
@@ -2264,35 +2289,34 @@ with st.sidebar:
     # --------------------------------------------------------------------------
     # FITUR 1: BUKU PANDUAN PENGGUNAAN FITUR WEB (OPERASIONAL APLIKASI)
     # --------------------------------------------------------------------------
-    with st.expander("📖 Buku Panduan Penggunaan Web", expanded=False):
+    with st.expander("📖 Panduan Singkat Penggunaan Web", expanded=False):
         st.markdown("""
         <div style="font-size: 0.82rem; line-height: 1.5; color: #334155;">
         
-        <strong style="color: #166534;">📸 1. Cara Ambil / Unggah Foto:</strong>
-        <ul style="margin: 4px 0 8px 16px; padding: 0;">
-            <li><strong>Jarak Ideal:</strong> 10–20 cm tegak lurus ke helai daun.</li>
-            <li><strong>Fokus Tajam:</strong> Pastikan helai daun / bercak penyakit fokus tajam, tidak buram atau goyang.</li>
-            <li><strong>Pencahayaan:</strong> Terang alami (pagi/siang), hindari bayangan gelap pekat atau silau berlebih.</li>
-            <li><strong>Posisi:</strong> Jangan menutupi bercak lesi dengan telapak tangan atau jari saat memegang daun.</li>
+        <strong style="color: #166534;">📸 1. Pengambilan Foto:</strong>
+        <ul style="margin: 2px 0 6px 14px; padding: 0;">
+            <li><strong>Jarak:</strong> 10–20 cm tegak lurus daun, fokus tajam & tidak blur.</li>
+            <li><strong>Cahaya:</strong> Terang alami, hindari bayangan pekat & silau lilin daun.</li>
+            <li><strong>Posisi:</strong> Jangan tutupi bercak lesi dengan jari/tangan.</li>
         </ul>
 
-        <strong style="color: #166534;">🖼️ 2. Membaca Retikel HUD Lesion Scanner:</strong>
-        <ul style="margin: 4px 0 8px 16px; padding: 0;">
-            <li><span style="color: #dc2626; font-weight: 700;">🔴 Retikel Merah:</span> Mengunci titik pusat lesi aktif penyakit utama pada daun (presisi tinggi seperti Bulu Embun).</li>
-            <li><span style="color: #d97706; font-weight: 700;">🟠 Retikel Oranye:</span> Menandai fokus penyakit kedua saat terjadi gejala ganda (diferensial).</li>
-            <li><span style="color: #16a34a; font-weight: 700;">🟢 Retikel Hijau:</span> Memverifikasi helai daun berklorofil sehat prima bebas patogen.</li>
+        <strong style="color: #166534;">🎯 2. Arti Retikel HUD Scanner:</strong>
+        <ul style="margin: 2px 0 6px 14px; padding: 0;">
+            <li><span style="color: #dc2626; font-weight: 700;">🔴 Merah:</span> Pusat lesi aktif penyakit utama.</li>
+            <li><span style="color: #d97706; font-weight: 700;">🟠 Oranye:</span> Gejala penyakit kedua (pada infeksi ganda).</li>
+            <li><span style="color: #16a34a; font-weight: 700;">🟢 Hijau:</span> Jaringan helai daun sehat prima.</li>
         </ul>
 
-        <strong style="color: #166534;">💾 3. Riwayat Pemeriksaan:</strong>
-        <ul style="margin: 4px 0 8px 16px; padding: 0;">
-            <li>Klik tombol <strong>💾 Simpan Hasil ke Riwayat</strong> untuk menyimpan diagnosis ke penyimpanan lokal browser.</li>
-            <li>Hapus butir riwayat satu per satu secara fleksibel dengan tombol <strong>🗑️</strong> di daftar riwayat sidebar.</li>
+        <strong style="color: #166534;">💾 3. Riwayat Diagnosa:</strong>
+        <ul style="margin: 2px 0 6px 14px; padding: 0;">
+            <li>Klik tombol <strong>💾 Simpan Hasil</strong> untuk menyimpan riwayat ke browser.</li>
+            <li>Tombol <strong>🗑️</strong> di daftar riwayat untuk menghapus satu per satu.</li>
         </ul>
 
-        <strong style="color: #166534;">💊 4. Resep & Rekomendasi Obat:</strong>
-        <ul style="margin: 4px 0 8px 16px; padding: 0;">
-            <li><strong>Tindakan 24 Jam:</strong> Prosedur darurat pemangkasan presisi dan sanitasi daun sakit.</li>
-            <li><strong>Obat Semprot:</strong> Bahan aktif resmi Balitsa/Kementan dengan takaran sendok per tangki 16L.</li>
+        <strong style="color: #166534;">💊 4. Penanganan Tanaman:</strong>
+        <ul style="margin: 2px 0 2px 14px; padding: 0;">
+            <li><strong>Darurat 24 Jam:</strong> Pangkas & musnahkan helai daun sakit.</li>
+            <li><strong>Obat Semprot:</strong> Bahan aktif resmi Balitsa takaran sendok per tangki 16L.</li>
         </ul>
         
         </div>
@@ -2303,28 +2327,20 @@ with st.sidebar:
     # --------------------------------------------------------------------------
     with st.expander("🎯 Panduan & Tolok Ukur Validasi Foto", expanded=False):
         st.markdown("""
-        <div style="font-size: 0.82rem; line-height: 1.55; color: #334155;">
+        <div style="font-size: 0.82rem; line-height: 1.5; color: #334155;">
         
         <strong style="color: #166534;">📊 1. Batas Keyakinan (Confidence Threshold):</strong>
-        <p style="margin: 2px 0 6px 0; color: #64748b;">Kriteria persentase kepastian AI sebelum menetapkan diagnosis:</p>
-        <ul style="margin: 0 0 10px 16px; padding: 0;">
-            <li><strong style="color: #b45309;">🟡 40% – 55% (Mode Toleran / Sore / Dini):</strong><br>
-            <em>Cocok untuk:</em> Foto sore hari, cuaca mendung, pencahayaan redup, gejala awal yang masih sangat tipis, atau kamera sedikit bergetar. Sistem lebih toleran menerima foto.</li>
-            <li><strong style="color: #15803d;">🟢 60% – 70% (Standar Lapangan Sawah - Rekomendasi Balitsa 65%):</strong><br>
-            <em>Cocok untuk:</em> Pemantauan harian di bedengan sawah dengan cahaya alami terang. Memberikan akurasi optimal dan mencegah tebak sembarangan.</li>
-            <li><strong style="color: #b91c1c;">🔴 75% – 90% (Mode Super Ketat / Laboratorium):</strong><br>
-            <em>Cocok untuk:</em> Foto makro sangat tajam, pencahayaan studio/lampu terang, sertifikasi mutu benih. Menolak tegas jika ada keraguan sedikit pun.</li>
+        <ul style="margin: 2px 0 6px 14px; padding: 0;">
+            <li><strong style="color: #b45309;">40% – 55% (Redup/Dini):</strong> Foto sore, cuaca mendung, atau bercak awal tipis.</li>
+            <li><strong style="color: #15803d;">65% (Standar Balitsa - Rekomendasi):</strong> Keseimbangan optimal untuk pemantauan harian sawah.</li>
+            <li><strong style="color: #b91c1c;">75% – 90% (Super Ketat):</strong> Foto makro studio / sertifikasi benih; tolak segala keraguan.</li>
         </ul>
 
-        <strong style="color: #166534;">🍃 2. Sensitivitas Daun Bawang (Minimal Leaf Ratio):</strong>
-        <p style="margin: 2px 0 6px 0; color: #64748b;">Kriteria persentase minimal kanopi daun yang wajib ada pada foto:</p>
-        <ul style="margin: 0 0 6px 16px; padding: 0;">
-            <li><strong style="color: #b45309;">🟡 3% – 6% (Toleransi Kanopi Kecil / Jarak Jauh):</strong><br>
-            <em>Cocok untuk:</em> Satu helai daun kecil dipegang tangan, bibit muda 1–2 minggu, atau foto dari jarak agak jauh (> 30 cm).</li>
-            <li><strong style="color: #15803d;">🟢 8% – 15% (Standar Rumpun Sawah Normal):</strong><br>
-            <em>Cocok untuk:</em> Rumpun daun bawang normal umur 3–8 minggu. Latar tanah dan pematang otomatis tersaring.</li>
-            <li><strong style="color: #b91c1c;">🔴 18% – 35% (Mode Makro Daun Penuh):</strong><br>
-            <em>Cocok untuk:</em> Foto jarak dekat helai daun yang memenuhi bidang foto. Sangat ketat menolak jika latar belakang tanah/pot mendominasi.</li>
+        <strong style="color: #166534;">🍃 2. Sensitivitas Daun Bawang (Minimal Rasio):</strong>
+        <ul style="margin: 2px 0 2px 14px; padding: 0;">
+            <li><strong style="color: #b45309;">3% – 6% (Toleran):</strong> Satu helai daun kecil dipegang tangan, bibit muda, atau foto agak jauh.</li>
+            <li><strong style="color: #15803d;">8% – 15% (Standar Sawah - Rekomendasi):</strong> Rumpun bawang normal umur 3–8 minggu. Tanah tersaring.</li>
+            <li><strong style="color: #b91c1c;">18% – 35% (Makro Penuh):</strong> Daun harus mendominasi foto; tolak latar tanah luas.</li>
         </ul>
 
         </div>
@@ -2356,20 +2372,20 @@ with st.sidebar:
     st.markdown("### ⚙️ Validasi Foto Bawang")
     st.caption("Pilih preset cepat atau geser slider sesuai kondisi foto lapangan:")
 
-    # Tombol Preset Cepat Langsung Sinkron ke Web
-    col_pre1, col_pre2, col_pre3 = st.columns(3)
-    with col_pre1:
-        if st.button("🌾 Standar", help="Preset Standar Sawah (65% / 8%)", use_container_width=True):
-            st.session_state["conf_slider"] = 65
-            st.session_state["leaf_slider"] = 8
-            st.rerun()
-    with col_pre2:
-        if st.button("☁️ Redup", help="Preset Foto Sore / Gejala Dini (50% / 5%)", use_container_width=True):
+    # Tombol Preset Cepat Langsung Sinkron ke Web (Tata Letak Bebas Terpotong)
+    if st.button("🌾 Standar Lapangan (65% | 8%)", help="Rekomendasi Balitsa untuk tanaman rumpun sawah normal", use_container_width=True):
+        st.session_state["conf_slider"] = 65
+        st.session_state["leaf_slider"] = 8
+        st.rerun()
+
+    c_pre1, c_pre2 = st.columns(2)
+    with c_pre1:
+        if st.button("☁️ Redup (50% | 5%)", help="Untuk foto sore hari / cuaca mendung / gejala awal tipis", use_container_width=True):
             st.session_state["conf_slider"] = 50
             st.session_state["leaf_slider"] = 5
             st.rerun()
-    with col_pre3:
-        if st.button("🔬 Ketat", help="Preset Super Ketat Lab (80% / 20%)", use_container_width=True):
+    with c_pre2:
+        if st.button("🔬 Ketat (80% | 20%)", help="Untuk foto makro studio / uji lab sangat ketat", use_container_width=True):
             st.session_state["conf_slider"] = 80
             st.session_state["leaf_slider"] = 20
             st.rerun()
@@ -2623,30 +2639,70 @@ if selected_image is not None and not file_error:
         # TAHAP 1: VALIDASI GAMBAR (GUARDRAIL GATEKEEPER GROQ VISION & OOD GUARD)
         # ==============================================================================
         with st.spinner("🔍 Memverifikasi keaslian foto daun bawang..."):
-            is_valid_vision, vision_verdict = validate_onion_image(selected_image, min_ratio=min_leaf_ratio)
+            val_res = validate_onion_image(selected_image, min_ratio=min_leaf_ratio)
+            is_valid_vision = val_res[0]
+            vision_verdict = val_res[1]
+            val_info = val_res[2] if len(val_res) > 2 else {}
 
         if not is_valid_vision:
-            st.error("❌ Foto Ditolak: Objek yang diunggah terdeteksi bukan daun/tanaman bawang merah. Harap masukkan foto daun bawang merah yang jelas.")
-            st.markdown(f"""
-                <div class="card-rejection">
-                    <div class="card-rejection-badge">⚠️ FOTO DITOLAK / TIDAK VALID</div>
-                    <div class="card-rejection-title">Objek Bukan Daun Bawang Merah!</div>
-                    <div class="card-rejection-reason">
-                        {vision_verdict}
+            if val_info.get("is_ratio_rejection", False):
+                detected_ratio = val_info.get("plant_ratio", 0.0) * 100.0
+                curr_min_pct = min_leaf_ratio * 100.0
+                st.warning(f"⚠️ **Rasio Daun Terdeteksi ({detected_ratio:.1f}%) di Bawah Pengaturan Validasi ({curr_min_pct:.0f}%)**")
+                st.markdown(f"""
+                    <div class="card-rejection">
+                        <div class="card-rejection-badge" style="background-color: #D97706;">⚠️ PENGATURAN VALIDASI TERLALU KETAT</div>
+                        <div class="card-rejection-title">Rasio Daun {detected_ratio:.1f}% (Batas Aktif: {curr_min_pct:.0f}%)</div>
+                        <div class="card-rejection-reason">
+                            Foto Anda <strong>mengandung daun bawang merah asli ({detected_ratio:.1f}%)</strong>, namun tertahan karena slider <strong>Sensitivitas Daun Bawang</strong> diatur pada angka <strong>{curr_min_pct:.0f}%</strong> (Mode Ketat).
+                        </div>
+                        <div class="card-rejection-desc">
+                            <strong>📜 Rekomendasi Standar Peraturan Resmi (Balitsa/Kementan):</strong>
+                            <ul style="margin: 4px 0 8px 16px;">
+                                <li><strong>Standar Rumpun Sawah Normal:</strong> <strong>8%</strong> (Sangat pas untuk foto Anda).</li>
+                                <li><strong>Daun Tunggal / Bibit Muda:</strong> <strong>5%</strong>.</li>
+                                <li><strong>Mode Makro Ekstrem:</strong> <strong>20% – 35%</strong> (Hanya untuk daun yang memenuhi layar penuh).</li>
+                            </ul>
+                            <strong>💡 Saran Penyetelan Validasi untuk Foto Ini:</strong>
+                            <p style="margin: 2px 0 8px 0;">
+                                Karena foto Anda memiliki rasio daun <strong>{detected_ratio:.1f}%</strong>, turunkan slider ke <strong>8%</strong> (Standar Sawah). Foto Anda akan <strong>langsung lolos dan terdiagnosa</strong>!
+                            </p>
+                            <strong>🛠️ Cara Menyesuaikan di Sidebar:</strong>
+                            <ol style="margin: 2px 0 8px 16px;">
+                                <li>Buka menu sebelah kiri (Sidebar) bagian <strong>⚙️ Validasi Foto Bawang</strong>.</li>
+                                <li>Klik preset <strong>🌾 Standar Lapangan (65% | 8%)</strong> atau geser slider <strong>Sensitivitas Daun</strong> ke angka <strong>8%</strong>.</li>
+                            </ol>
+                        </div>
                     </div>
-                    <div class="card-rejection-desc">
-                        Sistem mendeteksi bahwa gambar yang Anda masukkan <strong>bukan daun atau tanaman bawang merah</strong> (seperti foto manusia, hewan, kendaraan, tanah kosong, atau daun tanaman lain seperti mangga/padi).
-                        <br><br>
-                        <strong>📋 Panduan Pengambilan Foto yang Benar:</strong>
-                        <ol>
-                            <li>Gunakan foto <strong>daun tanaman bawang merah asli</strong> di bedengan kebun/sawah.</li>
-                            <li>Arahkan kamera HP (jarak ideal <strong>10–20 cm</strong>) tepat pada helai daun yang sakit.</li>
-                            <li>Pastikan pencahayaan terang dan daun terlihat jelas tanpa bayangan gelap.</li>
-                            <li>Hindari memotret wajah, hewan, kendaraan, atau pemandangan sawah dari kejauhan.</li>
-                        </ol>
+                """, unsafe_allow_html=True)
+
+                col_fix1, col_fix2 = st.columns([3, 2])
+                with col_fix1:
+                    if st.button("⚡ Terapkan Standar Sawah (8%) & Lanjutkan Diagnosa", type="primary", use_container_width=True, key="btn_apply_std_leaf"):
+                        st.session_state["leaf_slider"] = 8
+                        st.session_state["conf_slider"] = 65
+                        st.rerun()
+            else:
+                st.error("❌ Foto Ditolak: Objek yang diunggah terdeteksi bukan daun/tanaman bawang merah.")
+                st.markdown(f"""
+                    <div class="card-rejection">
+                        <div class="card-rejection-badge">⚠️ FOTO BUKAN DAUN BAWANG</div>
+                        <div class="card-rejection-title">Objek Bukan Daun Bawang Merah!</div>
+                        <div class="card-rejection-reason">
+                            {vision_verdict}
+                        </div>
+                        <div class="card-rejection-desc">
+                            Sistem mendeteksi bahwa gambar yang Anda masukkan <strong>bukan daun atau tanaman bawang merah</strong> (seperti foto manusia, hewan, kendaraan, tanah kosong tanpa tanaman, atau daun tanaman lain).
+                            <br><br>
+                            <strong>📋 Panduan Pengambilan Foto yang Benar:</strong>
+                            <ol style="margin: 4px 0 6px 16px;">
+                                <li>Gunakan foto <strong>daun tanaman bawang merah asli</strong> di bedengan kebun/sawah.</li>
+                                <li>Arahkan kamera HP (jarak ideal <strong>10–20 cm</strong>) tepat pada helai daun yang sakit.</li>
+                                <li>Pastikan pencahayaan terang dan daun terlihat jelas tanpa bayangan gelap.</li>
+                            </ol>
+                        </div>
                     </div>
-                </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
             st.stop()
 
         # ==============================================================================
@@ -2681,26 +2737,39 @@ if selected_image is not None and not file_error:
         # ==============================================================================
         is_uncertain = api_output.get("uncertain", False) or (top_confidence < (conf_threshold * 100.0))
         if is_uncertain:
-            st.warning("⚠️ **Tidak yakin, foto kurang jelas atau bukan daun bawang**")
+            current_conf_pct = conf_threshold * 100.0
+            st.warning(f"⚠️ **Tingkat Keyakinan Model ({top_confidence:.1f}%) di Bawah Batas ({current_conf_pct:.0f}%)**")
             st.markdown(f"""
                 <div class="card-rejection">
-                    <div class="card-rejection-badge">⚠️ TINGKAT KEYAKINAN RENDAH ({top_confidence:.1f}%)</div>
-                    <div class="card-rejection-title">Tidak yakin, foto kurang jelas atau bukan daun bawang</div>
+                    <div class="card-rejection-badge">⚠️ TINGKAT KEYAKINAN DI BAWAH AMBANG BATAS</div>
+                    <div class="card-rejection-title">Foto Kurang Jelas atau Gejala Bercak Masih Awal</div>
                     <div class="card-rejection-reason">
-                        Tingkat keyakinan model hanya <strong>{top_confidence:.1f}%</strong> (di bawah ambang batas minimal <strong>{conf_threshold * 100.0:.0f}%</strong>). Sistem menolak menebak diagnosis secara sembarangan untuk mencegah kesalahan penanganan di kebun.
+                        Kepastian model tercatat <strong>{top_confidence:.1f}%</strong> (ambang batas aktif: <strong>{current_conf_pct:.0f}%</strong>). Sistem menahan vonis untuk mencegah salah penanganan di kebun.
                     </div>
                     <div class="card-rejection-desc">
-                        <strong>📌 Model AI hanya valid untuk foto DAUN bawang merah.</strong> Kemungkinan penyebab ketidakyakinan:
-                        <ul>
-                            <li>Objek foto bukan daun bawang merah asli (seperti foto tanah, pot, manusia, atau tanaman lain).</li>
-                            <li>Foto kurang fokus, buram (blur), atau jarak pengambilan terlalu jauh dari daun.</li>
-                            <li>Pencahayaan redup, backlight kuat, atau bayangan gelap menutupi daun.</li>
+                        <strong>📜 Rekomendasi Standar Peraturan Resmi (Balitsa/Kementan):</strong>
+                        <ul style="margin: 4px 0 8px 16px;">
+                            <li><strong>Standar Sawah Siang Terang:</strong> <strong>65%</strong> (Standar harian).</li>
+                            <li><strong>Toleransi Sore / Redup / Gejala Dini:</strong> <strong>50% – 55%</strong> (Untuk cuaca mendung atau bercak yang masih tipis).</li>
                         </ul>
-                        <strong>💡 Petunjuk Pengambilan Foto yang Tepat:</strong>
-                        <p style="margin-top: 4px;">Foto daun dari dekat (jarak 10–20 cm), pastikan fokus tajam pada bercak/helai daun, dan pencahayaan terang merata.</p>
+                        <strong>💡 Saran Penyetelan Validasi:</strong>
+                        <p style="margin: 2px 0 8px 0;">
+                            Jika foto diambil sore hari atau gejala masih berupa bercak tipis, turunkan <strong>Batas Keyakinan</strong> ke <strong>50%</strong> (Mode Redup) agar foto dapat diproses.
+                        </p>
+                        <strong>🛠️ Cara Menyesuaikan di Sidebar:</strong>
+                        <ol style="margin: 2px 0 8px 16px;">
+                            <li>Buka sidebar kiri pada bagian <strong>⚙️ Validasi Foto Bawang</strong>.</li>
+                            <li>Klik preset <strong>☁️ Redup (50% | 5%)</strong> atau geser slider <strong>Batas Keyakinan</strong> ke angka <strong>50%</strong>.</li>
+                        </ol>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
+
+            col_cf1, col_cf2 = st.columns([3, 2])
+            with col_cf1:
+                if st.button("⚡ Gunakan Mode Redup (50%) & Cek Ulang Sekarang", type="primary", use_container_width=True, key="btn_apply_conf_redup"):
+                    st.session_state["conf_slider"] = 50
+                    st.rerun()
             st.stop()  # Hentikan eksekusi, jangan tebak penyakit & jangan panggil resep obat
 
         # ==============================================================================
