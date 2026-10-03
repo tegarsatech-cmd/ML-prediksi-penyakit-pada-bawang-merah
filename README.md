@@ -1,7 +1,7 @@
 # 🧅 AgroScan - Pendeteksi Penyakit Daun Bawang Merah (EfficientNet-B0 TorchScript & AI Agro-Engine)
-![Version](https://img.shields.io/badge/Version-v3.0.0-success?style=flat-square) ![Status](https://img.shields.io/badge/Status-Live%20Production-blue?style=flat-square) ![Model](https://img.shields.io/badge/Model-EfficientNet--B0%20TorchScript%204%20Classes-green?style=flat-square)
+![Version](https://img.shields.io/badge/Version-v3.1.0-success?style=flat-square) ![Status](https://img.shields.io/badge/Status-Live%20Production-blue?style=flat-square) ![Model](https://img.shields.io/badge/Model-EfficientNet--B0%20TorchScript%207%20Classes-green?style=flat-square)
 
-Aplikasi sistem pakar diagnosis dan deteksi dini penyakit utama tanaman bawang merah (*Allium cepa*) berbasis Deep Learning **EfficientNet-B0 (TorchScript)** dengan 4 kategori kelas. Dilengkapi dengan Peta Deteksi Lesi HUD Scanner dan Rekomendasi Agronomi Resmi Balitsa / BPTP Kementerian Pertanian RI.
+Aplikasi sistem pakar diagnosis dan deteksi dini penyakit utama tanaman bawang merah (*Allium cepa*) berbasis Deep Learning **EfficientNet-B0 (TorchScript)** dengan 7 kategori kelas (6 penyakit utama + 1 sehat). Dilengkapi dengan Peta Deteksi Lesi HUD Scanner dan Rekomendasi Agronomi Resmi Balitsa / BPTP Kementerian Pertanian RI.
 
 ---
 
@@ -55,16 +55,22 @@ Aplikasi sistem pakar diagnosis dan deteksi dini penyakit utama tanaman bawang m
 
 ---
 
-## 📋 Daftar 4 Kategori Deteksi Model
+## 📋 Daftar 7 Kategori Deteksi Model
 
-1. **Iris Yellow Spot Virus (IYSV)** — Virus Iris Kuning:
-   - Gejala: Bercak klorotik berbentuk ketupat kuning jerami di tengah helai daun, terkadang memiliki pulau hijau (green islands).
-2. **Hawar Daun (Stemphylium / Colletotrichum)**:
-   - Gejala: Ujung daun menguning kecokelatan kering merambat ke bawah, atau bercak melekuk kebasahan pada helai daun.
-3. **Sehat** (*Allium cepa*):
+1. **Downy mildew (Embun Bulu / Peronospora destructor)**:
+   - Gejala: Daun layu pucat dengan lapisan beludru halus keunguan/kelabu saat udara lembap.
+2. **Sehat (*Allium cepa*)**:
    - Gejala: Daun tegak kokoh, hijau segar merata, berlilin alami, tanpa bercak nekrotik maupun kelainan bentuk.
-4. **Bercak Ungu / Trotol (Alternaria porri)**:
+3. **Iris Yellow Spot Virus (IYSV)** — Virus Iris Kuning:
+   - Gejala: Bercak klorotik berbentuk ketupat kuning jerami di tengah helai daun, terkadang memiliki pulau hijau (green islands).
+4. **Hawar Daun (Stemphylium / Colletotrichum)**:
+   - Gejala: Ujung daun menguning kecokelatan kering merambat ke bawah, atau bercak melekuk kebasahan pada helai daun.
+5. **Moler / Layu Fusarium (*Fusarium oxysporum*)**:
+   - Gejala: Daun meliuk-liuk memutar abnormal (spiral/inul), tanaman layu cepat dan pangkal batang melunak.
+6. **Bercak Ungu / Trotol (*Alternaria porri*)**:
    - Gejala: Bercak melekuk ke dalam berbentuk cincin konsentris bertepung keunguan/gelap di tengah helai daun.
+7. **Rust (Karat Daun / *Puccinia allii*)**:
+   - Gejala: Bintil-bintil kecil menonjol (pustula) warna oranye terang hingga merah bata kecokelatan mirip karat besi.
 
 ---
 
