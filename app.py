@@ -731,27 +731,97 @@ st.markdown("""
         line-height: 1.5 !important;
     }
 
-    /* Lebarkan Kolom Sidebar agar Kotak Panduan Memiliki Ruang Nyaman & Leluasa */
-    [data-testid="stSidebar"] {
-        min-width: 360px !important;
-        max-width: 440px !important;
+    /* 8b. Perilaku Menu Sidebar: Tertutup Default & Hanya Keluar Saat Diklik */
+    /* Ketika Menu Ditutup (Collapsed) - 0px & Tersembunyi Total Bebas Halangan di Mobile Maupun Desktop */
+    [data-testid="stSidebar"][aria-expanded="false"],
+    section[data-testid="stSidebar"][aria-expanded="false"],
+    [data-testid="stSidebar"][aria-expanded="false"] > div {
+        min-width: 0 !important;
+        max-width: 0 !important;
+        width: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+    }
+
+    /* Ketika Menu Dibuka/Diklik (Expanded) - Tampil Berbatas Jelas & Proporsional */
+    [data-testid="stSidebar"][aria-expanded="true"] {
+        min-width: 340px !important;
+        max-width: 420px !important;
+        width: 360px !important;
+        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15) !important;
+        z-index: 99999 !important;
     }
     @media (min-width: 1025px) {
-        [data-testid="stSidebar"] {
-            min-width: 385px !important;
-            max-width: 460px !important;
+        [data-testid="stSidebar"][aria-expanded="true"] {
+            min-width: 360px !important;
+            max-width: 440px !important;
+            width: 380px !important;
         }
     }
     @media (max-width: 768px) {
-        [data-testid="stSidebar"] {
-            min-width: 88vw !important;
-            max-width: 94vw !important;
+        [data-testid="stSidebar"][aria-expanded="true"] {
+            min-width: 280px !important;
+            max-width: 84vw !important;
+            width: 82vw !important;
+            box-shadow: 6px 0 25px rgba(0, 0, 0, 0.3) !important;
+            z-index: 999999 !important;
         }
     }
-    [data-testid="stSidebar"], [data-testid="stSidebar"] > div {
+    [data-testid="stSidebar"][aria-expanded="true"], 
+    [data-testid="stSidebar"][aria-expanded="true"] > div {
         background-color: #E2E8F0 !important;
     }
     [data-testid="stSidebar"] * {
+        color: #0F172A !important;
+    }
+
+    /* Tombol Pembuka Menu Sidebar (Jelas, Terlihat Indah, Mudah Ditekan di Mobile & Desktop) */
+    [data-testid="stExpandSidebarButton"],
+    header [data-testid="stExpandSidebarButton"] {
+        background-color: #FFFFFF !important;
+        border: 2px solid #1B5E20 !important;
+        border-radius: 12px !important;
+        padding: 6px 14px !important;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12) !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 6px !important;
+        cursor: pointer !important;
+        transition: all 0.18s ease-in-out !important;
+        margin: 6px 0 0 8px !important;
+    }
+    [data-testid="stExpandSidebarButton"]:hover {
+        background-color: #F0FDF4 !important;
+        border-color: #14532D !important;
+        transform: translateY(-1px) !important;
+    }
+    [data-testid="stExpandSidebarButton"] svg {
+        fill: #1B5E20 !important;
+        color: #1B5E20 !important;
+        width: 20px !important;
+        height: 20px !important;
+    }
+    [data-testid="stExpandSidebarButton"]::after {
+        content: "Menu AgroScan";
+        font-size: 0.85rem !important;
+        font-weight: 800 !important;
+        color: #1B5E20 !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+    }
+
+    /* Tombol Penutup Menu Sidebar di Pojok Atas Sidebar */
+    [data-testid="stSidebarCollapseButton"] button {
+        background-color: #F1F5F9 !important;
+        border: 1.5px solid #CBD5E1 !important;
+        border-radius: 8px !important;
+        padding: 4px 8px !important;
+    }
+    [data-testid="stSidebarCollapseButton"] button svg {
+        fill: #0F172A !important;
         color: #0F172A !important;
     }
 
