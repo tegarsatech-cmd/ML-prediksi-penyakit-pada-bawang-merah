@@ -2911,9 +2911,19 @@ if selected_image is not None and not file_error:
         # TAHAP 3: EVALUASI KEPUTUSAN MODEL / THRESHOLD
         # Jika confidence < conf_threshold, tampilkan "Tidak yakin" alih-alih menebak
         # ==============================================================================
-        is_uncertain = api_output.get("uncertain", False) or (top_confidence < (conf_threshold * 100.0))
+        # ==============================================================================
+        # TAHAP 3: EVALUASI KEPUTUSAN MODEL / THRESHOLD
+        # Jika confidence < conf_threshold, tampilkan peringatan & rekomendasi penyesuaian
+        # ==============================================================================
+        allow_conf_key = f"allow_conf_{current_img_sig}"
+        user_allowed_conf = st.session_state.get(allow_conf_key, False)
+
+        is_uncertain = (not user_allowed_conf) and (api_output.get("uncertain", False) or (top_confidence < (conf_threshold * 100.0)))
         if is_uncertain:
             current_conf_pct = conf_threshold * 100.0
+            # Hitung rekomendasi batas keyakinan yang adaptif kelipatan 5 (rentang slider: 20% - 90%)
+            rec_conf_pct = max(20, min(90, int(np.floor(top_confidence / 5.0) * 5)))
+
             st.warning(f"⚠️ **Tingkat Keyakinan Model ({top_confidence:.1f}%) di Bawah Batas ({current_conf_pct:.0f}%)**")
             st.markdown(f"""
                 <div class="card-rejection">
@@ -2927,24 +2937,22 @@ if selected_image is not None and not file_error:
                         <ul style="margin: 4px 0 8px 16px;">
                             <li><strong>Standar Sawah Siang Terang:</strong> <strong>65%</strong> (Standar harian).</li>
                             <li><strong>Toleransi Sore / Redup / Gejala Dini:</strong> <strong>50% – 55%</strong> (Untuk cuaca mendung atau bercak yang masih tipis).</li>
+                            <li><strong>Mode Toleransi Gejala Awal:</strong> <strong>{rec_conf_pct}%</strong> (Sesuai kepastian foto Anda).</li>
                         </ul>
-                        <strong>💡 Saran Penyetelan Validasi:</strong>
+                        <strong>💡 Solusi Cepat:</strong>
                         <p style="margin: 2px 0 8px 0;">
-                            Jika foto diambil sore hari atau gejala masih berupa bercak tipis, turunkan <strong>Batas Keyakinan</strong> ke <strong>50%</strong> (Mode Redup) agar foto dapat diproses.
+                            Klik tombol di bawah ini: Sistem akan <strong>otomatis menyesuaikan batas keyakinan ke {rec_conf_pct}% dan langsung memproses prediksi penyakit</strong> untuk foto ini tanpa terhambat!
                         </p>
-                        <strong>🛠️ Cara Menyesuaikan di Sidebar:</strong>
-                        <ol style="margin: 2px 0 8px 16px;">
-                            <li>Buka sidebar kiri pada bagian <strong>⚙️ Validasi Foto Bawang</strong>.</li>
-                            <li>Klik preset <strong>☁️ Redup</strong> atau geser slider <strong>Batas Keyakinan</strong> ke angka <strong>50%</strong>.</li>
-                        </ol>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
 
-            if st.button("⚡ Gunakan Mode Redup (50%) & Cek Ulang Sekarang", type="primary", use_container_width=True, key="btn_apply_conf_redup"):
-                st.session_state["pending_conf_slider"] = 50
+            if st.button(f"⚡ Sesuaikan Batas Keyakinan ({rec_conf_pct}%) & Lanjutkan Prediksi Sekarang", type="primary", use_container_width=True, key="btn_apply_conf_rec"):
+                st.session_state["pending_conf_slider"] = rec_conf_pct
+                st.session_state["conf_slider"] = rec_conf_pct
+                st.session_state[allow_conf_key] = True
                 st.rerun()
-            st.stop()  # Hentikan eksekusi, jangan tebak penyakit & jangan panggil resep obat
+            st.stop()  # Hentikan eksekusi sampai tombol penyesuaian ditekan
 
         # ==============================================================================
         # KASUS 2: FOTO VALID & KEYAKINAN TINGGI (LOLOS THRESHOLD)
@@ -2962,6 +2970,12 @@ if selected_image is not None and not file_error:
             """, unsafe_allow_html=True)
 
             # Bar Perbandingan Keyakinan AI vs Ambang Batas Slider (Transparan & Responsif)
+            diff_conf = top_confidence - conf_threshold_pct
+            if diff_conf >= 0:
+                badge_conf_html = f'<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">🟢 Memenuhi Batas Keyakinan (+{diff_conf:.1f}%)</span>'
+            else:
+                badge_conf_html = f'<span style="background: #fefce8; color: #854d0e; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #fef08a; font-size: 0.78rem;">🟡 Mode Toleran Gejala Awal ({top_confidence:.1f}%)</span>'
+
             st.markdown(f"""
                 <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 10px 14px; margin: 4px 0 14px 0; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                     <div>
@@ -2969,9 +2983,7 @@ if selected_image is not None and not file_error:
                         <span style="color: #64748b; font-size: 0.82rem;">(Batas Keyakinan Slider Anda: <strong>{conf_threshold_pct}%</strong>)</span>
                     </div>
                     <div>
-                        <span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">
-                            🟢 Memenuhi Batas Keyakinan (+{(top_confidence - conf_threshold_pct):.1f}%)
-                        </span>
+                        {badge_conf_html}
                     </div>
                 </div>
             """, unsafe_allow_html=True)
