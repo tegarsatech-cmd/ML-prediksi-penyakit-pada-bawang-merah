@@ -544,30 +544,82 @@ st.markdown("""
 # 2. ENSIKLOPEDIA & METADATA PENYAKIT DAUN BAWANG MERAH
 # Menggunakan Istilah Populer yang Akrab Bagi Petani Indonesia
 # ==============================================================================
-CLASS_METADATA = {
-    "Iris Yellow Spot Virus (IYSV)": {
+# Daftar 7 Kategori Resmi Model EfficientNet-B0 (6 Penyakit Utama + 1 Kondisi Sehat)
+SUPPORTED_DISEASES_7 = [
+    {
+        "key": "downy_mildew",
+        "label": "Downy mildew",
+        "icon": "💨",
+        "nama_id": "Embun Bulu / Downy Mildew",
+        "latin": "Peronospora destructor",
+        "status": "disease",
+        "is_healthy": False,
+        "ciri_lapangan": "Permukaan daun dilapisi kapang/bulu halus beledu berwarna putih kelabu hingga keunguan saat pagi dingin lembap berkabut; daun menguning klorotik dari ujung.",
+        "gejala": "Petik daun yang berbulu halus kelabu di pagi hari ke dalam kantong kresek tertutup; jangan biarkan spora terbang tertiup angin.",
+        "pencegahan": "Hentikan pupuk Urea/Nitrogen berlebih selama musim hujan. Berikan pupuk Kalium dan Silika cair untuk mempertebal lapisan lilin daun.",
+        "solusi": "Semprot fungisida sistemik berbahan aktif Dimetomorf, Simoksanil, atau Metalaksil selang-seling dengan Mankozeb tiap 3-4 hari.",
+        "rekomendasi_singkat": "Semprot Dimetomorf/Simoksanil berselang Mankozeb & kurangi pupuk Nitrogen."
+    },
+    {
+        "key": "healthy",
+        "label": "Sehat",
+        "icon": "🌿",
+        "nama_id": "Daun Sehat & Normal",
+        "latin": "Allium cepa (Kondisi Prima)",
+        "status": "healthy",
+        "is_healthy": True,
+        "ciri_lapangan": "Daun silindris tegak berdiri kokoh, hijau segar merata, berlilin alami, tanpa bercak berlendir, luka trotol, bintil karat, maupun puntiran abnormal.",
+        "gejala": "Kondisi tanaman prima! Tidak ditemukan lesi patogen aktif atau serangan hama pada helai daun.",
+        "pencegahan": "Lanjutkan pemantauan rutin 2-3 hari sekali di waktu pagi. Jaga kebersihan gulma di parit dan pematang.",
+        "solusi": "Tidak memerlukan fungisida/bakterisida kuratif. Cukup semprotkan pupuk daun mikro lengkap dan asam amino untuk menjaga fotosintesis.",
+        "rekomendasi_singkat": "Tanaman sehat optimal! Cukup lanjutkan pemupukan berimbang dan pengairan macak-macak."
+    },
+    {
+        "key": "iris_yellow_virus",
+        "label": "Iris Yellow Spot Virus (IYSV)",
+        "icon": "🟡",
         "nama_id": "Virus Iris Kuning (IYSV)",
-        "latin": "Iris yellow spot virus",
+        "latin": "Iris yellow spot virus (Vektor Thrips tabaci)",
         "status": "virus",
         "is_healthy": False,
-        "ciri_lapangan": "Bercak klorotik khas berbentuk ketupat/belah ketupat warna kuning jerami di tengah helai daun, terkadang memiliki pulau hijau di tengah bercak (green islands).",
-        "gejala": "Cabut dan musnahkan tanaman yang daunnya terdapat bercak kuning berbentuk ketupat agar tidak menular ke tanaman sekitarnya.",
-        "pencegahan": "Gunakan mulsa plastik perak untuk memantulkan sinar matahari dan menghalau hama kutu trips (Thrips tabaci) pembawa virus.",
+        "ciri_lapangan": "Bercak klorotik khas berbentuk ketupat / belah ketupat warna kuning jerami di tengah helai daun, terkadang memiliki pulau hijau di tengah bercak (green islands).",
+        "gejala": "Cabut dan musnahkan tanaman bergejala bercak ketupat kuning agar tidak menular ke tanaman lain melalui kutu trips.",
+        "pencegahan": "Gunakan mulsa plastik perak untuk memantulkan sinar matahari dan menghalau kutu trips (Thrips tabaci) pembawa virus.",
         "solusi": "Kendalikan kutu trips dengan insektisida sistemik berbahan aktif Abamektin, Spinetoram, atau Klorfenapir pada pagi/sore hari.",
         "rekomendasi_singkat": "Cabut tanaman bergejala ketupat & semprot Abamektin untuk basmi kutu trips."
     },
-    "Hawar Daun (Stemphylium / Colletotrichum)": {
-        "nama_id": "Hawar Daun (Stemphylium / Antraknosa)",
+    {
+        "key": "leaf_blight",
+        "label": "Hawar Daun (Stemphylium / Colletotrichum)",
+        "icon": "🍂",
+        "nama_id": "Hawar Daun / Kering Ujung",
         "latin": "Stemphylium vesicarium / Colletotrichum gloeosporioides",
         "status": "disease",
         "is_healthy": False,
-        "ciri_lapangan": "Ujung daun menguning kecokelatan kering merambat ke bawah (blight), atau bercak melekuk kebasahan pada helai daun.",
-        "gejala": "Pangkas helai daun yang tampak membusuk atau mengering dari ujung sebelum merambat ke leher umbi tanaman.",
+        "ciri_lapangan": "Ujung helai daun menguning kecokelatan kering merambat memanjang ke bawah (blight), atau bercak melekuk kebasahan pada helai daun.",
+        "gejala": "Pangkas helai daun yang tampak membusuk atau mengering dari ujung sekitar 2 cm di bawah batas lesi sebelum merambat ke leher umbi.",
         "pencegahan": "Hindari penyiraman sore/malam hari dan jaga sirkulasi parit bedengan macak-macak agar tidak tergenang air.",
         "solusi": "Semprot fungisida berbahan aktif Mankozeb, Klorotalonil, atau Difenokonazol selang-seling dengan Tembaga Oksiklorida.",
         "rekomendasi_singkat": "Pangkas daun kering ujung dan semprot fungisida Mankozeb/Klorotalonil."
     },
-    "Bercak Ungu / Trotol (Alternaria porri)": {
+    {
+        "key": "moler",
+        "label": "Moler",
+        "icon": "🌀",
+        "nama_id": "Layu Moler / Inul (Fusarium)",
+        "latin": "Fusarium oxysporum f. sp. cepae",
+        "status": "disease",
+        "is_healthy": False,
+        "ciri_lapangan": "Helai daun meliuk-liuk abnormal berpilin/spiral (moler/inul), menguning pucat dari ujung, perakaran membusuk dan tanaman sangat gampang dicabut.",
+        "gejala": "Segera cabut tanaman yang daunnya melintir abnormal (moler) sampai ke perakarannya agar jamur tidak menular lewat parit.",
+        "pencegahan": "Campurkan agens hayati Trichoderma dengan pupuk kandang matang saat olah tanah dasar bedengan sebelum tanam.",
+        "solusi": "Taburkan kapur dolomit pada lubang bekas cabutan dan kocorkan fungisida sistemik berbahan aktif Benomil atau Mankozeb.",
+        "rekomendasi_singkat": "Cabut tanaman melintir/moler, taburkan dolomit & agens Trichoderma."
+    },
+    {
+        "key": "purple_blotch",
+        "label": "Bercak Ungu / Trotol (Alternaria porri)",
+        "icon": "🟣",
         "nama_id": "Bercak Ungu / Trotol",
         "latin": "Alternaria porri",
         "status": "disease",
@@ -578,216 +630,65 @@ CLASS_METADATA = {
         "solusi": "Semprot fungisida berbahan aktif Difenokonazol, Azoksistrobin, atau Mankozeb pada pagi hari saat angin tenang.",
         "rekomendasi_singkat": "Pangkas daun trotol dan semprot Difenokonazol/Azoksistrobin segera."
     },
-    "Busuk Daun": {
-        "nama_id": "Hawar / Busuk Daun",
-        "latin": "Botrytis / Stemphylium / Xanthomonas",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Ujung daun menguning kecokelatan kering memanjang ke bawah atau melepuh kebasah-basahan seperti tersiram air mendidih.",
-        "gejala": "Pangkas helai daun yang tampak membusuk atau mengering seperti terbakar sebelum merambat ke umbi tanaman.",
-        "pencegahan": "Hindari penyiraman sore/malam hari dan jaga sirkulasi parit bedengan macak-macak.",
-        "solusi": "Semprot bakterisida/fungisida berbahan aktif Tembaga Hidroksida atau Klorotalonil secara merata pada pagi hari.",
-        "rekomendasi_singkat": "Semprot Tembaga Hidroksida/Klorotalonil dan pangkas daun yang membusuk."
-    },
-    "Moler": {
-        "nama_id": "Layu Moler / Fusarium",
-        "latin": "Fusarium oxysporum",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Helai daun melintir-lintir abnormal (moler), menguning pucat dari ujung, perakaran membusuk dan mudah dicabut.",
-        "gejala": "Segera cabut tanaman yang daunnya melintir abnormal (moler) sampai ke perakarannya agar jamur tidak menular lewat parit.",
-        "pencegahan": "Campurkan agens hayati Trichoderma dengan pupuk kandang matang saat olah tanah dasar bedengan.",
-        "solusi": "Taburkan kapur dolomit pada lubang bekas cabutan dan kocorkan fungisida sistemik berbahan aktif Benomil atau Mankozeb.",
-        "rekomendasi_singkat": "Cabut tanaman melintir/moler, taburkan dolomit & agens Trichoderma."
-    },
-    "Sehat": {
-        "nama_id": "Daun Sehat & Segar",
-        "latin": "Kondisi Normal",
-        "status": "healthy",
-        "is_healthy": True,
-        "ciri_lapangan": "Daun hijau segar mengkilap, silindris tegak berdiri kokoh tanpa bercak berlendir, luka trotol, maupun kelintiran abnormal.",
-        "gejala": "Kondisi tanaman sangat prima! Daun hijau segar, tegak berdiri kokoh tanpa bercak patogen atau luka hama.",
-        "pencegahan": "Lanjutkan pemantauan rutin 2-3 hari sekali. Pertahankan kebersihan gulma di parit dan pematang.",
-        "solusi": "Tidak memerlukan obat semprot kimia kuratif. Cukup semprotkan pupuk daun mikro dan asam amino untuk menjaga kesegaran.",
-        "rekomendasi_singkat": "Tanaman sehat optimal! Cukup lanjutkan pemupukan berimbang dan pengairan rutin."
-    },
-    "Trotol": {
-        "nama_id": "Bercak Ungu / Trotol",
-        "latin": "Alternaria porri",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Bercak melekuk ke dalam berbentuk cincin konsentris bertepung keunguan/gelap di tengah helai daun, tepi menguning kering.",
-        "gejala": "Potong atau pangkas daun yang terdapat bercak trotol ungu cincin konsentris. Kumpulkan dan bakar di luar areal sawah.",
-        "pencegahan": "Bersihkan gulma dan rumput liar di sekitar parit. Buat bedengan lebih tinggi agar tidak tergenang air saat hujan lebat.",
-        "solusi": "Semprot fungisida berbahan aktif Difenokonazol atau Mankozeb. Semprot pada pagi hari (pukul 06.00 - 08.30) atau sore (pukul 16.00) saat angin tenang.",
-        "rekomendasi_singkat": "Semprot Difenokonazol/Mankozeb dan pangkas daun trotol segera."
-    },
-    "Alternaria_D": {
-        "nama_id": "Bercak Ungu / Trotol",
-        "latin": "Alternaria porri",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Bercak melekuk ke dalam berbentuk cincin konsentris bertepung keunguan/gelap di tengah helai daun, tepi menguning kering.",
-        "gejala": "Potong atau pangkas daun yang terdapat bercak trotol ungu. Kumpulkan dan bakar di luar areal sawah agar spora jamur tidak terbang tertiup angin ke tanaman lain.",
-        "pencegahan": "Bersihkan gulma dan rumput liar di sekitar parit. Buat bedengan lebih tinggi agar tidak tergenang air saat hujan lebat.",
-        "solusi": "Semprot fungisida berbahan aktif Difenokonazol atau Mankozeb. Semprot pada pagi hari (pukul 06.00 - 08.30) atau sore (pukul 16.00) saat angin tenang.",
-        "rekomendasi_singkat": "Semprot Difenokonazol/Mankozeb dan pangkas daun trotol segera."
-    },
-    "Botrytis Leaf Blight": {
-        "nama_id": "Hawar Daun / Bintik Putih",
-        "latin": "Botrytis squamosa",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Bintik-bintik putih kecil (1-2 mm) melekuk di helai daun, ujung daun memutih kering seperti terbakar tanpa lendir.",
-        "gejala": "Pangkas ujung-ujung daun yang memutih atau mengering. Jangan biarkan sisa potongan membusuk di atas bedengan.",
-        "pencegahan": "Hindari menyiram daun di sore/malam hari agar daun tidak basah semalaman. Perlebar jarak tanam agar angin leluasa masuk.",
-        "solusi": "Semprot fungisida berbahan aktif Klorotalonil atau Fluazinam secara merata di permukaan dan sela daun.",
-        "rekomendasi_singkat": "Aplikasi fungisida Klorotalonil dan hentikan penyiraman sore/malam."
-    },
-    "Bulb Rot": {
-        "nama_id": "Busuk Umbi / Basah",
-        "latin": "Aspergillus / Fusarium spp.",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Umbi lembek berair berbau busuk menyengat saat dipijit, lapisan kulit luar terkelupas busuk basah.",
-        "gejala": "Segera cabut rumpun bawang yang umbinya lembek dan berbau busuk. Keluarkan dari lahan dan jangan buang di saluran air irigasi.",
-        "pencegahan": "Gunakan bibit umbi yang benar-benar kering leher. Taburkan kapur pertanian (dolomit) jika tanah terlalu masam atau lembap becek.",
-        "solusi": "Kocorkan fungisida Tembaga Oksiklorida di lubang tanam bekas cabutan dan taburkan agens hayati Trichoderma.",
-        "rekomendasi_singkat": "Cabut & musnahkan umbi busuk, taburkan kapur dolomit di bedengan."
-    },
-    "Bulb_blight-D": {
-        "nama_id": "Hawar Leher Umbi",
-        "latin": "Blight pathogen",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Pangkal leher umbi melembek kecokelatan di perbatasan tanah, daun atas rebah lunglai.",
-        "gejala": "Cabut tanaman yang pangkal lehernya melembek kecokelatan sebelum busuk merambat ke umbi tetangga.",
-        "pencegahan": "Pastikan saluran drainase parit lancar dan tidak ada air menggenang di sela bedengan.",
-        "solusi": "Kocorkan fungisida berbahan aktif Mankozeb atau Tembaga Oksiklorida pada pangkal batang tanaman yang masih sehat.",
-        "rekomendasi_singkat": "Kocorkan Tembaga Oksiklorida di leher umbi dan keringkan parit bedengan."
-    },
-    "Caterpillar-P": {
-        "nama_id": "Ulat Grayak",
-        "latin": "Spodoptera exigua",
-        "status": "pest",
-        "is_healthy": False,
-        "ciri_lapangan": "Helai daun transparan tipis berlubang dari dalam tabung daun, terdapat kotoran ulat hijau/hitam di sela daun.",
-        "gejala": "Pencet atau kutip langsung kelompok ulat dan telur ulat di dalam tabung daun pada pagi hari saat ulat mulai aktif keluar.",
-        "pencegahan": "Pasang lampu perangkap (light trap) atau feromon sex trap di sudut sawah untuk membasmi kupu-kupu ngengat sebelum bertelur.",
-        "solusi": "Semprot insektisida berbahan aktif Emamektin Benzoat atau Klorantraniliprol pada sore menjelang petang hari saat ulat keluar makan.",
-        "rekomendasi_singkat": "Kutip ulat secara manual dan semprot Emamektin Benzoat pada sore hari."
-    },
-    "Downy mildew": {
-        "nama_id": "Embun Bulu / Palsu",
-        "latin": "Peronospora destructor",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Permukaan daun dilapisi bulu/kapang halus keputihan hingga kelabu keunguan di pagi hari saat lembap berkabut.",
-        "gejala": "Petik daun yang berbulu halus keputihan di pagi hari. Masukkan ke dalam kantong kresek tertutup dan bawa keluar dari areal sawah.",
-        "pencegahan": "Hentikan pupuk Urea/Nitrogen berlebih selama musim penghujan. Berikan pupuk Kalium dan Silika untuk mempertebal kulit daun.",
-        "solusi": "Semprot fungisida sistemik berbahan aktif Dimetomorf atau Simoksanil selang-seling dengan Mankozeb setiap 3-4 hari sekali.",
-        "rekomendasi_singkat": "Semprot Dimetomorf/Simoksanil dan kurangi pemakaian pupuk Nitrogen/Urea."
-    },
-    "Fusarium-D": {
-        "nama_id": "Layu Moler / Fusarium",
-        "latin": "Fusarium oxysporum",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Daun melintir-lintir abnormal (moler), menguning pucat dari ujung, perakaran membusuk dan mudah dicabut.",
-        "gejala": "Segera cabut tanaman yang daunnya melintir abnormal (moler) sampai ke perakarannya agar jamur tidak menular lewat parit.",
-        "pencegahan": "Campurkan agens hayati Trichoderma dengan pupuk kandang matang saat olah tanah dasar bedengan.",
-        "solusi": "Taburkan kapur dolomit pada lubang bekas cabutan dan semprot fungisida sistemik berbahan aktif Benomil atau Mankozeb.",
-        "rekomendasi_singkat": "Cabut tanaman melintir/moler, taburkan dolomit & agens Trichoderma."
-    },
-    "Healthy leaves": {
-        "nama_id": "Daun Sehat & Segar",
-        "latin": "Kondisi Normal",
-        "status": "healthy",
-        "is_healthy": True,
-        "ciri_lapangan": "Daun hijau segar mengkilap, tegak berdiri kokoh tanpa bercak berlendir, luka gigitan, maupun tepung jamur.",
-        "gejala": "Kondisi tanaman sangat baik! Daun hijau segar, tegak berdiri kokoh tanpa bercak jamur atau luka gigitan hama.",
-        "pencegahan": "Lanjutkan pemantauan rutin 2-3 hari sekali. Pertahankan sanitasi gulma di pematang sawah.",
-        "solusi": "Tidak memerlukan obat semprot kimia kuratif. Cukup semprotkan pupuk daun mikro dan asam amino untuk menjaga kesegaran.",
-        "rekomendasi_singkat": "Tanaman sehat optimal! Cukup lanjutkan pemupukan berimbang dan pengairan rutin."
-    },
-    "Iris yellow virus_augment": {
-        "nama_id": "Virus Iris Kuning (IYSV)",
-        "latin": "Iris yellow spot virus",
-        "status": "virus",
-        "is_healthy": False,
-        "ciri_lapangan": "Bercak klorotik khas berbentuk ketupat/belah ketupat warna kuning jerami di tengah helai daun.",
-        "gejala": "Cabut dan musnahkan tanaman yang daunnya terdapat bercak kuning berbentuk ketupat agar tidak menjadi sumber virus di kebun.",
-        "pencegahan": "Gunakan mulsa plastik perak untuk memantulkan sinar matahari dan menghalau datangnya hama trips pembawa virus.",
-        "solusi": "Kendalikan serangga kutu trips penyebar virus dengan insektisida berbahan aktif Abamektin atau Spinetoram pada pagi hari.",
-        "rekomendasi_singkat": "Cabut tanaman bergejala ketupat & semprot Abamektin untuk basmi kutu trips."
-    },
-    "Purple blotch": {
-        "nama_id": "Bercak Ungu / Trotol",
-        "latin": "Alternaria porri",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Bercak trotol keunguan melekuk dengan cincin konsentris gelap dan tepi berwarna kuning klorotik, kering bertepung spora.",
-        "gejala": "Potong helai daun yang terdapat cincin bercak ungu melekuk sebelum bercak melebar dan menyebabkan daun patah terkulai.",
-        "pencegahan": "Jaga kelancaran parit bedengan, jangan biarkan air hujan menggenangi sela tanaman bawang.",
-        "solusi": "Semprot fungisida berbahan aktif Difenokonazol, Propineb, atau Azoksistrobin secara bergiliran pada pagi hari.",
-        "rekomendasi_singkat": "Aplikasi fungisida Difenokonazol/Azoksistrobin dan potong daun yang bertrotol."
-    },
-    "Rust": {
-        "nama_id": "Karat Daun (Bintil Merah)",
+    {
+        "key": "rust",
+        "label": "Rust",
+        "icon": "🟠",
+        "nama_id": "Karat Daun (Bintil Pustula)",
         "latin": "Puccinia allii",
         "status": "disease",
         "is_healthy": False,
-        "ciri_lapangan": "Bintil-bintil melepuh berisi serbuk/tepung karat berwarna oranye kemerahan seperti serbuk besi berkarat.",
-        "gejala": "Pangkas daun yang dipenuhi bintil debu karat warna oranye kemerahan. Masukkan ke wadah tertutup saat memotong agar serbuk karat tidak berhamburan.",
+        "ciri_lapangan": "Bintil-bintil kecil melepuh (pustula) berisi serbuk/tepung spora berwarna jingga kemerahan atau merah tembaga seperti serbuk besi berkarat.",
+        "gejala": "Pangkas daun yang dipenuhi bintil debu karat warna oranye kemerahan ke dalam wadah tertutup saat memotong agar serbuk karat tidak berhamburan.",
         "pencegahan": "Lakukan rotasi pergiliran tanaman dengan jagung atau palawija setelah panen bawang merah.",
         "solusi": "Semprot fungisida berbahan aktif Tebukonazol, Heksakonazol, atau Difenokonazol saat embun pagi mulai mengering (sekitar pukul 08.00).",
         "rekomendasi_singkat": "Semprot fungisida Tebukonazol/Heksakonazol saat embun pagi mulai kering."
-    },
-    "Virosis-D": {
-        "nama_id": "Virus Kuning Melintir",
-        "latin": "Onion yellow dwarf virus",
-        "status": "virus",
-        "is_healthy": False,
-        "ciri_lapangan": "Tanaman kerdil, helai daun belang bergaris-garis kuning kusam, berkerut kaku dan rapuh bila ditekuk.",
-        "gejala": "Segera cabut rumpun tanaman yang kerdil dan daunnya belang kuning berkerut. Jangan biarkan tetap tumbuh di bedengan.",
-        "pencegahan": "Gunakan bibit umbi sehat bersertifikat yang terbebas dari infeksi virus bawaan.",
-        "solusi": "Semprot insektisida berbahan aktif Imidakloprid untuk menekan populasi kutu daun (aphid) yang menularkan virus.",
-        "rekomendasi_singkat": "Cabut tanaman kerdil kuning & semprot insektisida pembasmi kutu daun."
-    },
-    "Xanthomonas Leaf Blight": {
-        "nama_id": "Hawar Daun Bakteri (Xanthomonas)",
-        "latin": "Xanthomonas axonopodis",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Bercak kebasah-basahan (water-soaked) seperti tersiram air mendidih, berlendir saat pagi lembap, bau langu/busuk, tidak bertepung spora.",
-        "gejala": "Potong helai daun yang tampak berlendir kebasah-basahan seperti tersiram air panas sebelum mengering hangus.",
-        "pencegahan": "Hindari menyiram daun menggunakan semprotan bertekanan kencang yang dapat memercikkan air bakteri ke daun sehat.",
-        "solusi": "Semprot bakterisida/fungisida tembaga berbahan aktif Tembaga Hidroksida atau Kasugamisin pada pagi hari saat cuaca cerah.",
-        "rekomendasi_singkat": "Semprot bakterisida Tembaga Hidroksida / Kasugamisin dan hindari percikan air."
-    },
-    "onion1": {
-        "nama_id": "Daun Sehat & Segar",
-        "latin": "Kondisi Normal",
-        "status": "healthy",
-        "is_healthy": True,
-        "ciri_lapangan": "Daun bawang hijau mulus dan tegak berdiri tanpa tanda bercak basah maupun luka gigitan.",
-        "gejala": "Daun bawang hijau mulus dan tegak berdiri tanpa tanda bercak penyakit maupun serangan ulat.",
-        "pencegahan": "Pertahankan pasokan air yang cukup di parit tanpa membuat bedengan terlalu becek.",
-        "solusi": "Tidak perlu obat kimia/fungisida semprot. Cukup berikan pupuk NPK dan pupuk daun mikro sesuai jadwal.",
-        "rekomendasi_singkat": "Tanaman bawang sehat dan prima. Teruskan perawatan rutin."
-    },
-    "stemphylium Leaf Blight": {
-        "nama_id": "Hawar Daun Kering Ujung (Stemphylium)",
-        "latin": "Stemphylium vesicarium",
-        "status": "disease",
-        "is_healthy": False,
-        "ciri_lapangan": "Ujung daun menguning kecokelatan kering memanjang ke bawah, terdapat bintik hitam kecil spora jamur saat kering.",
-        "gejala": "Pangkas ujung daun yang menguning kecokelatan seperti terbakar. Buang sisa daun yang dipangkas keluar dari lahan.",
-        "pencegahan": "Semprotkan pupuk Kalium (KNO3 putih) dan pupuk Silika cair untuk memperkokoh dinding sel helai daun.",
-        "solusi": "Semprot fungisida berbahan aktif Iprodion, Klorotalonil, atau Tebukonazol secara bergiliran tiap 4-5 hari sekali.",
-        "rekomendasi_singkat": "Semprot Klorotalonil/Iprodion dan berikan pupuk Kalium serta Silika."
     }
-}
+]
+
+# Bangun Dictionary Master Metadata Penyakit (Termasuk Aliases untuk Kompatibilitas Menyeluruh)
+CLASS_METADATA = {}
+
+# 1. Registrasi 7 Kelas Resmi
+for item in SUPPORTED_DISEASES_7:
+    meta_dict = {
+        "nama_id": item["nama_id"],
+        "latin": item["latin"],
+        "status": item["status"],
+        "is_healthy": item["is_healthy"],
+        "ciri_lapangan": item["ciri_lapangan"],
+        "gejala": item["gejala"],
+        "pencegahan": item["pencegahan"],
+        "solusi": item["solusi"],
+        "rekomendasi_singkat": item["rekomendasi_singkat"],
+        "icon": item["icon"]
+    }
+    CLASS_METADATA[item["label"]] = meta_dict
+    CLASS_METADATA[item["key"]] = meta_dict
+
+# 2. Registrasi Alias Bahasa & Istilah Umum
+CLASS_METADATA["Trotol"] = CLASS_METADATA["Bercak Ungu / Trotol (Alternaria porri)"]
+CLASS_METADATA["Alternaria_D"] = CLASS_METADATA["Bercak Ungu / Trotol (Alternaria porri)"]
+CLASS_METADATA["Purple blotch"] = CLASS_METADATA["Bercak Ungu / Trotol (Alternaria porri)"]
+
+CLASS_METADATA["Busuk Daun"] = CLASS_METADATA["Hawar Daun (Stemphylium / Colletotrichum)"]
+CLASS_METADATA["Hawar Daun"] = CLASS_METADATA["Hawar Daun (Stemphylium / Colletotrichum)"]
+CLASS_METADATA["stemphylium Leaf Blight"] = CLASS_METADATA["Hawar Daun (Stemphylium / Colletotrichum)"]
+
+CLASS_METADATA["Fusarium-D"] = CLASS_METADATA["Moler"]
+CLASS_METADATA["Layu Moler"] = CLASS_METADATA["Moler"]
+
+CLASS_METADATA["Karat Daun"] = CLASS_METADATA["Rust"]
+
+CLASS_METADATA["Embun Bulu"] = CLASS_METADATA["Downy mildew"]
+
+CLASS_METADATA["Healthy leaves"] = CLASS_METADATA["Sehat"]
+CLASS_METADATA["onion1"] = CLASS_METADATA["Sehat"]
+CLASS_METADATA["Daun Sehat & Segar"] = CLASS_METADATA["Sehat"]
+
+CLASS_METADATA["Iris yellow virus_augment"] = CLASS_METADATA["Iris Yellow Spot Virus (IYSV)"]
+CLASS_METADATA["Virus Iris Kuning"] = CLASS_METADATA["Iris Yellow Spot Virus (IYSV)"]
+CLASS_METADATA["Virosis-D"] = CLASS_METADATA["Iris Yellow Spot Virus (IYSV)"]
 
 # Inisialisasi Sesi Penyimpanan
 if "history" not in st.session_state:
@@ -1633,10 +1534,13 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
     uncertain = bool(top_confidence_val < conf_threshold)
 
     class_labels = meta.get("class_labels_id", [
+        "Downy mildew",
+        "Sehat",
         "Iris Yellow Spot Virus (IYSV)",
         "Hawar Daun (Stemphylium / Colletotrichum)",
-        "Sehat",
-        "Bercak Ungu / Trotol (Alternaria porri)"
+        "Moler",
+        "Bercak Ungu / Trotol (Alternaria porri)",
+        "Rust"
     ])
 
     raw_class_name = class_labels[top_idx]
@@ -2273,10 +2177,13 @@ try:
     meta_config = load_meta_config()
     model = load_torch_model()
     class_names = meta_config.get("class_labels_id", [
+        "Downy mildew",
+        "Sehat",
         "Iris Yellow Spot Virus (IYSV)",
         "Hawar Daun (Stemphylium / Colletotrichum)",
-        "Sehat",
-        "Bercak Ungu / Trotol (Alternaria porri)"
+        "Moler",
+        "Bercak Ungu / Trotol (Alternaria porri)",
+        "Rust"
     ])
     model_loaded = True
 except (OSError, ValueError, FileNotFoundError, AttributeError) as e:
@@ -2293,7 +2200,7 @@ with st.sidebar:
             <span style='font-size: 2.5rem;'>🧅</span>
             <h2 style='margin: 0.1rem 0; color: #1b5e20; font-weight: 800;'>AgroScan</h2>
             <p style='color: #64748b; font-size: 0.88rem; margin-bottom: 4px;'>Menu Pengaturan & Riwayat</p>
-            <span style='background-color: #e2e8f0; color: #334155; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700;'>v3.0.0 • EfficientNet-B0</span>
+            <span style='background-color: #dcfce7; color: #166534; padding: 3px 10px; border-radius: 999px; font-size: 0.76rem; font-weight: 800; border: 1px solid #86efac;'>v3.2.0 • 7-Kelas TorchScript</span>
         </div>
     """, unsafe_allow_html=True)
 
@@ -2302,14 +2209,14 @@ with st.sidebar:
     if active_key and len(active_key) > 15:
         st.markdown(
             "<div style='text-align: center; margin: 0.1rem 0 0.75rem 0; font-weight: 700; color: #16a34a; font-size: 0.95rem;'>"
-            "🟢 AI Terhubung"
+            "🟢 AI Dokter Terhubung"
             "</div>",
             unsafe_allow_html=True
         )
     else:
         st.markdown(
             "<div style='text-align: center; margin: 0.1rem 0 0.75rem 0; font-weight: 700; color: #dc2626; font-size: 0.95rem;'>"
-            "🔴 AI Belum Terhubung"
+            "🟡 Mode Agronomi Mandiri (Offline)"
             "</div>",
             unsafe_allow_html=True
         )
@@ -2318,6 +2225,18 @@ with st.sidebar:
 
     st.markdown("### 🔬 Model PyTorch TorchScript")
     st.caption("EfficientNet-B0 (TorchScript) dengan Test-Time Augmentation (TTA) Flip Horizontal.")
+
+    # Tampilkan 7 Kategori yang Dideteksi di Sidebar
+    with st.expander("📋 7 Kategori yang Dideteksi AI", expanded=False):
+        for item in SUPPORTED_DISEASES_7:
+            status_color = "#15803d" if item["is_healthy"] else ("#b45309" if item["status"] == "virus" else "#b91c1c")
+            st.markdown(
+                f"<div style='margin-bottom: 6px; font-size: 0.86rem;'>"
+                f"{item['icon']} <strong>{item['nama_id']}</strong><br>"
+                f"<span style='color: {status_color}; font-size: 0.78rem;'>• <em>{item['latin']}</em></span>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
 
     st.divider()
 
@@ -2390,26 +2309,63 @@ with st.sidebar:
     st.divider()
     st.markdown("""
         <div style='font-size: 0.85rem; color: #94a3b8; text-align: center;'>
-            Model Deep Learning: EfficientNet-B0 TorchScript (4 Kelas)<br>
-            Asisten AI: Groq Cloud Intelligence
+            Model Deep Learning: EfficientNet-B0 TorchScript (7 Kelas)<br>
+            Asisten AI: Groq Cloud Intelligence & Built-in Engine
         </div>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 6. HEADER APLIKASI UTAMA (RAMAH PETANI)
+# 6. HEADER APLIKASI UTAMA (RAMAH PETANI & MODERN)
 # ==============================================================================
 st.markdown("""
     <div class="farmer-hero">
         <h1>🧅 Dokter Tanaman Bawang Merah</h1>
-        <p>Periksa kesehatan daun bawang merah secara cepat, tepat, dan mudah langsung di sawah.</p>
-        <div style="margin-top: 0.6rem; display: inline-flex; gap: 8px; flex-wrap: wrap;">
-            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.35);">Versi 3.0.0 (TorchScript)</span>
-            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.35);">EfficientNet-B0 4-Kelas Presisi</span>
+        <p>Sistem Pakar Deteksi Dini 7 Kondisi & Penyakit Daun Bawang Merah Langsung di Sawah</p>
+        <div style="margin-top: 0.75rem; display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
+            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 4px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.35);">Versi 3.2.0 (TorchScript)</span>
+            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 4px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.35);">EfficientNet-B0 7-Kelas Presisi</span>
+            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 4px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.35);">Standar Balitsa & BPTP Kementan</span>
         </div>
     </div>
 """, unsafe_allow_html=True)
 
-st.info("ℹ️ **Catatan:** Hasil ini hanya alat bantu, bukan diagnosis final.")
+st.info("ℹ️ **Catatan:** Hasil diagnosis ini adalah alat bantu deteksi dini berbasis citra digital untuk petani.")
+
+# ==============================================================================
+# KATALOG & ENSIKLOPEDIA 7 KONDISI DAUN BAWANG MERAH (FITUR EDUKASI PETANI)
+# ==============================================================================
+with st.expander("📚 **Katalog & Gejala 7 Macam Penyakit yang Dideteksi AI**", expanded=False):
+    st.markdown("""
+        <div style="font-size: 0.95rem; color: #334155; margin-bottom: 0.85rem;">
+            Model AI ini dilatih secara khusus untuk mengenali <strong>7 kondisi & penyakit utama daun bawang merah</strong> (6 patogen penyakit + 1 kondisi sehat normal):
+        </div>
+    """, unsafe_allow_html=True)
+
+    col_k1, col_k2 = st.columns(2)
+    for idx_k, item_k in enumerate(SUPPORTED_DISEASES_7):
+        target_col = col_k1 if idx_k % 2 == 0 else col_k2
+        with target_col:
+            badge_bg = "#15803d" if item_k["is_healthy"] else ("#b45309" if item_k["status"] == "virus" else "#b91c1c")
+            tag_text = "SEHAT" if item_k["is_healthy"] else ("VIRUS" if item_k["status"] == "virus" else "PENYAKIT")
+            st.markdown(f"""
+                <div style="background: #FFFFFF; border: 1.5px solid #E2E8F0; border-radius: 12px; padding: 0.9rem 1rem; margin-bottom: 0.85rem; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem;">
+                        <span style="font-weight: 800; font-size: 1rem; color: #0F172A;">{item_k['icon']} {item_k['nama_id']}</span>
+                        <span style="background: {badge_bg}; color: #FFFFFF; font-size: 0.72rem; font-weight: 800; padding: 2px 7px; border-radius: 6px;">
+                            {tag_text}
+                        </span>
+                    </div>
+                    <div style="font-size: 0.82rem; color: #64748B; font-style: italic; margin-bottom: 0.4rem;">
+                        Patogen: {item_k['latin']}
+                    </div>
+                    <div style="font-size: 0.88rem; color: #334155; line-height: 1.45; margin-bottom: 0.4rem;">
+                        🔍 <strong>Ciri:</strong> {item_k['ciri_lapangan']}
+                    </div>
+                    <div style="font-size: 0.84rem; color: #166534; line-height: 1.4; background: #F0FDF4; padding: 6px 8px; border-radius: 8px;">
+                        💡 <strong>Solusi:</strong> {item_k['rekomendasi_singkat']}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
 if not model_loaded:
     st.error(f"❌ Gagal memuat model pendeteksi: {load_error_message}")
@@ -2723,13 +2679,20 @@ if selected_image is not None and not file_error:
                     st.metric(label="🌿 Jaringan Daun Hijau", value=f"{v_healthy_pct:.1f}%", help="Persentase area klorofil daun yang masih sehat")
 
                 if visual_evidence.get("suspected_rust", False):
-                    st.warning(
-                        "🟠 **Peringatan Fusi Fitur Fisik — Dugaan Penyakit Karat Daun (*Puccinia allii*):**\n\n"
-                        f"Modul analisis citra mendeteksi kluster bintil serbuk jingga-karat seluas **{v_rust_pct:.1f}%** pada helai daun.\n\n"
-                        "📌 **Catatan Model AI:** Model klasifikasi saat ini dilatih khusus pada **4 Kategori Spesifik** (`Busuk Daun`, `Moler`, `Sehat`, `Trotol`). "
-                        "Penyakit Karat Daun belum termasuk dalam 4 kelas latih tersebut, sehingga model neural mengarahkannya ke kelas bercak terdekat (**Trotol / Bercak Ungu**). "
-                        "Jika saat daun diusap dengan jari tertinggal serbuk halus warna jingga-karat, infeksi utama adalah **Karat Daun**."
-                    )
+                    is_pred_rust = ("rust" in str(top_class_raw).lower()) or ("karat" in str(top_class_raw).lower())
+                    if is_pred_rust:
+                        st.success(
+                            "🟠 **Konfirmasi Analisis Visual — Terdeteksi Karat Daun (*Puccinia allii*):**\n\n"
+                            f"Modul pemindaian piksel citra mengonfirmasi keberadaan kluster bintil serbuk jingga-karat seluas **{v_rust_pct:.1f}%** pada helai daun. "
+                            "Hasil analisis fisik piksel selaras 100% dengan hasil prediksi model neural AI."
+                        )
+                    else:
+                        st.warning(
+                            "🟠 **Peringatan Fusi Fitur Fisik — Terdeteksi Spora Karat Daun (*Puccinia allii*):**\n\n"
+                            f"Modul analisis citra mendeteksi kluster bintil serbuk jingga-karat seluas **{v_rust_pct:.1f}%** pada helai daun.\n\n"
+                            f"Meskipun model neural memberikan bobot utama ke **{info['nama_id']}**, keberadaan bintil jingga mengindikasikan kemungkinan gejala awal atau infeksi sekunder Karat Daun. "
+                            "Disarankan melakukan **Uji Usapan Jari** langsung di kebun: jika saat bercak diusap meninggalkan serbuk halus warna merah bata/jingga, prioritaskan penanganan Karat Daun."
+                        )
 
                 if v_override:
                     st.success(
@@ -2774,13 +2737,33 @@ if selected_image is not None and not file_error:
                             )
 
             # Distribusi Probabilitas Model PyTorch TorchScript
-            with st.expander("📊 Distribusi Probabilitas Model (TorchScript EfficientNet-B0)", expanded=True):
-                st.caption("Distribusi probabilitas softmax terkalibrasi (temperature-scaled) untuk setiap kelas:")
+            with st.expander("📊 Distribusi Probabilitas Model (TorchScript EfficientNet-B0 - 7 Kelas)", expanded=True):
+                st.caption("Distribusi probabilitas softmax terkalibrasi (temperature-scaled) untuk seluruh 7 kelas:")
                 probs_dict = api_output.get("probabilities", {})
-                for c_label, prob_val in probs_dict.items():
-                    info_c = CLASS_METADATA.get(c_label, {"nama_id": c_label})
+                sorted_probs = sorted(probs_dict.items(), key=lambda x: x[1], reverse=True)
+                for rank, (c_label, prob_val) in enumerate(sorted_probs, 1):
+                    info_c = CLASS_METADATA.get(c_label, {"nama_id": c_label, "icon": "🔍"})
+                    c_icon = info_c.get("icon", "🌱" if "sehat" in c_label.lower() else "🚨")
                     prob_pct = round(prob_val * 100.0, 1)
-                    st.write(f"• **{info_c['nama_id']}** (`{c_label}`): **{prob_pct:.1f}%** ({prob_val:.4f})")
+
+                    if rank == 1:
+                        rank_badge = "🥇 Prediksi Terpilih"
+                        val_color = "#16a34a" if info_c.get("is_healthy") else "#dc2626"
+                    elif rank == 2:
+                        rank_badge = "🥈 Peringkat 2"
+                        val_color = "#ea580c"
+                    elif rank == 3:
+                        rank_badge = "🥉 Peringkat 3"
+                        val_color = "#0284c7"
+                    else:
+                        rank_badge = f"#{rank}"
+                        val_color = "#475569"
+
+                    col_pb1, col_pb2 = st.columns([3, 1])
+                    with col_pb1:
+                        st.markdown(f"**{c_icon} {info_c['nama_id']}** <span style='font-size: 0.78rem; color: #64748b; margin-left: 6px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;'>{rank_badge}</span>", unsafe_allow_html=True)
+                    with col_pb2:
+                        st.markdown(f"<div style='text-align: right; font-weight: 800; font-size: 0.95rem; color: {val_color};'>{prob_pct:.1f}%</div>", unsafe_allow_html=True)
                     st.progress(min(max(float(prob_val), 0.0), 1.0))
 
             # Format Keluaran API (JSON)
