@@ -1718,6 +1718,49 @@ def generate_lesion_hud_map(
     arr = arr_u8.astype(np.float32)
     r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
 
+    # Ekstraksi Fitur Konvolusional Neural Network (CAM - Class Activation Mapping)
+    feats_cache = None
+    w_cls_cache = None
+    if model is not None:
+        try:
+            mean_cam = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+            std_cam = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+            scale_cam = min(1.0, 384.0 / float(max(ww, hh)))
+            rw_cam = max(32, int(round((ww * scale_cam) / 32.0)) * 32)
+            rh_cam = max(32, int(round((hh * scale_cam) / 32.0)) * 32)
+            cam_img = work.resize((rw_cam, rh_cam), Image.Resampling.BILINEAR)
+            arr_cam = (np.array(cam_img, dtype=np.float32) / 255.0 - mean_cam) / std_cam
+            tensor_cam = torch.from_numpy(arr_cam).permute(2, 0, 1).unsqueeze(0)
+            try:
+                w_cls_cache = getattr(getattr(model.classifier, "1"), "1").weight.detach()
+            except Exception:
+                for p in model.classifier.parameters():
+                    if p.dim() == 2 and p.shape[0] >= 7:
+                        w_cls_cache = p.detach()
+                        break
+            if w_cls_cache is not None:
+                with torch.no_grad():
+                    feats_cache = model.features(tensor_cam)
+        except Exception:
+            feats_cache = None
+            w_cls_cache = None
+
+    def compute_cam(class_idx: int | None) -> np.ndarray | None:
+        if feats_cache is None or w_cls_cache is None or class_idx is None:
+            return None
+        if class_idx < 0 or class_idx >= w_cls_cache.shape[0]:
+            return None
+        try:
+            w_c = w_cls_cache[class_idx]
+            cam = torch.relu(torch.einsum("c,chw->hw", w_c, feats_cache[0])).cpu().numpy()
+            cam_up = cv2.resize(cam, (ww, hh), interpolation=cv2.INTER_CUBIC)
+            c_min, c_max = float(cam_up.min()), float(cam_up.max())
+            if c_max > c_min + 1e-6:
+                return (cam_up - c_min) / (c_max - c_min)
+            return np.zeros((hh, ww), dtype=np.float32)
+        except Exception:
+            return None
+
     hsv = cv2.cvtColor(arr_u8, cv2.COLOR_RGB2HSV).astype(np.float32)
     hue = hsv[:, :, 0] * 2.0
     sat = hsv[:, :, 1] / 255.0
@@ -1844,6 +1887,16 @@ def generate_lesion_hud_map(
         s = np.where(leaf_region, s.astype(np.float32), 0.0)
         return s
 
+    def get_disease_map(name: str, class_idx: int | None = None) -> np.ndarray:
+        color_score = disease_score_map(name)
+        if class_idx is not None:
+            cam_map = compute_cam(class_idx)
+            if cam_map is not None and cam_map.max() > 0.05:
+                # Fusi Neural CAM (65%) + Visual Color/Texture Heuristic (35%)
+                fused = 0.65 * cam_map + 0.35 * color_score
+                return np.where(leaf_region, fused.astype(np.float32), 0.0)
+        return color_score
+
     leaf_dist = cv2.distanceTransform(leaf_region.astype(np.uint8), cv2.DIST_L2, 3)
     max_d = float(leaf_dist.max())
     leaf_interior = (leaf_dist >= max(1.5, min(3.0, max_d * 0.3))) if max_d >= 2.0 else leaf_region
@@ -1923,7 +1976,7 @@ def generate_lesion_hud_map(
             c1 = "green"
             l1 = f"[1] {title_1}"
         else:
-            sp1 = find_peak_spot(disease_score_map(primary_name))
+            sp1 = find_peak_spot(get_disease_map(primary_name, target_class_idx))
             c1 = "red"
             l1 = f"[1] {title_1}"
         spots_w.append((sp1["x"], sp1["y"], sp1["r"], l1, c1))
@@ -1936,7 +1989,7 @@ def generate_lesion_hud_map(
             c2 = "green"
             l2 = f"[2] {title_2}"
         else:
-            sp2 = find_peak_spot(disease_score_map(second_name), exclude_mask=excl_1)
+            sp2 = find_peak_spot(get_disease_map(second_name, second_class_idx), exclude_mask=excl_1)
             c2 = "orange"
             l2 = f"[2] {title_2}"
         spots_w.append((sp2["x"], sp2["y"], sp2["r"], l2, c2))
@@ -1949,7 +2002,7 @@ def generate_lesion_hud_map(
             c3 = "green"
             l3 = f"[3] {title_3}"
         else:
-            sp3 = find_peak_spot(disease_score_map(third_name), exclude_mask=excl_2)
+            sp3 = find_peak_spot(get_disease_map(third_name, third_class_idx), exclude_mask=excl_2)
             c3 = "blue"
             l3 = f"[3] {title_3}"
         spots_w.append((sp3["x"], sp3["y"], sp3["r"], l3, c3))
@@ -1963,7 +2016,7 @@ def generate_lesion_hud_map(
             c1 = "green"
             l1 = f"[1] {title_1}"
         else:
-            sp1 = find_peak_spot(disease_score_map(primary_name))
+            sp1 = find_peak_spot(get_disease_map(primary_name, target_class_idx))
             c1 = "red"
             l1 = f"[1] {title_1}"
         spots_w.append((sp1["x"], sp1["y"], sp1["r"], l1, c1))
@@ -1975,7 +2028,7 @@ def generate_lesion_hud_map(
             c2 = "green"
             l2 = f"[2] {title_2}"
         else:
-            sp2 = find_peak_spot(disease_score_map(second_name), exclude_mask=excl_1)
+            sp2 = find_peak_spot(get_disease_map(second_name, second_class_idx), exclude_mask=excl_1)
             c2 = "orange"
             l2 = f"[2] {title_2}"
         spots_w.append((sp2["x"], sp2["y"], sp2["r"], l2, c2))
@@ -1983,7 +2036,7 @@ def generate_lesion_hud_map(
     # KONDISI D: 1 PENYAKIT DOMINAN (Single Diagnosis Tinggi)
     else:
         title_1 = get_short_disease_title(primary_name)
-        score_1 = disease_score_map(primary_name)
+        score_1 = get_disease_map(primary_name, target_class_idx)
         spot_1 = find_peak_spot(score_1)
         spots_w.append((spot_1["x"], spot_1["y"], spot_1["r"], f"[1] {title_1}", "red"))
 
@@ -2290,7 +2343,8 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
         is_differential=is_differential,
         has_multi_disease=has_multi_disease,
         has_three_diseases=has_three_diseases,
-        is_pure_healthy=is_pure_healthy
+        is_pure_healthy=is_pure_healthy,
+        model=model
     )
     visual_evidence["overlay_img"] = annotated_cam
     visual_evidence["num_spots_detected"] = len(cam_spots)
