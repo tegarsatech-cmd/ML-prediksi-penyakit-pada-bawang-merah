@@ -76,8 +76,33 @@ st.markdown("""
             font-size: 1.55rem !important;
         }
         div.stButton > button {
-            min-height: 52px !important;
-            font-size: 1.05rem !important;
+            min-height: 50px !important;
+            font-size: 1.02rem !important;
+        }
+        /* Tombol di dalam kolom (Mode Switcher Kamera & Galeri, Aksi Simpan) anti-crop & proporsional */
+        div[data-testid="column"] div.stButton > button {
+            min-height: 44px !important;
+            font-size: 0.88rem !important;
+            padding: 0.35rem 0.5rem !important;
+            border-radius: 10px !important;
+        }
+        div[data-testid="column"] div.stButton > button p {
+            font-size: 0.88rem !important;
+            line-height: 1.25 !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+            margin: 0 !important;
+        }
+        /* Tombol sidebar di mobile */
+        [data-testid="stSidebar"] div.stButton > button {
+            min-height: 38px !important;
+            font-size: 0.84rem !important;
+            padding: 0.35rem 0.5rem !important;
+            border-radius: 8px !important;
+        }
+        [data-testid="stSidebar"] div.stButton > button p {
+            font-size: 0.84rem !important;
+            margin: 0 !important;
         }
         .card-ai-step {
             padding: 1.1rem !important;
@@ -2809,7 +2834,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     # Tampilkan 7 Kategori yang Dideteksi di Sidebar (Ukuran Dikecilkan Ramping)
-    with st.expander("📋 7 Kategori yang Dideteksi AI", expanded=False):
+    with st.expander("📋 7 Kategori Deteksi AI", expanded=False):
         for item in SUPPORTED_DISEASES_7:
             status_color = "#15803d" if item["is_healthy"] else ("#b45309" if item["status"] == "virus" else "#b91c1c")
             tag_text = "SEHAT" if item["is_healthy"] else ("VIRUS" if item["status"] == "virus" else "PENYAKIT")
