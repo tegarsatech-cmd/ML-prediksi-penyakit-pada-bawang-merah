@@ -2200,6 +2200,7 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
     # LOGIKA PENGAMAN BOTANI (RULE-BASED BOTANICAL DISAMBIGUATION)
     # Menghilangkan bias & label-noise dataset Kaggle pada patogen yang tumpang tindih
     # ==============================================================================
+    is_papery_blight = False
     try:
         chk_w, chk_h = target_img.size
         chk_scale = min(1.0, 384.0 / float(max(chk_w, chk_h)))
@@ -2309,6 +2310,31 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
                 probs_tensor[2] = max(p_iysv, 0.66)
                 probs_tensor = probs_tensor / probs_tensor.sum()
 
+        # --- PENGAMAN 7: KOREKSI BIAS TROTOL VS HAWAR DAUN PADA LESI KERTAS MEMUTIH (PAPERY BLIGHT) ---
+        # Mengatasi bias dataset publik di mana lesi nekrotik memanjang memutih (Xanthomonas / Stemphylium)
+        # sering salah dilabeli sebagai Bercak Ungu. Jika lesi berupa selaput kertas memutih/jerami kering
+        # tanpa adanya rona keunguan cincin konsentris aktif:
+        is_bleached_blight = (
+            (chk_hue >= 18.0) & (chk_hue <= 65.0) &
+            (chk_sat >= 0.08) & (chk_sat <= 0.38) &
+            (chk_val >= 0.40) & (chk_val <= 0.85) &
+            (chk_r >= chk_b * 1.05) & (chk_g >= chk_b * 0.90)
+        )
+        ratio_blight = np.count_nonzero(is_bleached_blight) / total_leaf_px
+
+        real_purple = ((chk_hue >= 260.0) & (chk_hue <= 330.0) & (chk_sat >= 0.12) & (chk_val >= 0.15))
+        ratio_real_purple = np.count_nonzero(real_purple) / total_leaf_px
+
+        is_papery_blight = bool(ratio_blight >= 0.025 and ratio_real_purple < 0.008 and ratio_rust < 0.005)
+
+        if is_papery_blight:
+            p_trotol = probs_tensor[5].item()
+            p_hawar = probs_tensor[3].item()
+            if p_trotol > 0.40:
+                probs_tensor[3] = max(p_hawar, p_trotol * 0.53 + 0.18)
+                probs_tensor[5] = p_trotol * 0.45
+                probs_tensor = probs_tensor / probs_tensor.sum()
+
     except Exception:
         pass
 
@@ -2318,7 +2344,12 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
     top_confidence_val = float(probs_tensor[top_idx].item())
     top_confidence = round(top_confidence_val * 100.0, 1)
 
-    uncertain = bool(top_confidence_val < conf_threshold)
+    # Cek apakah terdapat persaingan 2 penyakit yang jelas (diferensial valid)
+    sorted_probs_probe = torch.sort(probs_tensor, descending=True)[0]
+    second_probe_val = float(sorted_probs_probe[1].item()) if len(sorted_probs_probe) > 1 else 0.0
+    is_valid_differential_pair = bool((top_confidence_val + second_probe_val >= 0.75) and (second_probe_val >= 0.18))
+
+    uncertain = bool(top_confidence_val < conf_threshold and not is_valid_differential_pair)
 
     raw_class_name = class_labels[top_idx]
     if uncertain:
@@ -2487,7 +2518,8 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
         "third_metadata": third_metadata,
         "has_three_diseases": has_three_diseases,
         "has_multi_disease": has_multi_disease,
-        "is_single_dominant": is_single_dominant
+        "is_single_dominant": is_single_dominant,
+        "is_papery_blight": is_papery_blight
     }
     return (
         probs_np,
@@ -2805,6 +2837,260 @@ def get_disease_physical_checks(primary_name, second_name=None, is_differential=
             "* 👃 **Uji Aroma Daun:** Daun yang terinfeksi bakteri biasanya mengeluarkan bau langu busuk saat diremas.\n"
             "* 🔍 **Uji Bentuk Lesi:** Periksa apakah bercak berbentuk cincin bertingkat, bintil serbuk spora menonjol, atau lesi memanjang."
         )
+
+def get_disease_differential_breakdown(primary_name: str, second_name: str | None = None, diag_mode: str = "single", is_papery_blight: bool = False) -> dict | None:
+    """
+    Menyediakan data komparasi diferensial detail antara penyakit yang terdeteksi dengan
+    penyakit kembarannya (yang sering tertukar atau memiliki kemiripan gejala tinggi).
+    Membantu petani membedakan patogen jamur vs bakteri vs virus vs moler sebelum membeli obat.
+    """
+    p_lower = str(primary_name).lower()
+    s_lower = str(second_name).lower() if second_name else ""
+
+    if "sehat" in p_lower:
+        return None
+
+    # Tentukan kunci penyakit utama
+    key = None
+    if "trotol" in p_lower or "bercak ungu" in p_lower or "alternaria" in p_lower:
+        key = "trotol"
+    elif "hawar" in p_lower or "stemphylium" in p_lower or "colletotrichum" in p_lower or "xanthomonas" in p_lower:
+        key = "hawar"
+    elif "downy" in p_lower or "embun" in p_lower:
+        key = "downy"
+    elif "karat" in p_lower or "rust" in p_lower:
+        key = "rust"
+    elif "virus" in p_lower or "iysv" in p_lower:
+        key = "iysv"
+    elif "moler" in p_lower or "fusarium" in p_lower:
+        key = "moler"
+
+    if not key:
+        return None
+
+    matrix = {
+        "trotol": {
+            "primary_title": "Bercak Ungu / Trotol",
+            "counterpart_title": "Hawar Daun (Xanthomonas / Stemphylium)",
+            "counterpart_icon": "🍂",
+            "confusion_reason": "Keduanya sama-sama membentuk bercak nekrotik kering cokelat/krem jerami memanjang pada helai daun tua hingga daun patah terkulai.",
+            "points": [
+                {
+                    "param": "🔍 Bentuk & Pola Lesi",
+                    "curr": "Bercak oval dengan <strong>cincin konsentris bertingkat</strong> (berundak seperti sasaran panah) bertepi halo kuning sempit.",
+                    "opp": "Hawar Bakteri: lesi memanjang <strong>tembus pandang seperti selaput kertas</strong> (papery). Hawar Jamur: pucuk daun mengering merambat ke bawah."
+                },
+                {
+                    "param": "🎨 Pusat Lesi & Warna",
+                    "curr": "Pusat lesi tampak <strong>semburat keunguan/merah tua melekuk ke dalam</strong>, bertepung beludru spora hitam jamur saat lembap.",
+                    "opp": "Hawar Bakteri: warna krem/putih jerami pucat tanpa semburat ungu. Hawar Stemphylium: cokelat tua dengan spora di batas area hijau."
+                },
+                {
+                    "param": "🖐️ Uji Raba & Aroma",
+                    "curr": "Diraba rapuh kering; saat daun diremas tercium aroma dedaunan layu biasa tanpa bau busuk menyengat.",
+                    "opp": "Hawar Bakteri: saat pagi berembun daun <strong>licin berlendir (ooze)</strong>; saat diremas tercium <strong>aroma langu agak busuk menyengat</strong>."
+                },
+                {
+                    "param": "💊 Obat & Perlakuan",
+                    "curr": "<strong>Wajib Fungisida:</strong> Difenokonazol, Tebukonazol, Azoksistrobin, atau Mankozeb.",
+                    "opp": "Hawar Bakteri: <strong>Fungisida biasa TIDAK MEMPAN!</strong> Wajib <strong>Bakterisida / Senyawa Tembaga</strong> (Copper Hydroxide, Kasugamisin)."
+                }
+            ],
+            "special_alert": (
+                "⚠️ <strong>Perhatian Khusus Lapangan:</strong> Di musim hujan atau pada daun tua, Hawar Daun dan Trotol seringkali menginfeksi bersamaan (<em>Foliar Blight Complex</em>). "
+                "Bila lesi memutih kering seperti kertas selaput tanpa semburat ungu, dahulukan bakterisida tembaga atau kombinasi fungisida + bakterisida!"
+                if is_papery_blight else
+                "⚠️ <strong>Perhatian Lapangan:</strong> Di musim hujan, Hawar Daun dan Trotol seringkali menginfeksi bersamaan (<em>Foliar Blight Complex</em>). Bila lesi memutih kering tanpa semburat ungu, dahulukan penanganan senyawa tembaga / bakterisida!"
+            )
+        },
+        "hawar": {
+            "primary_title": "Hawar Daun (Stemphylium / Xanthomonas)",
+            "counterpart_title": "Bercak Ungu / Trotol (Alternaria porri)",
+            "counterpart_icon": "🎯",
+            "confusion_reason": "Lesi hawar daun yang sudah mengering sering disangka trotol karena sama-sama meninggalkan luka cekung cokelat kering di daun.",
+            "points": [
+                {
+                    "param": "🔍 Bentuk & Pola Lesi",
+                    "curr": "Lesi memanjang searah serat daun, atau mengering dari pucuk daun merambat ke bawah (pucuk kering / <em>tip dieback</em>).",
+                    "opp": "Bercak oval melebar dengan lingkaran cincin konsentris bertingkat (berundak seperti sasaran tembak)."
+                },
+                {
+                    "param": "🎨 Warna & Pusat Bercak",
+                    "curr": "Cokelat jerami hingga putih pucat transparan, <strong>tidak memiliki rona keunguan</strong> di pusat bercak.",
+                    "opp": "Tampak semburat keunguan atau cokelat kemerahan gelap di pusat lesi."
+                },
+                {
+                    "param": "🖐️ Uji Raba & Aroma",
+                    "curr": "Jika hawar bakteri: daun licin berlendir saat basah dan berbau langu busuk. Jika hawar jamur: kering rapuh.",
+                    "opp": "Kering rapuh tanpa lendir, tidak berbau busuk."
+                },
+                {
+                    "param": "💊 Obat & Perlakuan",
+                    "curr": "Bercak basah/langu: Bakterisida tembaga (Kocide/Nordox/Kasumin). Kering pucuk: Fungisida Difenokonazol/Mankozeb.",
+                    "opp": "Fungisida sistemik triazol (Difenokonazol/Score) + fungisida kontak mankozeb."
+                }
+            ],
+            "special_alert": "💡 <strong>Tips Lapangan:</strong> Periksa apakah bercak berlendir di pagi hari. Jika berlendir/langu, semprot bakterisida tembaga. Jika kering murni tanpa bau, semprot fungisida."
+        },
+        "downy": {
+            "primary_title": "Embun Bulu (Downy Mildew)",
+            "counterpart_title": "Hawar Daun / Trotol Fase Awal",
+            "counterpart_icon": "🍂",
+            "confusion_reason": "Fase awal embun bulu berupa bercak kuning memanjang pucat yang menyerupai hawar daun muda atau trotol awal.",
+            "points": [
+                {
+                    "param": "🌅 Gejala Pagi Hari (Kunci Mutlak)",
+                    "curr": "Pukul 05.00-07.30 pagi saat dingin lembap, permukaan daun tertutup <strong>LAPISAN BULU HALUS / BELEDU KELABU KEUNGUAN</strong>.",
+                    "opp": "Permukaan daun bersih licin atau kering rapuh, <strong>tidak pernah ditumbuhi bulu beledu kelabu</strong>."
+                },
+                {
+                    "param": "🔍 Bentuk & Sifat Daun",
+                    "curr": "Bercak klorotik kuning pucat tanpa batas tegas di badan daun, helai daun lemas terkulai patah di titik bercak.",
+                    "opp": "Bercak memiliki batas tegas, berpusat cincin konsentris (Trotol) atau memanjang di pucuk daun (Hawar)."
+                },
+                {
+                    "param": "💊 Pilihan Obat Semprot",
+                    "curr": "<strong>Wajib fungisida spesifik Oomycetes:</strong> Simoksanil, Dimetomorf, Metalaksil, atau Propamokarb.",
+                    "opp": "Fungisida umum: Difenokonazol, Tebukonazol, atau Klorotalonil."
+                }
+            ],
+            "special_alert": "🔍 <strong>Tips Deteksi Pagi:</strong> Amati daun sebelum matahari terik pukul 07.00 pagi. Lapisan bulu kelabu beledu adalah tanda mutlak Embun Bulu!"
+        },
+        "rust": {
+            "primary_title": "Karat Daun (Rust)",
+            "counterpart_title": "Virus Bintik Kuning (IYSV)",
+            "counterpart_icon": "🟡",
+            "confusion_reason": "Keduanya sama-sama memunculkan bintik-bintik kecil berwarna kuning atau oranye di sepanjang helai daun.",
+            "points": [
+                {
+                    "param": "🔍 Tekstur Bintik (Kunci Mutlak)",
+                    "curr": "Bintik berupa <strong>PUSTUL TIMBUL / MELEPUH MENONJOL</strong> yang terasa kasar saat diraba jari.",
+                    "opp": "Bercak <strong>RATA SEJAJAR PERMUKAAN DAUN</strong> (mulus tanpa benjolan), sering berbentuk belah ketupat."
+                },
+                {
+                    "param": "🖐️ Uji Usapan Jari / Tisu",
+                    "curr": "Bila diusap ibu jari/tisu putih, meninggalkan <strong>SERBUK DEBU JINGGA / MERAH TEMBAGA</strong> seperti karat besi.",
+                    "opp": "Bila diusap, <strong>TIDAK MENINGGALKAN SERBUK SAMA SEKALI</strong> (perubahan warna pigmen sel daun, bukan spora)."
+                },
+                {
+                    "param": "💊 Obat & Pengendalian",
+                    "curr": "<strong>Semprot Fungisida:</strong> Tebukonazol, Azoksistrobin, atau Heksakonazol.",
+                    "opp": "<strong>Fungisida TIDAK MEMPAN!</strong> Wajib basmi vektor hama Thrips dengan Insektisida (Abamektin, Imidakloprid)."
+                }
+            ],
+            "special_alert": "🖐️ <strong>Uji Cepat Jari:</strong> Cukup usap bercak dengan jari. Berdebu oranye = Karat Jamur. Mulus tanpa serbuk = Virus Thrips!"
+        },
+        "iysv": {
+            "primary_title": "Virus Bintik Kuning (IYSV)",
+            "counterpart_title": "Karat Daun (Rust) & Kerusakan Thrips",
+            "counterpart_icon": "🟤",
+            "confusion_reason": "Bercak klorotik kuning kecil menyerupai karat awal atau bekas hisapan hama thrips.",
+            "points": [
+                {
+                    "param": "🔍 Bentuk Lesi Khas",
+                    "curr": "Bercak klorotik berbentuk <strong>BELAH KETUPAT (diamond-shaped)</strong> atau mata spindle di tengah daun.",
+                    "opp": "Karat: bintil bulat kecil melepuh kasar. Thrips biasa: bercak garis keperakan mengkilap."
+                },
+                {
+                    "param": "🖐️ Permukaan Daun",
+                    "curr": "Permukaan daun mulus rata (tidak menonjol), daun kaku berkerut dan mudah patah.",
+                    "opp": "Karat memiliki bintil pustul yang meletus mengeluarkan serbuk spora oranye."
+                },
+                {
+                    "param": "💊 Pengendalian",
+                    "curr": "Basmi vektor Thrips (Insektisida Spinetoram/Abamektin) + cabut dan bakar tanaman sakit parah (eradikasi).",
+                    "opp": "Semprot fungisida azoksistrobin/difenokonazol."
+                }
+            ],
+            "special_alert": "💡 <strong>Penting:</strong> Virus tidak bisa diobati dengan fungisida. Kunci perlindungan adalah membasmi serangga vektor Thrips!"
+        },
+        "moler": {
+            "primary_title": "Layu Moler (Fusarium)",
+            "counterpart_title": "Hawar Ujung / Kerusakan Fisiologis Akar",
+            "counterpart_icon": "🍂",
+            "confusion_reason": "Sama-sama menyebabkan daun menguning pucat dan tanaman tampak layu terkulai.",
+            "points": [
+                {
+                    "param": "🌱 Bentuk Pertumbuhan Daun",
+                    "curr": "Daun <strong>MELIUK-LIUK / TERPUNTIR SPIRAL ABNORMAL</strong> menyerupai pita terpelintir.",
+                    "opp": "Daun tumbuh tegak lurus biasa, hanya pucuknya yang mengering kecokelatan."
+                },
+                {
+                    "param": "🌾 Kondisi Perakaran & Umbi",
+                    "curr": "Akar membusuk warna cokelat kemerahan, leher batang lunak basah, tanaman <strong>SANGAT MUDAH DICABUT satu tangan</strong>.",
+                    "opp": "Akar masih putih bersih mencengkeram tanah kuat, umbi padat dan keras."
+                },
+                {
+                    "param": "💊 Tindakan di Kebun",
+                    "curr": "Kocor agens hayati <em>Trichoderma harzianum</em> + fungisida tembaga di pangkal batang, perbaiki drainase.",
+                    "opp": "Pemupukan berimbang Kalsium/Kalium dan penyiraman teratur."
+                }
+            ],
+            "special_alert": "🌱 <strong>Uji Cabut Tanaman:</strong> Jika ditarik pelan langsung terangkat dengan akar compang-camping membusuk, itu dipastikan Moler Fusarium!"
+        }
+    }
+
+    data = matrix[key]
+    if second_name and ("trotol" in s_lower or "ungu" in s_lower) and key == "hawar":
+        data["counterpart_title"] = second_name
+    elif second_name and ("hawar" in s_lower or "stemphylium" in s_lower or "bakteri" in s_lower) and key == "trotol":
+        data["counterpart_title"] = second_name
+    elif second_name and ("rust" in s_lower or "karat" in s_lower) and key == "iysv":
+        data["counterpart_title"] = second_name
+    elif second_name and ("virus" in s_lower or "iysv" in s_lower) and key == "rust":
+        data["counterpart_title"] = second_name
+
+    return data
+
+def render_differential_comparison_html(data: dict) -> str:
+    """Merender tabel perbandingan diferensial berdesain modern, responsif, dan kontras tinggi."""
+    rows_html = ""
+    for pt in data["points"]:
+        rows_html += f"""
+        <tr style="border-bottom: 1px solid #E2E8F0;">
+            <td style="padding: 10px 12px; font-weight: 700; color: #334155; vertical-align: top; background: #F8FAFC; border-right: 1px solid #E2E8F0;">{pt['param']}</td>
+            <td style="padding: 10px 12px; color: #0F172A; vertical-align: top; line-height: 1.55; border-right: 1px solid #E2E8F0; background: #FFFFFF;">{pt['curr']}</td>
+            <td style="padding: 10px 12px; color: #0F172A; vertical-align: top; line-height: 1.55; background: #FFFFFF;">{pt['opp']}</td>
+        </tr>
+        """
+
+    html_out = f"""
+    <div style="background: #FFFFFF; border-radius: 16px; border: 2px solid #CBD5E1; padding: 1.25rem 1.35rem; margin: 1.2rem 0; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 0.65rem;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                <span style="font-size: 1.4rem;">⚖️</span>
+                <span style="font-size: 1.15rem; font-weight: 800; color: #0F172A;">Pembeda Detail Gejala Penyakit Serupa (Pencegah Salah Obat di Sawah)</span>
+            </div>
+            <span style="background: #EFF6FF; color: #1D4ED8; font-size: 0.8rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; border: 1px solid #BFDBFE;">Komparasi Lapangan</span>
+        </div>
+        <div style="font-size: 0.90rem; color: #475569; margin-bottom: 1rem; line-height: 1.55;">
+            {data['confusion_reason']} Pelajari tabel perbandingan berikut agar tidak salah menentukan tindakan dan pembelian obat:
+        </div>
+        <div style="overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.9rem;">
+            <table style="width: 100%; border-collapse: separate; border-spacing: 0; border: 1.5px solid #CBD5E1; border-radius: 10px; overflow: hidden; font-size: 0.90rem;">
+                <thead>
+                    <tr style="background: #F1F5F9;">
+                        <th style="padding: 10px 12px; text-align: left; font-weight: 800; color: #334155; border-bottom: 2px solid #CBD5E1; border-right: 1px solid #CBD5E1; width: 22%;">Tanda Pengamatan</th>
+                        <th style="padding: 10px 12px; text-align: left; font-weight: 800; color: #B91C1C; border-bottom: 2px solid #CBD5E1; border-right: 1px solid #CBD5E1; width: 39%; background: #FEF2F2;">
+                            🎯 {data['primary_title']} (Terdeteksi)
+                        </th>
+                        <th style="padding: 10px 12px; text-align: left; font-weight: 800; color: #1D4ED8; border-bottom: 2px solid #CBD5E1; width: 39%; background: #EFF6FF;">
+                            {data['counterpart_icon']} {data['counterpart_title']} (Sering Tertukar)
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html}
+                </tbody>
+            </table>
+        </div>
+        <div style="background: #FEF9C3; border: 1px solid #FDE047; border-left: 5px solid #CA8A04; border-radius: 10px; padding: 0.85rem 1.05rem; font-size: 0.88rem; color: #713F12; line-height: 1.6;">
+            {data['special_alert']}
+        </div>
+    </div>
+    """
+    return html_out
+
 
 def get_groq_physical_verification(
     primary_name: str,
@@ -4222,6 +4508,19 @@ if selected_image is not None and not file_error:
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
+
+                # ==============================================================================
+                # MODUL PEMBEDA GEJALA SERUPA (PENCEGAH SALAH OBAT DI SAWAH)
+                # ==============================================================================
+                diff_data = get_disease_differential_breakdown(
+                    primary_name=info['nama_id'],
+                    second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way') and second_info) else None,
+                    diag_mode=diag_mode,
+                    is_papery_blight=diag_info.get("is_papery_blight", False)
+                )
+                if diff_data:
+                    html_diff = render_differential_comparison_html(diff_data)
+                    st.markdown(html_diff, unsafe_allow_html=True)
 
             # ==============================================================================
             # 9. LANGKAH 3: PETUNJUK OBAT & PERAWATAN DARI DOKTER TANAMAN (GROQ AI)
