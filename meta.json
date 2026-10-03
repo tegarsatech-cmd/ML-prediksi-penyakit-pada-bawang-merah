@@ -1,0 +1,29 @@
+{
+  "arch": "efficientnet_b0",
+  "class_keys": [
+    "iris_yellow_virus",
+    "leaf_blight",
+    "healthy",
+    "purple_blotch"
+  ],
+  "class_labels_id": [
+    "Iris Yellow Spot Virus (IYSV)",
+    "Hawar Daun (Stemphylium / Colletotrichum)",
+    "Sehat",
+    "Bercak Ungu / Trotol (Alternaria porri)"
+  ],
+  "img_size": 224,
+  "mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "std": [
+    0.229,
+    0.224,
+    0.225
+  ],
+  "temperature": 0.05000000074505806,
+  "conf_threshold": 0.7,
+  "data_config": "raw"
+}

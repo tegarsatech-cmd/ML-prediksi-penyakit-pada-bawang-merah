@@ -1,7 +1,7 @@
 """
 AgroScan Bawang Merah - Aplikasi Deteksi Penyakit Daun Bawang Merah
 Desain UI/UX Mobile-First Ramah Petani (Usia 30-50 Tahun di Lapangan/Sawah)
-Berbasis Deep Learning MobileNetV2 Keras ('model_bawang_final.keras') & Groq AI.
+Berbasis Deep Learning EfficientNet-B0 PyTorch (TorchScript) & Groq AI.
 """
 
 import base64
@@ -19,6 +19,7 @@ import pandas as pd
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
+import torch
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 # ==============================================================================
@@ -540,10 +541,43 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. ENSIKLOPEDIA & METADATA PENYAKIT (15 KELAS MODEL KERAS)
+# 2. ENSIKLOPEDIA & METADATA PENYAKIT DAUN BAWANG MERAH
 # Menggunakan Istilah Populer yang Akrab Bagi Petani Indonesia
 # ==============================================================================
 CLASS_METADATA = {
+    "Iris Yellow Spot Virus (IYSV)": {
+        "nama_id": "Virus Iris Kuning (IYSV)",
+        "latin": "Iris yellow spot virus",
+        "status": "virus",
+        "is_healthy": False,
+        "ciri_lapangan": "Bercak klorotik khas berbentuk ketupat/belah ketupat warna kuning jerami di tengah helai daun, terkadang memiliki pulau hijau di tengah bercak (green islands).",
+        "gejala": "Cabut dan musnahkan tanaman yang daunnya terdapat bercak kuning berbentuk ketupat agar tidak menular ke tanaman sekitarnya.",
+        "pencegahan": "Gunakan mulsa plastik perak untuk memantulkan sinar matahari dan menghalau hama kutu trips (Thrips tabaci) pembawa virus.",
+        "solusi": "Kendalikan kutu trips dengan insektisida sistemik berbahan aktif Abamektin, Spinetoram, atau Klorfenapir pada pagi/sore hari.",
+        "rekomendasi_singkat": "Cabut tanaman bergejala ketupat & semprot Abamektin untuk basmi kutu trips."
+    },
+    "Hawar Daun (Stemphylium / Colletotrichum)": {
+        "nama_id": "Hawar Daun (Stemphylium / Antraknosa)",
+        "latin": "Stemphylium vesicarium / Colletotrichum gloeosporioides",
+        "status": "disease",
+        "is_healthy": False,
+        "ciri_lapangan": "Ujung daun menguning kecokelatan kering merambat ke bawah (blight), atau bercak melekuk kebasahan pada helai daun.",
+        "gejala": "Pangkas helai daun yang tampak membusuk atau mengering dari ujung sebelum merambat ke leher umbi tanaman.",
+        "pencegahan": "Hindari penyiraman sore/malam hari dan jaga sirkulasi parit bedengan macak-macak agar tidak tergenang air.",
+        "solusi": "Semprot fungisida berbahan aktif Mankozeb, Klorotalonil, atau Difenokonazol selang-seling dengan Tembaga Oksiklorida.",
+        "rekomendasi_singkat": "Pangkas daun kering ujung dan semprot fungisida Mankozeb/Klorotalonil."
+    },
+    "Bercak Ungu / Trotol (Alternaria porri)": {
+        "nama_id": "Bercak Ungu / Trotol",
+        "latin": "Alternaria porri",
+        "status": "disease",
+        "is_healthy": False,
+        "ciri_lapangan": "Bercak melekuk ke dalam berbentuk cincin konsentris bertepung keunguan/gelap di tengah helai daun, tepi menguning klorotik, daun mudah patah di titik bercak.",
+        "gejala": "Potong atau pangkas daun yang terdapat bercak trotol ungu cincin konsentris. Kumpulkan dan musnahkan di luar areal sawah.",
+        "pencegahan": "Bersihkan gulma di sekitar parit. Buat bedengan lebih tinggi agar tidak tergenang air saat hujan lebat.",
+        "solusi": "Semprot fungisida berbahan aktif Difenokonazol, Azoksistrobin, atau Mankozeb pada pagi hari saat angin tenang.",
+        "rekomendasi_singkat": "Pangkas daun trotol dan semprot Difenokonazol/Azoksistrobin segera."
+    },
     "Busuk Daun": {
         "nama_id": "Hawar / Busuk Daun",
         "latin": "Botrytis / Stemphylium / Xanthomonas",
@@ -787,28 +821,28 @@ def reset_all_history():
     st.session_state.history = []
 
 # ==============================================================================
-# 3. CACHING MODEL KERAS & INFERENSI PRESISI
+# 3. CACHING MODEL PYTORCH (TORCHSCRIPT) & KONFIGURASI METADATA
 # ==============================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "model_bawang_final.keras")
-CLASS_NAMES_PATH = os.path.join(BASE_DIR, "class_names.json")
+MODEL_PATH = os.path.join(BASE_DIR, "bawang_efficientnet_b0_ts.pt")
+META_PATH = os.path.join(BASE_DIR, "meta.json")
 
 @st.cache_resource(show_spinner=False)
-def load_labels(file_path=CLASS_NAMES_PATH):
+def load_meta_config(file_path=META_PATH) -> dict:
     if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File label kelas '{file_path}' tidak ditemukan.")
+        raise FileNotFoundError(f"File konfigurasi model '{file_path}' tidak ditemukan.")
     with open(file_path, "r", encoding="utf-8") as f:
-        class_names = json.load(f)
-    return class_names
+        meta = json.load(f)
+    return meta
 
 @st.cache_resource(show_spinner=False)
-def load_model_and_labels():
-    class_names = load_labels(CLASS_NAMES_PATH)
-    if not os.path.exists(MODEL_PATH):
-        raise FileNotFoundError(f"File model '{MODEL_PATH}' tidak ditemukan.")
-    import tensorflow as tf
-    model = tf.keras.models.load_model(MODEL_PATH)
-    return model, class_names
+def load_torch_model(file_path=MODEL_PATH):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File model '{file_path}' tidak ditemukan.")
+    import torch
+    model = torch.jit.load(file_path, map_location="cpu")
+    model.eval()
+    return model
 
 def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.15) -> tuple[Image.Image, tuple[int, int, int, int], float]:
     """
@@ -895,7 +929,7 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
        - View 2: High-Resolution Macro Center Crop dari Leaf ROI (detail lesi/tekstur).
        - View 3: Simetri Horizontal dari Leaf ROI (invarian arah kamera).
        - View 4: Full Frame Natural (konteks global keseluruhan tanaman).
-    4. Input Skala Model Keras: Tensor float32 [0.0, 255.0] murni untuk layer internal MobileNetV2.
+    4. Input Skala: Tensor float32 [0.0, 255.0] untuk pemrosesan citra.
     """
     orig_mode = image.mode if image is not None else "RGB"
     orig_size = image.size if image is not None else (0, 0)
@@ -938,17 +972,13 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
         crops.append(view_full)
         weights.append(0.15)
 
-    # Susun batch tensor NumPy float32 dalam skala alami [0.0, 255.0]
-    # Model Keras 'model_bawang_final.keras' telah memiliki layer internal:
-    # true_divide (dibagi 127.5) dan subtract (dikurangi 1.0).
-    # Oleh karena itu input ke model Keras HARUS berupa piksel float32 [0.0, 255.0]
-    # agar layer internal bekerja menghasilkan skala [-1.0, 1.0] yang presisi untuk MobileNetV2.
+    # Susun batch tensor NumPy float32
     batch_array = np.stack([np.array(c, dtype=np.float32) for c in crops], axis=0)
 
     diag_info = {
         "orig_mode": orig_mode,
         "orig_size": orig_size,
-        "norm_mode_name": f"MobileNetV2 Alami [0, 255] + Leaf-Focused TTA ({len(crops)} Perspektif)" if use_tta else "MobileNetV2 Alami [0, 255] (Focused ROI)",
+        "norm_mode_name": f"Leaf-Focused TTA ({len(crops)} Perspektif)" if use_tta else "Focused ROI",
         "num_views": len(crops),
         "is_auto_cropped": is_auto_cropped,
         "leaf_coverage_pct": round(leaf_coverage * 100.0, 1),
@@ -1295,26 +1325,25 @@ def inspect_visual_leaf_symptoms(image: Image.Image) -> dict:
         "overlay_img": annotated_pil
     }
 
-def generate_keras_cam_map(
+def generate_lesion_hud_map(
     image: Image.Image,
-    model,
-    target_class_idx: int,
+    target_class_idx: int = 0,
     is_healthy: bool = False,
     second_class_idx: int | None = None,
     primary_name: str = "Penyakit A",
     second_name: str | None = None,
-    is_differential: bool = False
+    is_differential: bool = False,
+    model=None,
+    **kwargs
 ):
     """
-    Menghasilkan Peta Deteksi Lesi Berbasis Pola Konvolusi Keras Asli (Class Activation Mapping / CAM):
-    1. Mengambil peta aktivasi layer konvolusi terakhir (mobilenetv2_1.00_224, shape 7x7x1280).
-    2. Menghitung dot product dengan vektor bobot dense layer untuk kelas yang didiagnosis.
-    3. Segmentasi Kanopi Daun (Leaf Canopy Masking): Memastikan penanda lesi HANYA berada di helai daun,
-       bukan pada latar belakang, meja, atau tangan manusia yang sedang memegang daun.
-    4. Mendukung multi-penyakit: Jika terdeteksi 2 penyakit mirip (diferensial diagnosis),
-       retikel Merah menandai fokus Kemungkinan A, dan retikel Oranye menandai fokus Kemungkinan B.
-    5. Menggambar penanda modern High-Precision Agro-Tech Reticle (HUD Scanner) pada titik lesi aktif daun.
-    6. Jika daun sehat, lingkaran tidak digambar untuk menjaga foto tetap bersih dan jernih.
+    Peta HUD Scanner Deteksi Titik Kerusakan Lesi Aktif Daun Bawang Merah:
+    1. Segmentasi Kanopi Daun Bawang Merah (Leaf Canopy Masking) berbasis piksel murni NumPy & PIL.
+    2. Pengecualian warna kulit tangan manusia agar penanda hanya menempel pada helai daun.
+    3. Mendukung multi-penyakit: Jika diferensial diagnosis aktif, retikel Merah menandai fokus
+       Penyakit A dan retikel Oranye menandai fokus Penyakit B.
+    4. Menggambar retikel modern High-Precision Agro-Tech Scanner pada titik lesi aktif.
+    5. Jika daun sehat, lingkaran tidak digambar untuk menjaga foto tetap bersih dan jernih.
     """
     img_rgb = image.convert("RGB")
     w, h = img_rgb.size
@@ -1323,14 +1352,6 @@ def generate_keras_cam_map(
         return img_rgb, []
 
     try:
-        dense_layer = model.get_layer("dense")
-        weights, _ = dense_layer.get_weights()  # shape (1280, num_classes)
-
-        try:
-            backbone = model.get_layer("mobilenetv2_1.00_224")
-        except (KeyError, IndexError, ValueError):
-            backbone = model.layers[4]
-
         # 1. Segmentasi Kanopi Daun Bawang Merah pada Resolusi Asli
         img_np = np.array(img_rgb, dtype=np.float32)
         r, g, b = img_np[:, :, 0], img_np[:, :, 1], img_np[:, :, 2]
@@ -1393,31 +1414,9 @@ def generate_keras_cam_map(
         if ld_max > 1e-5:
             lesion_density = lesion_density / ld_max
 
-        # 2. Siapkan input 224x224 skala alami MobileNetV2 [-1, 1]
-        resized = img_rgb.resize((224, 224), Image.Resampling.LANCZOS)
-        arr = np.expand_dims(np.array(resized, dtype=np.float32), 0)
-
-        # Skala [-1, 1] presisi untuk input backbone MobileNetV2
-        x_norm = (arr / 127.5) - 1.0
-        features = backbone(x_norm, training=False).numpy()[0]  # shape (7, 7, 1280)
-
-        def get_cam_eval(class_idx):
-            cam_raw = np.dot(features, weights[:, class_idx])
-            c_min = float(np.min(cam_raw))
-            c_max = float(np.max(cam_raw))
-            if (c_max - c_min) > 1e-6:
-                cam_n = (cam_raw - c_min) / (c_max - c_min)
-            else:
-                cam_n = np.zeros_like(cam_raw)
-            cam_p = Image.fromarray((cam_n * 255).astype(np.uint8)).resize((w, h), Image.Resampling.BILINEAR)
-            arr_c = np.array(cam_p, dtype=np.float32) / 255.0
-            # Batasi evaluasi CAM hanya pada piksel kerusakan fisik nyata daun bawang
-            if lesion_density is not None:
-                return (0.35 * arr_c + 0.65 * lesion_density) * is_physical_lesion.astype(np.float32)
-            return arr_c * is_physical_lesion.astype(np.float32)
-
-        cam_eval_1 = get_cam_eval(target_class_idx)
-        cam_eval_2 = get_cam_eval(second_class_idx) if (is_differential and second_class_idx is not None) else None
+        # 2. Evaluasi spasial kepadatan lesi fisik pada daun
+        cam_eval_1 = lesion_density * is_physical_lesion.astype(np.float32)
+        cam_eval_2 = cam_eval_1 if is_differential else None
 
         def extract_peaks(c_eval):
             if not has_physical_lesion:
@@ -1565,22 +1564,31 @@ def generate_keras_cam_map(
     except (ValueError, KeyError, IndexError, TypeError):
         return img_rgb, []
 
-def predict_disease(image: Image.Image, model, class_names, target_size=(224, 224), enforce_verification: bool = True, use_tta: bool = True, **kwargs):
+# Alias kompatibilitas
+generate_keras_cam_map = generate_lesion_hud_map
+
+def predict_disease(image: Image.Image, model, meta=None, class_names=None, enforce_verification: bool = True, **kwargs):
     """
-    Fungsi Inferensi Deep Learning Presisi Berbasis Pola Keras & Analisis Lesi Citra:
-    1. Pre-Inference Guard: Validasi spektrum vegetasi daun bawang merah (Allium cepa).
-    2. Multi-Crop TTA (Test-Time Augmentation):
-       Menganalisis helai daun dari beberapa perspektif:
-       - Preservasi rasio aspek (mencegah kompresi/distorsi lesi)
-       - Zoom lesi beresolusi tinggi di zona tengah
-       - Pemindaian ujung pucuk dan pangkal daun
-    3. Input Skala Alami Keras: Mengalirkan tensor float32 [0.0, 255.0] langsung ke model
-       tanpa double-normalization, memanfaatkan internal true_divide & subtract bawaan model.
-    4. Evaluasi Probabilitas 15 Kelas Murni:
-       Model Keras mengevaluasi pola konvolusi seluruh 15 kategori tanpa bias suppression buatan.
-    5. Validasi Fisik Lapangan & Sinkronisasi Probabilitas:
-       Probabilitas Top-3 disinkronkan 100% dengan vonis kartu utama dan bukti lesi fisik.
+    Pipeline Prediksi PyTorch TorchScript Resmi (EfficientNet-B0):
+    Mengikuti 7 langkah presisi sesuai instruksi pelatihan Google Colab:
+    1. Buka gambar dengan PIL, perbaiki orientasi EXIF (ImageOps.exif_transpose), convert ke RGB.
+    2. Resize ke (img_size, img_size) = 224x224 (tanpa crop), ubah ke tensor float 0-1.
+    3. Normalisasi dengan mean=[0.485,0.456,0.406] dan std=[0.229,0.224,0.225] (dari meta.json).
+    4. Bentuk batch [1,3,224,224]. Hitung logits = (model(x) + model(torch.flip(x, dims=[3]))) / 2 (TTA).
+    5. probs = softmax(logits / temperature, dim=1), temperature dari meta.json.
+    6. Ambil kelas dengan probabilitas tertinggi. Jika confidence < conf_threshold (0.70),
+       tampilkan "Tidak yakin, foto kurang jelas atau bukan daun bawang" alih-alih menebak.
+    7. Nama kelas ditampilkan dari meta.json -> class_labels_id, dengan urutan index yang sama.
+
+    Format API JSON:
+    { "label": "...", "confidence": 0.93, "uncertain": false,
+      "probabilities": {"Sehat": 0.93, "Bercak Ungu / Trotol ...": 0.03, ...} }
     """
+    import torch
+
+    if meta is None or not isinstance(meta, dict):
+        meta = load_meta_config()
+
     if enforce_verification:
         is_shallot, reason_msg, _ = check_shallot_leaf_mask(image, min_ratio=0.02)
         if not is_shallot:
@@ -1589,52 +1597,93 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     # Jalankan inspeksi fitur visual nyata pada foto
     visual_evidence = inspect_visual_leaf_symptoms(image)
 
-    # Ekstraksi tensor multiperspektif [0.0, 255.0] (murni sesuai arsitektur Keras)
-    input_tensor, processed_preview, crop_weights, diag_info = preprocess_image_smart(image, target_size, use_tta=use_tta)
+    # 1. Buka gambar dengan PIL, perbaiki orientasi EXIF, convert ke RGB
+    img_rgb = ImageOps.exif_transpose(image).convert("RGB")
+    orig_w, orig_h = img_rgb.size
 
-    # 1. Inferensi Model Keras (training=False menjamin Dropout dan Augmentasi non-aktif)
-    raw_preds = model(input_tensor, training=False).numpy()
-    if len(raw_preds.shape) == 1:
-        raw_preds = np.expand_dims(raw_preds, 0)
+    # 2. Resize ke (img_size, img_size) tanpa crop, ubah ke tensor float 0-1
+    img_size = int(meta.get("img_size", 224))
+    resized = img_rgb.resize((img_size, img_size), Image.Resampling.BILINEAR)
+    arr = np.array(resized, dtype=np.float32) / 255.0  # [224, 224, 3], range 0-1
+    tensor_chw = torch.from_numpy(arr).permute(2, 0, 1)  # [3, 224, 224]
 
-    # Agregasi probabilitas lintas crop (TTA Weighted Ensemble)
-    weights_arr = np.array(crop_weights, dtype=np.float32)
-    weights_norm = weights_arr / np.sum(weights_arr)
-    calibrated_probs = np.sum(raw_preds * weights_norm[:, None], axis=0)
-    calibrated_probs = calibrated_probs / np.sum(calibrated_probs)
+    # 3. Normalisasi dengan mean & std dari meta.json
+    mean_vals = meta.get("mean", [0.485, 0.456, 0.406])
+    std_vals = meta.get("std", [0.229, 0.224, 0.225])
+    mean_t = torch.tensor(mean_vals, dtype=torch.float32).view(3, 1, 1)
+    std_t = torch.tensor(std_vals, dtype=torch.float32).view(3, 1, 1)
+    normalized = (tensor_chw - mean_t) / std_t
 
-    # 2. Urutkan peringkat probabilitas 4 kelas murni
-    ranked_indices = [int(i) for i in np.argsort(calibrated_probs)[::-1]]
-    best_idx = ranked_indices[0]
-    second_idx = ranked_indices[1] if len(ranked_indices) > 1 else best_idx
+    # 4. Bentuk batch [1, 3, 224, 224] & Hitung logits dengan TTA flip horizontal
+    x = normalized.unsqueeze(0)
+    with torch.no_grad():
+        x_flip = torch.flip(x, dims=[3])
+        logits = (model(x) + model(x_flip)) / 2.0
 
-    top_confidence = round(float(calibrated_probs[best_idx]) * 100.0, 1)
-    second_confidence = round(float(calibrated_probs[second_idx]) * 100.0, 1)
+        # 5. probs = softmax(logits / temperature, dim=1)
+        temperature = float(meta.get("temperature", 0.05))
+        probs_tensor = torch.softmax(logits / temperature, dim=1)[0]
+
+    # 6. Ambil kelas tertinggi & evaluasi conf_threshold (0.70)
+    conf_threshold = float(meta.get("conf_threshold", 0.70))
+    top_idx = int(torch.argmax(probs_tensor).item())
+    top_confidence_val = float(probs_tensor[top_idx].item())
+    top_confidence = round(top_confidence_val * 100.0, 1)
+
+    uncertain = bool(top_confidence_val < conf_threshold)
+
+    class_labels = meta.get("class_labels_id", [
+        "Iris Yellow Spot Virus (IYSV)",
+        "Hawar Daun (Stemphylium / Colletotrichum)",
+        "Sehat",
+        "Bercak Ungu / Trotol (Alternaria porri)"
+    ])
+
+    raw_class_name = class_labels[top_idx]
+    if uncertain:
+        display_label = "Tidak yakin, foto kurang jelas atau bukan daun bawang"
+    else:
+        display_label = raw_class_name
+
+    # 7. Format JSON probabilities
+    probabilities_dict = {
+        class_labels[i]: round(float(probs_tensor[i].item()), 4)
+        for i in range(len(class_labels))
+    }
+
+    # Format Keluaran API (JSON)
+    api_output = {
+        "label": display_label,
+        "confidence": round(top_confidence_val, 4),
+        "uncertain": uncertain,
+        "probabilities": probabilities_dict
+    }
+
+    probs_np = probs_tensor.cpu().numpy()
+    sorted_indices = [int(i) for i in np.argsort(probs_np)[::-1]]
+    second_idx = sorted_indices[1] if len(sorted_indices) > 1 else top_idx
+    second_confidence = round(float(probs_np[second_idx]) * 100.0, 1)
+    second_class_name = class_labels[second_idx]
     confidence_margin = round(top_confidence - second_confidence, 1)
 
-    raw_class_name = class_names[best_idx]
-    second_class_name = class_names[second_idx]
-    top_indices = ranked_indices
+    is_healthy_1 = (raw_class_name == "Sehat") or CLASS_METADATA.get(raw_class_name, {}).get("is_healthy", False)
+    is_healthy_2 = (second_class_name == "Sehat") or CLASS_METADATA.get(second_class_name, {}).get("is_healthy", False)
 
-    is_healthy_1 = CLASS_METADATA.get(raw_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(raw_class_name, {}).get("status") == "healthy"
-    is_healthy_2 = CLASS_METADATA.get(second_class_name, {}).get("is_healthy", False) or CLASS_METADATA.get(second_class_name, {}).get("status") == "healthy"
-
-    # Evaluasi Diferensial Diagnosis:
-    # Diferensial aktif bila kedua penyakit bersaing ketat (ambigu) dengan margin <= 18%, keyakinan < 68%, dan bukan daun sehat
     is_differential = (
-        (confidence_margin <= 18.0)
+        (not uncertain)
+        and (confidence_margin <= 18.0)
         and (top_confidence < 68.0)
         and (second_confidence >= 22.0)
-        and (not is_healthy_1) 
-        and (not is_healthy_2) 
+        and (not is_healthy_1)
+        and (not is_healthy_2)
         and (raw_class_name != second_class_name)
     )
 
     metadata = CLASS_METADATA.get(raw_class_name, {
         "nama_id": raw_class_name,
         "latin": "-",
-        "status": "disease",
-        "is_healthy": False,
+        "status": "healthy" if is_healthy_1 else "disease",
+        "is_healthy": is_healthy_1,
         "ciri_lapangan": "Periksa kondisi helai daun dan bercak secara teliti.",
         "gejala": "Pangkas daun yang bergejala dan keluarkan dari areal kebun.",
         "pencegahan": "Jaga kelancaran parit dan kebersihan gulma bedengan.",
@@ -1645,8 +1694,8 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     second_metadata = CLASS_METADATA.get(second_class_name, {
         "nama_id": second_class_name,
         "latin": "-",
-        "status": "disease",
-        "is_healthy": False,
+        "status": "healthy" if is_healthy_2 else "disease",
+        "is_healthy": is_healthy_2,
         "ciri_lapangan": "Periksa kondisi helai daun dan bercak secara teliti.",
         "gejala": "Pangkas daun yang bergejala dan bersihkan bedengan.",
         "pencegahan": "Jaga drainase parit dan sanitasi pematang.",
@@ -1654,7 +1703,7 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
         "rekomendasi_singkat": "Lakukan sanitasi daun sakit."
     })
 
-    # Selaraskan deskripsi bukti fisik citra dengan hasil vonis model Keras
+    # Selaraskan deskripsi bukti fisik citra
     if visual_evidence.get("has_visual_evidence"):
         v_sev_pct = visual_evidence.get("severity_pct", 0.0)
         v_sev_lvl = visual_evidence.get("severity_level", "Normal")
@@ -1678,12 +1727,10 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
             )
             visual_evidence["override_applied"] = False
 
-    # 3. Peta Deteksi Lesi Berbasis Pola Keras Asli (Class Activation Mapping / CAM)
-    # Mendukung visualisasi multi-penyakit (retikel merah untuk Kemungkinan A, retikel oranye untuk Kemungkinan B)
-    annotated_cam, cam_circles = generate_keras_cam_map(
+    # Peta HUD Scanner Lesi
+    annotated_cam, cam_circles = generate_lesion_hud_map(
         image=image,
-        model=model,
-        target_class_idx=best_idx,
+        target_class_idx=top_idx,
         is_healthy=is_healthy_1,
         second_class_idx=second_idx if is_differential else None,
         primary_name=metadata["nama_id"],
@@ -1693,9 +1740,23 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
     visual_evidence["overlay_img"] = annotated_cam
     visual_evidence["num_spots_detected"] = len(cam_circles)
 
+    diag_info = {
+        "orig_mode": image.mode,
+        "orig_size": (orig_w, orig_h),
+        "norm_mode_name": "EfficientNet-B0 TorchScript + ImageNet Mean/Std + TTA",
+        "num_views": 2,
+        "is_auto_cropped": False,
+        "leaf_coverage_pct": 100.0,
+        "leaf_bbox": (0, 0, orig_w, orig_h),
+        "min_pixel": 0.0,
+        "max_pixel": 1.0,
+        "api_output": api_output,
+        "uncertain": uncertain
+    }
+
     return (
-        calibrated_probs,
-        top_indices,
+        probs_np,
+        sorted_indices,
         raw_class_name,
         top_confidence,
         metadata,
@@ -1704,9 +1765,10 @@ def predict_disease(image: Image.Image, model, class_names, target_size=(224, 22
         second_metadata,
         is_differential,
         confidence_margin,
-        processed_preview,
+        resized,
         diag_info,
-        visual_evidence
+        visual_evidence,
+        api_output
     )
 
 # Alias untuk kompatibilitas fungsi lama
@@ -2204,14 +2266,23 @@ def format_card_text_to_html(text: str) -> str:
         
     return '\n'.join(output_lines)
 
-# Inisialisasi Model & Label
+# Inisialisasi Model PyTorch TorchScript & Konfigurasi dari meta.json
 model_loaded = False
 load_error_message = None
 try:
-    model, class_names = load_model_and_labels()
+    meta_config = load_meta_config()
+    model = load_torch_model()
+    class_names = meta_config.get("class_labels_id", [
+        "Iris Yellow Spot Virus (IYSV)",
+        "Hawar Daun (Stemphylium / Colletotrichum)",
+        "Sehat",
+        "Bercak Ungu / Trotol (Alternaria porri)"
+    ])
     model_loaded = True
 except (OSError, ValueError, FileNotFoundError, AttributeError) as e:
     load_error_message = str(e)
+    meta_config = {}
+    class_names = []
 
 # ==============================================================================
 # 5. SIDEBAR: PENGATURAN TEKNIS & RIWAYAT (DIPINDAHKAN AGAR TIDAK MEMBINGUNGKAN)
@@ -2222,7 +2293,7 @@ with st.sidebar:
             <span style='font-size: 2.5rem;'>🧅</span>
             <h2 style='margin: 0.1rem 0; color: #1b5e20; font-weight: 800;'>AgroScan</h2>
             <p style='color: #64748b; font-size: 0.88rem; margin-bottom: 4px;'>Menu Pengaturan & Riwayat</p>
-            <span style='background-color: #e2e8f0; color: #334155; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700;'>v2.4.0 • Updated</span>
+            <span style='background-color: #e2e8f0; color: #334155; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700;'>v3.0.0 • EfficientNet-B0</span>
         </div>
     """, unsafe_allow_html=True)
 
@@ -2245,25 +2316,23 @@ with st.sidebar:
 
     st.divider()
 
-    st.markdown("### 🔬 Inferensi Pola Keras (TTA)")
-    use_tta = st.toggle(
-        "Multi-Crop TTA Cerdas",
-        value=True,
-        help="Menganalisis daun secara objektif dari beberapa sudut (helai daun utuh, crop fokus, dan simetri) untuk memastikan diagnosis akurat."
-    )
+    st.markdown("### 🔬 Model PyTorch TorchScript")
+    st.caption("EfficientNet-B0 (TorchScript) dengan Test-Time Augmentation (TTA) Flip Horizontal.")
 
     st.divider()
 
+    default_conf_pct = int(round(float(meta_config.get("conf_threshold", 0.70)) * 100))
     st.markdown("### ⚙️ Validasi Foto Bawang")
-    conf_threshold = st.slider(
-        "Batas Validasi Daun Bawang (%)",
+    conf_threshold_pct = st.slider(
+        "Batas Keyakinan / Confidence Threshold (%)",
         min_value=20,
-        max_value=75,
-        value=25,
+        max_value=90,
+        value=default_conf_pct,
         step=5,
-        help="Jika kepastian model di bawah nilai ini, foto akan ditolak sebagai bukan daun bawang merah atau foto tidak jelas."
+        help="Jika kepastian model di bawah nilai ini, foto akan ditandai 'Tidak yakin, foto kurang jelas atau bukan daun bawang'."
     )
-    st.caption(f"Ambang batas kepastian: **{conf_threshold}%**")
+    conf_threshold = conf_threshold_pct / 100.0
+    st.caption(f"Ambang batas kepastian: **{conf_threshold_pct}%** (Default Colab: {default_conf_pct}%)")
 
     min_leaf_ratio = st.slider(
         "Sensitivitas Daun Bawang (%)",
@@ -2271,7 +2340,7 @@ with st.sidebar:
         max_value=30,
         value=3,
         step=1,
-        help="Persentase minimal warna daun/umbi bawang merah yang harus ada pada foto sebelum model MobileNetV2 dijalankan (tetap mendeteksi meski daun dipegang tangan manusia)."
+        help="Persentase minimal warna daun bawang merah yang harus ada pada foto sebelum model dijalankan."
     )
     st.caption(f"Batas luas daun minimal: **{min_leaf_ratio}%**")
 
@@ -2321,7 +2390,7 @@ with st.sidebar:
     st.divider()
     st.markdown("""
         <div style='font-size: 0.85rem; color: #94a3b8; text-align: center;'>
-            Model Deep Learning: MobileNetV2 (4 Kelas)<br>
+            Model Deep Learning: EfficientNet-B0 TorchScript (4 Kelas)<br>
             Asisten AI: Groq Cloud Intelligence
         </div>
     """, unsafe_allow_html=True)
@@ -2334,11 +2403,13 @@ st.markdown("""
         <h1>🧅 Dokter Tanaman Bawang Merah</h1>
         <p>Periksa kesehatan daun bawang merah secara cepat, tepat, dan mudah langsung di sawah.</p>
         <div style="margin-top: 0.6rem; display: inline-flex; gap: 8px; flex-wrap: wrap;">
-            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.35);">Versi 2.4.0 (Terbaru)</span>
-            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.35);">MobileNetV2 4-Kelas Presisi (91.5% Akurasi)</span>
+            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.35);">Versi 3.0.0 (TorchScript)</span>
+            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 3px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.35);">EfficientNet-B0 4-Kelas Presisi</span>
         </div>
     </div>
 """, unsafe_allow_html=True)
+
+st.info("ℹ️ **Catatan:** Hasil ini hanya alat bantu, bukan diagnosis final.")
 
 if not model_loaded:
     st.error(f"❌ Gagal memuat model pendeteksi: {load_error_message}")
@@ -2347,52 +2418,68 @@ if not model_loaded:
 # ==============================================================================
 # 7. LANGKAH 1: AMBIL / MASUKKAN FOTO DAUN (SINGLE COLUMN MOBILE FIRST)
 # ==============================================================================
+MAX_FILE_SIZE_MB = 5
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+
 st.markdown("""
     <div class="step-header">
         <div class="step-num">1</div>
         <div class="step-title">Ambil / Masukkan Foto Daun</div>
+    </div>
+    <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 12px 16px; margin: 10px 0 16px 0; color: #166534; font-size: 0.95rem;">
+        📸 <strong>Petunjuk Pengambilan Foto:</strong> Foto daun dari dekat, fokus, cahaya cukup.<br>
+        <span style="font-size: 0.88rem; color: #15803d;">⚠️ <strong>Penting:</strong> Model AI ini dilatih khusus dan <strong>hanya valid untuk foto DAUN</strong> tanaman bawang merah (bukan umbi di piring, tanah kosong, pot, atau daun tanaman lain).</span>
     </div>
 """, unsafe_allow_html=True)
 
 tab_camera, tab_upload = st.tabs(["📸 Ambil Foto Langsung (Kamera HP)", "📁 Pilih dari Galeri HP"])
 
 selected_image = None
+file_error = False
 
 with tab_camera:
     cam_file = st.camera_input("Arahkan kamera dekat ke bagian daun yang sakit:", key="input_camera_field")
     if cam_file is not None:
-        try:
-            selected_image = Image.open(cam_file)
-        except (ValueError, OSError) as err:
-            st.error(f"Gagal membaca foto kamera: {err}")
+        if cam_file.size > MAX_FILE_SIZE_BYTES:
+            st.error(f"❌ Ukuran foto ({cam_file.size / (1024*1024):.1f} MB) melebihi batas maksimal {MAX_FILE_SIZE_MB} MB. Silakan ambil ulang dengan resolusi wajar.")
+            file_error = True
+        else:
+            try:
+                selected_image = Image.open(cam_file)
+            except (ValueError, OSError) as err:
+                st.error(f"Gagal membaca foto kamera: {err}")
 
 with tab_upload:
     uploaded_file = st.file_uploader(
-        "Pilih file foto dari galeri (JPG, JPEG, PNG):",
-        type=["jpg", "jpeg", "png"],
+        f"Pilih file foto dari galeri (JPG, JPEG, PNG, WEBP - Maksimal {MAX_FILE_SIZE_MB} MB):",
+        type=["jpg", "jpeg", "png", "webp"],
         key="input_file_field"
     )
     if uploaded_file is not None:
-        try:
-            selected_image = Image.open(uploaded_file)
-        except (ValueError, OSError) as err:
-            st.error(f"Gagal membuka berkas foto: {err}")
+        if uploaded_file.size > MAX_FILE_SIZE_BYTES:
+            st.error(f"❌ Ukuran file ({uploaded_file.size / (1024*1024):.1f} MB) melebihi batas maksimal {MAX_FILE_SIZE_MB} MB. Silakan unggah foto yang lebih kecil.")
+            file_error = True
+        else:
+            try:
+                selected_image = Image.open(uploaded_file)
+            except (ValueError, OSError) as err:
+                st.error(f"Gagal membuka berkas foto: {err}")
 
 # Tips Ringkas untuk Petani
-st.caption("💡 **Petunjuk Foto Bagus:** Arahkan kamera dekat (jarak 10-20 cm) tepat pada bercak daun yang bergejala.")
+st.caption("💡 **Petunjuk Foto Bagus:** Foto daun dari dekat (jarak 10-20 cm), fokus, cahaya cukup tepat pada bercak daun yang bergejala.")
 
 # Tombol Pemeriksaan Utama & Pemrosesan
-if selected_image is not None:
+if selected_image is not None and not file_error:
     st.markdown("<div style='text-align: center; margin: 1rem 0;'>", unsafe_allow_html=True)
     st.image(selected_image, caption="Foto Daun yang Dipilih", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Identifikasi unik gambar aktif berbasis hash konten citra (mencegah bentrok resolusi kamera yang identik)
+    # Identifikasi unik gambar aktif berbasis hash konten citra
     img_bytes = selected_image.tobytes()
     img_hash = hashlib.md5(img_bytes[:65536]).hexdigest()[:12]
     current_img_sig = f"{selected_image.size}_{selected_image.mode}_{img_hash}"
     
-    # Tombol Utama Periksa (Besar, Hijau Daun Tegas, Ramah Jempol)
+    # Tombol Utama Periksa
     btn_check = st.button("🔍 PERIKSA DAUN SEKARANG", type="primary", use_container_width=True, key="btn_inspect_main")
     
     # Jika tombol ditekan, aktifkan pemeriksaan untuk gambar ini
@@ -2403,7 +2490,6 @@ if selected_image is not None:
     if st.session_state.get("has_inspected_current") == current_img_sig:
         # ==============================================================================
         # TAHAP 1: VALIDASI GAMBAR (GUARDRAIL GATEKEEPER GROQ VISION & OOD GUARD)
-        # Mencegah eksekusi model Keras pada foto yang bukan daun/tanaman bawang merah
         # ==============================================================================
         with st.spinner("🔍 Memverifikasi keaslian foto daun bawang..."):
             is_valid_vision, vision_verdict = validate_onion_image(selected_image)
@@ -2422,7 +2508,7 @@ if selected_image is not None:
                         <br><br>
                         <strong>📋 Panduan Pengambilan Foto yang Benar:</strong>
                         <ol>
-                            <li>Gunakan foto <strong>daun atau umbi tanaman bawang merah asli</strong> di bedengan kebun/sawah.</li>
+                            <li>Gunakan foto <strong>daun tanaman bawang merah asli</strong> di bedengan kebun/sawah.</li>
                             <li>Arahkan kamera HP (jarak ideal <strong>10–20 cm</strong>) tepat pada helai daun yang sakit.</li>
                             <li>Pastikan pencahayaan terang dan daun terlihat jelas tanpa bayangan gelap.</li>
                             <li>Hindari memotret wajah, hewan, kendaraan, atau pemandangan sawah dari kejauhan.</li>
@@ -2430,12 +2516,12 @@ if selected_image is not None:
                     </div>
                 </div>
             """, unsafe_allow_html=True)
-            st.stop()  # Hentikan eksekusi di sini! Model MobileNetV2 Keras TIDAK AKAN dijalankan.
+            st.stop()
 
         # ==============================================================================
-        # TAHAP 2: PROSES DIAGNOSIS MOBILENETV2 (Hanya Berjalan Jika Lolos Validasi Citra)
+        # TAHAP 2: PROSES DIAGNOSIS EFFICIENTNET-B0 TORCHSCRIPT
         # ==============================================================================
-        with st.spinner("🔍 Sedang menganalisis kondisi daun bawang merah dengan MobileNetV2..."):
+        with st.spinner("🔍 Sedang menganalisis kondisi daun bawang merah dengan EfficientNet-B0 TorchScript..."):
             (
                 score,
                 top_indices,
@@ -2449,43 +2535,51 @@ if selected_image is not None:
                 confidence_margin,
                 preview_crop,
                 diag_info,
-                visual_evidence
-            ) = predict_image(
-                selected_image, model, class_names, target_size=(224, 224), enforce_verification=False, use_tta=use_tta
+                visual_evidence,
+                api_output
+            ) = predict_disease(
+                selected_image, model, meta=meta_config, enforce_verification=False
             )
             # Selaraskan alias variabel agar konsisten (mencegah NameError)
             metadata = info
             second_metadata = second_info
 
         # ==============================================================================
-        # TAHAP 3: VALIDASI AMBANG BATAS KEYAKINAN (CONFIDENCE THRESHOLD GUARD)
+        # TAHAP 3: EVALUASI KEPUTUSAN MODEL / THRESHOLD
+        # Jika confidence < conf_threshold (0.70), tampilkan "Tidak yakin, foto kurang jelas atau bukan daun bawang"
+        # alih-alih menebak
         # ==============================================================================
-        if top_confidence < conf_threshold:
-            st.error("❌ Gambar yang diunggah bukan daun bawang merah. Silakan ambil atau unggah foto daun bawang yang jelas.")
+        is_uncertain = api_output.get("uncertain", False) or (top_confidence < (conf_threshold * 100.0))
+        if is_uncertain:
+            st.warning("⚠️ **Tidak yakin, foto kurang jelas atau bukan daun bawang**")
             st.markdown(f"""
                 <div class="card-rejection">
-                    <div class="card-rejection-badge">⚠️ FOTO DITOLAK / TIDAK VALID</div>
-                    <div class="card-rejection-title">Kepastian Diagnosis Terlalu Rendah ({top_confidence:.1f}%)</div>
+                    <div class="card-rejection-badge">⚠️ TINGKAT KEYAKINAN RENDAH ({top_confidence:.1f}%)</div>
+                    <div class="card-rejection-title">Tidak yakin, foto kurang jelas atau bukan daun bawang</div>
                     <div class="card-rejection-reason">
-                        Tingkat kecocokan model hanya <strong>{top_confidence:.1f}%</strong> (di bawah batas minimal <strong>{conf_threshold}%</strong>). Pola objek tidak meyakinkan sebagai daun bawang merah.
+                        Tingkat keyakinan model hanya <strong>{top_confidence:.1f}%</strong> (di bawah ambang batas minimal <strong>{conf_threshold * 100.0:.0f}%</strong>). Sistem menolak menebak diagnosis secara sembarangan untuk mencegah kesalahan penanganan di kebun.
                     </div>
                     <div class="card-rejection-desc">
-                        Model tidak dapat mengenali pola penyakit dengan pasti. Kemungkinan foto daun bukan tanaman bawang merah, daun terlalu buram, atau bayangan terlalu gelap.
-                        <br><br>
-                        <strong>📋 Panduan Pengambilan Foto yang Benar:</strong>
-                        <ol>
-                            <li>Gunakan foto <strong>daun atau umbi tanaman bawang merah asli</strong> di bedengan kebun/sawah.</li>
-                            <li>Arahkan kamera HP (jarak ideal <strong>10–20 cm</strong>) tepat pada helai daun yang sakit.</li>
-                            <li>Pastikan pencahayaan terang dan daun terlihat jelas tanpa bayangan gelap.</li>
-                        </ol>
+                        <strong>📌 Model AI hanya valid untuk foto DAUN bawang merah.</strong> Kemungkinan penyebab ketidakyakinan:
+                        <ul>
+                            <li>Objek foto bukan daun bawang merah asli (seperti foto tanah, pot, manusia, atau tanaman lain).</li>
+                            <li>Foto kurang fokus, buram (blur), atau jarak pengambilan terlalu jauh dari daun.</li>
+                            <li>Pencahayaan redup, backlight kuat, atau bayangan gelap menutupi daun.</li>
+                        </ul>
+                        <strong>💡 Petunjuk Pengambilan Foto yang Tepat:</strong>
+                        <p style="margin-top: 4px;">Foto daun dari dekat (jarak 10–20 cm), pastikan fokus tajam pada bercak/helai daun, dan pencahayaan terang merata.</p>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
-            st.stop()  # Hentikan, jangan simpan riwayat & jangan panggil Groq AI!
+
+            with st.expander("🔌 Format Keluaran API (JSON)", expanded=True):
+                st.caption("Respon standar API JSON:")
+                st.json(api_output)
+
+            st.stop()  # Hentikan eksekusi, jangan tebak penyakit & jangan panggil resep obat
 
         # ==============================================================================
-        # KASUS 2: FOTO VALID (TERBUKTI DAUN BAWANG MERAH)
-        # Lanjutkan Analisis Lengkap: Rekam Riwayat, Tampilkan Langkah 2 & Langkah 3
+        # KASUS 2: FOTO VALID & KEYAKINAN TINGGI (LOLOS THRESHOLD)
         # ==============================================================================
         else:
             # Rekam Otomatis ke Riwayat Sesi Sekali Saja
@@ -2649,11 +2743,11 @@ if selected_image is not None:
                     )
 
                 if visual_evidence.get("overlay_img") is not None:
-                    with st.expander("🖼️ Peta Titik Kerusakan pada Foto Daun (Titik Atensi Neural Model Keras)", expanded=True):
+                    with st.expander("🖼️ Peta Titik Kerusakan pada Foto Daun (HUD Lesion Scanner)", expanded=True):
                         map_caption = (
                             f"Peta Titik Kerusakan Multi-Penyakit: Retikel Merah menandai fokus gejala {info['nama_id']}, sedangkan Retikel Oranye menandai fokus gejala {second_info['nama_id']} pada helai daun."
                             if is_differential
-                            else f"Peta Titik Kerusakan: Retikel scanner presisi tinggi menandai titik pusat kerusakan aktif {info['nama_id']} pada helai daun yang dipelajari lapisan konvolusi MobileNetV2 Keras."
+                            else f"Peta Titik Kerusakan: Retikel scanner presisi tinggi menandai titik pusat kerusakan aktif {info['nama_id']} pada helai daun."
                         )
                         st.image(
                             visual_evidence["overlay_img"],
@@ -2662,37 +2756,37 @@ if selected_image is not None:
                         )
                         num_spots = visual_evidence.get("num_spots_detected", 0)
                         if is_healthy:
-                            st.success("✅ **Daun Sehat & Normal:** Model konvolusi Keras mengonfirmasi helai daun segar dan tidak menemukan titik kerusakan penyakit.")
+                            st.success("✅ **Daun Sehat & Normal:** Pemindaian visual mengonfirmasi helai daun segar dan tidak menemukan titik kerusakan lesi aktif.")
                         elif is_differential:
                             st.caption(
-                                f"💡 **Petunjuk Deteksi Multi-Penyakit ({num_spots} Titik Terdeteksi):** Model mendeteksi dua kemungkinan patogen yang menginfeksi helai daun. "
+                                f"💡 **Petunjuk Deteksi Multi-Penyakit ({num_spots} Titik Terdeteksi):** Sistem mendeteksi dua kemungkinan patogen yang menginfeksi helai daun. "
                                 f"Retikel **Merah** menandai area kerusakan yang paling kuat dicurigai sebagai **{info['nama_id']}**, "
                                 f"sedangkan Retikel **Oranye** menandai area yang dicurigai sebagai **{second_info['nama_id']}**. "
                                 "Cocokkan perbedaan ciri fisik kedua area tersebut langsung di bedengan kebun untuk penanganan yang tepat."
                             )
                         elif num_spots > 0:
                             st.caption(
-                                f"💡 **Petunjuk Deteksi ({num_spots} Titik Kerusakan Terdeteksi):** Retikel scanner modern di atas memetakan fokus atensi jaringan konvolusi MobileNetV2 secara tepat pada titik kerusakan helai daun tanaman (bukan tangan atau latar belakang). Titik bertanda nama penyakit menunjukkan konsentrasi infeksi aktif tempat patogen berkembang. Fokuskan sanitasi pemangkasan daun sakit dan penyemprotan obat pada titik-titik tersebut."
+                                f"💡 **Petunjuk Deteksi ({num_spots} Titik Kerusakan Terdeteksi):** Retikel scanner di atas memetakan titik lesi aktif pada helai daun tanaman (bukan tangan atau latar belakang). Titik bertanda nama penyakit menunjukkan konsentrasi infeksi aktif tempat patogen berkembang. Fokuskan sanitasi pemangkasan daun sakit dan penyemprotan obat pada titik-titik tersebut."
                             )
                         else:
                             st.caption(
-                                "💡 **Petunjuk Deteksi:** Retikel scanner presisi dihasilkan langsung dari aktivasi lapisan konvolusi model Keras pada foto helai daun Anda."
+                                "💡 **Petunjuk Deteksi:** Retikel scanner presisi dihasilkan langsung dari pemindaian densitas lesi pada foto helai daun Anda."
                             )
 
-            # Distribusi Probabilitas Top-3 (Pola Model Keras 15 Kategori)
-            with st.expander("📊 Distribusi Probabilitas Top-3 (Pola Konvolusi Model Keras)", expanded=True):
-                st.caption("Tiga probabilitas tertinggi hasil pembacaan pola fitur model Keras MobileNetV2 (100% konsisten dengan kartu diagnosis):")
-                for rank, idx in enumerate(top_indices[:3], start=1):
-                    raw_k = class_names[idx]
-                    info_k = CLASS_METADATA.get(raw_k, {"nama_id": raw_k})
-                    if idx == top_indices[0]:
-                        score_k = top_confidence
-                    elif len(top_indices) > 1 and idx == top_indices[1]:
-                        score_k = second_confidence
-                    else:
-                        score_k = round(float(score[idx]) * 100.0, 1)
-                    st.write(f"**{rank}. {info_k['nama_id']}** (`{raw_k}`) — `{score_k:.1f}%`")
-                    st.progress(min(max(score_k / 100.0, 0.0), 1.0))
+            # Distribusi Probabilitas Model PyTorch TorchScript
+            with st.expander("📊 Distribusi Probabilitas Model (TorchScript EfficientNet-B0)", expanded=True):
+                st.caption("Distribusi probabilitas softmax terkalibrasi (temperature-scaled) untuk setiap kelas:")
+                probs_dict = api_output.get("probabilities", {})
+                for c_label, prob_val in probs_dict.items():
+                    info_c = CLASS_METADATA.get(c_label, {"nama_id": c_label})
+                    prob_pct = round(prob_val * 100.0, 1)
+                    st.write(f"• **{info_c['nama_id']}** (`{c_label}`): **{prob_pct:.1f}%** ({prob_val:.4f})")
+                    st.progress(min(max(float(prob_val), 0.0), 1.0))
+
+            # Format Keluaran API (JSON)
+            with st.expander("🔌 Format Keluaran API (JSON)", expanded=False):
+                st.caption("Respon standar API JSON untuk integrasi backend / mobile:")
+                st.json(api_output)
 
             # ==============================================================================
             # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN
