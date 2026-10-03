@@ -24,7 +24,7 @@ try:
     import cv2
 except ImportError:
     cv2 = None
-from PIL import Image, ImageDraw, ImageFilter, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 # ==============================================================================
 # 1. KONFIGURASI HALAMAN MOBILE-FIRST & RAMAH PETANI
@@ -1268,6 +1268,11 @@ def get_short_disease_title(name: str) -> str:
     clean = (name or "").split("/")[0].split("(")[0].strip()
     return clean[:14] if clean else "Penyakit"
 
+def _hud_odd(n: int) -> int:
+    n = max(3, int(n))
+    return n if n % 2 == 1 else n + 1
+
+
 def generate_lesion_hud_map(
     image: Image.Image,
     target_class_idx: int = 0,
@@ -1281,381 +1286,368 @@ def generate_lesion_hud_map(
     **kwargs
 ):
     """
-    Peta HUD Scanner Deteksi Titik Kerusakan / Jaringan Daun Bawang Merah:
-    - Mampu mendeteksi di segala kondisi citra (terik matahari, bayangan redup, latar tanah, dipegang tangan).
-    - Menandai tepat pada posisi fisik lesi bercak daun (anti-melengser keluar helai daun).
-    - Multi-Penyakit: Jika terdeteksi lebih dari 1 penyakit, memberi tanda lebih dari 1 sesuai nama penyakit masing-masing.
-    - Single Disease: Menandai titik lesi aktif primer (dan lesi sekunder jika ada pada helai daun).
-    - Daun Sehat: Retikel Hijau Zamrud [OK] memvalidasi klorofil prima bebas patogen.
+    Peta HUD Scanner Titik Kerusakan Daun Bawang Merah (v4 - Leaf-Locked Lesion Blob Detection).
+
+    Alur algoritma:
+    1. Analisis di kanvas kerja (maks 512 px) agar ukuran kernel konsisten untuk foto HP beresolusi apa pun.
+    2. Masker DAUN KETAT: hijau klorofil (kromatisitas g/(r+g+b) + hue) dan jaringan kuning/jerami yang
+       TERHUBUNG dengan daun hijau. Tanah cokelat, kulit tangan, latar putih/gelap, dan silau DIBUANG.
+    3. Area daun diisi (fill holes) sehingga bercak di dalam helai daun ikut masuk, tetapi tanah di luar daun tidak.
+    4. Kandidat lesi = piksel di dalam daun yang BUKAN hijau sehat, dinilai dengan skor warna khas tiap penyakit
+       secara RELATIF terhadap kecerahan/saturasi median daun (adaptif terang, redup, bayangan).
+    5. Lesi dikelompokkan menjadi blob (connected components); retikel ditempatkan di titik terdalam blob
+       (distance transform) sehingga selalu tepat di atas bercak, tidak melengser ke objek lain.
+    6. Multi-penyakit: [1] penyakit utama (merah) & [2] penyakit kedua (oranye) pada blob berbeda.
     """
     img_rgb = image.convert("RGB")
-    w, h = img_rgb.size
+    W, H = img_rgb.size
 
     try:
-        img_np = np.array(img_rgb)
-        r = img_np[:, :, 0].astype(np.float32)
-        g = img_np[:, :, 1].astype(np.float32)
-        b = img_np[:, :, 2].astype(np.float32)
+        if cv2 is None:
+            raise RuntimeError("OpenCV tidak tersedia")
 
-        # 1. Konversi Warna & Parameter Kromatisitas Daun Bawang Merah
+        # ---------------------------------------------------------------
+        # 0. Kanvas kerja
+        # ---------------------------------------------------------------
+        scale = min(1.0, 512.0 / float(max(W, H)))
+        ww, hh = max(8, int(round(W * scale))), max(8, int(round(H * scale)))
+        work = img_rgb.resize((ww, hh), Image.Resampling.BILINEAR) if scale < 1.0 else img_rgb
+        arr_u8 = cv2.GaussianBlur(np.asarray(work, dtype=np.uint8), (3, 3), 0)
+        arr = arr_u8.astype(np.float32)
+        r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+
+        hsv = cv2.cvtColor(arr_u8, cv2.COLOR_RGB2HSV).astype(np.float32)
+        hue = hsv[:, :, 0] * 2.0          # 0..360
+        sat = hsv[:, :, 1] / 255.0        # 0..1
+        val = hsv[:, :, 2] / 255.0        # 0..1
+        total = r + g + b + 1.0
+        gn = g / total                    # kromatisitas hijau (tahan perubahan intensitas cahaya)
+        rn = r / total
         exg = 2.0 * g - r - b
-        cmax = np.maximum(np.maximum(r, g), b)
-        cmin = np.minimum(np.minimum(r, g), b)
-        delta = np.where(cmax - cmin == 0, 1.0, cmax - cmin)
+        g_over_r = g / (r + 1.0)
 
-        h_arr = np.zeros_like(delta)
-        mask_r = (cmax == r) & (cmax > cmin)
-        h_arr[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta[mask_r]) % 6.0)
-        mask_g = (cmax == g) & (cmax > cmin)
-        h_arr[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta[mask_g]) + 2.0)
-        mask_b = (cmax == b) & (cmax > cmin)
-        h_arr[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta[mask_b]) + 4.0)
+        min_side = min(ww, hh)
+        img_area = float(ww * hh)
 
-        s_arr = np.where(cmax == 0, 0.0, (cmax - cmin) / np.where(cmax == 0, 1.0, cmax))
-        v_arr = cmax / 255.0
-
-        # Eksklusi kulit manusia (tangan petani yang memegang daun)
+        # ---------------------------------------------------------------
+        # 1. Objek non-daun yang wajib dibuang
+        # ---------------------------------------------------------------
         is_skin = (
-            (h_arr >= 6.0) & (h_arr <= 28.0) &
-            (s_arr >= 0.16) & (s_arr <= 0.58) &
-            (v_arr >= 0.30) & (v_arr <= 0.95) &
-            (r > g * 1.10) & (g > b * 1.05) &
-            (np.abs(r - g) < 90)
+            (hue >= 4.0) & (hue <= 30.0) & (sat >= 0.15) & (sat <= 0.62) &
+            (val >= 0.30) & (r > g * 1.10) & (g > b * 1.02) & (rn >= 0.38)
         )
-        # Eksklusi latar belakang netral / kertas / dinding / lantai
-        is_neutral_bg = (s_arr < 0.08) & ((v_arr > 0.88) | (v_arr < 0.06))
-        # Silau terik matahari (specular highlight pada lapisan lilin kutikula daun)
-        is_specular = (s_arr < 0.10) & (v_arr > 0.92)
+        is_soil = (
+            (hue >= 8.0) & (hue <= 42.0) & (sat >= 0.15) & (g_over_r < 0.86) & (exg < 12.0)
+        )
+        is_neutral = (sat < 0.10) & ((val > 0.85) | (val < 0.10))
+        is_specular = (sat < 0.12) & (val > 0.90)
+        is_too_dark = val < 0.07
 
-        # Kanopi tanaman daun bawang merah: hijau, klorotik kuning, hingga lesi nekrotik
-        is_green = (exg > -5.0) | ((h_arr >= 32.0) & (h_arr <= 175.0) & (s_arr >= 0.08) & (v_arr >= 0.06))
-        is_yellow = (h_arr >= 16.0) & (h_arr < 55.0) & (s_arr >= 0.10) & (v_arr >= 0.10) & ((exg >= -20.0) | (g >= r * 0.70))
-        is_necrotic_cand = ((h_arr <= 25.0) | (h_arr >= 250.0)) & (s_arr >= 0.08) & (v_arr >= 0.06) & (v_arr <= 0.85) & (g >= r * 0.35)
+        # ---------------------------------------------------------------
+        # 2. Masker daun ketat
+        # ---------------------------------------------------------------
+        green_core = (
+            (hue >= 42.0) & (hue <= 170.0) & (sat >= 0.12) & (val >= 0.08) &
+            (gn >= 0.355) & (exg > 6.0) & (~is_skin)
+        )
+        yellow_tissue = (
+            (hue >= 36.0) & (hue <= 72.0) & (sat >= 0.16) & (val >= 0.28) &
+            (g_over_r >= 0.84) & (~is_skin)
+        )
 
-        base_leaf = (is_green | is_yellow) & (~is_skin) & (~is_neutral_bg)
-        if cv2 is not None:
-            kernel_dil = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
-            leaf_dilated = cv2.dilate(base_leaf.astype(np.uint8), kernel_dil, iterations=2)
-        else:
-            leaf_dilated = base_leaf.astype(np.uint8)
+        k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        green_u8 = cv2.morphologyEx(green_core.astype(np.uint8), cv2.MORPH_OPEN, k3)
 
-        # Lesi nekrotik hanya valid jika menempel / berada di sekitar helai daun
-        is_necrotic = is_necrotic_cand & (leaf_dilated > 0) & (~is_skin) & (~is_neutral_bg)
+        # Jaringan kuning/jerami hanya diterima jika satu komponen dengan daun hijau
+        tissue = ((green_u8 > 0) | yellow_tissue).astype(np.uint8)
+        n_t, lab_t, stats_t, _ = cv2.connectedComponentsWithStats(tissue, connectivity=8)
+        keep = np.zeros(n_t, dtype=bool)
+        if n_t > 1:
+            green_count = np.bincount(lab_t.ravel(), weights=(green_u8.ravel() > 0), minlength=n_t)
+            for i in range(1, n_t):
+                if green_count[i] >= max(12.0, 0.10 * stats_t[i, cv2.CC_STAT_AREA]):
+                    keep[i] = True
+            if not keep[1:].any():
+                # Daun seluruhnya menguning (mis. Moler berat): pakai jaringan kuning terbesar
+                keep[1 + int(np.argmax(stats_t[1:, cv2.CC_STAT_AREA]))] = True
+        leaf_core = keep[lab_t] if n_t > 1 else np.zeros((hh, ww), dtype=bool)
 
-        # Gabungan kanopi daun bawang murni
-        is_plant = (base_leaf | is_necrotic) & (~is_specular)
+        # Buang komponen kecil (gulma/noise latar) relatif terhadap helai daun terbesar
+        core_u8 = cv2.morphologyEx(leaf_core.astype(np.uint8), cv2.MORPH_CLOSE, k3)
+        n_c, lab_c, stats_c, _ = cv2.connectedComponentsWithStats(core_u8, connectivity=8)
+        if n_c > 1:
+            areas = stats_c[1:, cv2.CC_STAT_AREA]
+            min_keep = max(0.12 * float(areas.max()), 0.002 * img_area)
+            valid = np.zeros(n_c, dtype=bool)
+            valid[1:] = areas >= min_keep
+            core_u8 = valid[lab_c].astype(np.uint8)
 
-        # Abaikan margin tepi foto 2% agar retikel tidak melengser keluar bingkai
-        m_x = max(int(w * 0.02), 2)
-        m_y = max(int(h * 0.02), 2)
-        is_plant[:m_y, :] = False
-        is_plant[-m_y:, :] = False
-        is_plant[:, :m_x] = False
-        is_plant[:, -m_x:] = False
+        # Tutup celah sempit + isi lubang: bercak di DALAM helai daun ikut masuk, tanah di luar tidak
+        k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (_hud_odd(min_side * 0.02), _hud_odd(min_side * 0.02)))
+        closed = cv2.morphologyEx(core_u8, cv2.MORPH_CLOSE, k_close)
+        leaf_region = np.zeros_like(closed)
+        cnts, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cnts:
+            cv2.drawContours(leaf_region, cnts, -1, 1, thickness=-1)
+        leaf_region = leaf_region.astype(bool)
 
-        if cv2 is not None:
-            kernel_plant = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-            plant_clean = cv2.morphologyEx(is_plant.astype(np.uint8), cv2.MORPH_OPEN, kernel_plant)
-            plant_clean = cv2.morphologyEx(plant_clean, cv2.MORPH_CLOSE, kernel_plant)
-            is_plant = plant_clean > 0
+        # Hanya area hasil closing (bukan lubang yang dikelilingi daun) yang mirip tanah dibuang
+        hole_fill = leaf_region & (core_u8 == 0)
+        enclosed_hole = np.zeros((hh, ww), dtype=bool)
+        cnts_core, _ = cv2.findContours(core_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cnts_core:
+            filled_core = np.zeros((hh, ww), dtype=np.uint8)
+            cv2.drawContours(filled_core, cnts_core, -1, 1, thickness=-1)
+            enclosed_hole = (filled_core > 0) & (core_u8 == 0)
+        bridged_gap = hole_fill & (~enclosed_hole)
+        leaf_region &= ~(bridged_gap & (is_soil | is_neutral | is_too_dark))
+        leaf_region &= ~(is_skin | is_specular)
 
-        # Fallback jika kanopi sangat tipis / kondisi redup ekstrem
-        total_plant_px = int(np.count_nonzero(is_plant))
-        if total_plant_px < 100:
-            cy_c, cx_c = h // 2, w // 2
-            ry_c, rx_c = int(h * 0.35), int(w * 0.35)
-            y_grid, x_grid = np.ogrid[:h, :w]
-            is_plant = ((x_grid - cx_c)**2 / max(rx_c**2, 1) + (y_grid - cy_c)**2 / max(ry_c**2, 1)) <= 1.0
+        # Abaikan tepi bingkai 1.5%
+        mx, my = max(2, int(ww * 0.015)), max(2, int(hh * 0.015))
+        leaf_region[:my, :] = False
+        leaf_region[-my:, :] = False
+        leaf_region[:, :mx] = False
+        leaf_region[:, -mx:] = False
 
-        # 2. Normalisasi Kontras Lokal Adaptif (CLAHE) untuk menangani berbagai kondisi pencahayaan
-        if cv2 is not None:
-            v_uint8 = np.clip(v_arr * 255.0, 0, 255).astype(np.uint8)
-            clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-            v_clahe = clahe.apply(v_uint8).astype(np.float32) / 255.0
-        else:
-            v_clahe = v_arr
+        leaf_ok = int(leaf_region.sum()) >= max(60, int(0.004 * img_area))
+        if not leaf_ok:
+            # Fallback: area non-latar terbesar (bukan tanah/kulit/netral)
+            fallback = (~is_skin) & (~is_neutral) & (~is_soil) & (~is_too_dark)
+            fallback[:my, :] = False
+            fallback[-my:, :] = False
+            fallback[:, :mx] = False
+            fallback[:, -mx:] = False
+            leaf_region = fallback if fallback.sum() >= 60 else np.ones((hh, ww), dtype=bool)
 
-        # 3. Peta Panas Gejala Spesifik Patogen (Multi-Kondisi)
-        def get_heatmap(disease_name: str, healthy_flag: bool):
-            name = (disease_name or "").lower()
-            if healthy_flag or "sehat" in name or "healthy" in name:
-                # Daun Sehat: Klorofil hijau murni optimal
-                is_blade = (h_arr >= 45.0) & (h_arr <= 155.0) & (exg > 0.0)
-                score = np.where(
-                    is_blade,
-                    np.clip(exg / 40.0, 0.0, 1.0) * 0.50 +
-                    ((h_arr >= 50.0) & (h_arr <= 145.0)).astype(np.float32) * 0.35 +
-                    np.clip((s_arr - 0.12) / 0.40, 0.0, 1.0) * 0.15,
-                    0.0
+        # ---------------------------------------------------------------
+        # 3. Statistik daun sehat (normalisasi adaptif terhadap pencahayaan)
+        # ---------------------------------------------------------------
+        healthy_green = green_core & leaf_region & (sat >= 0.18)
+        ref_px = healthy_green if healthy_green.sum() >= 40 else leaf_region
+        med_v = float(np.median(val[ref_px])) if ref_px.any() else 0.5
+        med_s = float(np.median(sat[ref_px])) if ref_px.any() else 0.4
+        med_v = max(med_v, 0.12)
+        med_s = max(med_s, 0.10)
+        rel_v = val / med_v               # <1 lebih gelap dari daun normal, >1 lebih terang
+        rel_s = sat / med_s
+
+        greenness = np.clip((gn - 0.33) / 0.10, 0.0, 1.0) * np.clip(exg / 40.0, 0.0, 1.0)
+        not_green = 1.0 - greenness
+
+        def clip01(x):
+            return np.clip(x, 0.0, 1.0)
+
+        # ---------------------------------------------------------------
+        # 4. Skor warna khas tiap penyakit (0..1), hanya di dalam daun
+        # ---------------------------------------------------------------
+        def disease_score(name: str) -> np.ndarray:
+            n = (name or "").lower()
+            if "trotol" in n or "bercak" in n or "alternaria" in n or "purple" in n:
+                purple = ((hue >= 250.0) | (hue <= 18.0)) & (sat >= 0.12)
+                s = (
+                    0.45 * clip01((1.0 - rel_v) / 0.45) +
+                    0.35 * purple.astype(np.float32) +
+                    0.20 * not_green
                 )
-            elif "mildew" in name or "embun" in name:
-                # Embun Bulu: Bercak klorotik pucat keputihan/keabuan dengan saturasi rendah
-                is_sym = (h_arr >= 22.0) & (h_arr <= 68.0) & (s_arr <= 0.58) & (s_arr >= 0.07)
-                score = np.where(
-                    is_sym,
-                    0.45 +
-                    np.clip((0.55 - s_arr) / 0.38, 0.0, 1.0) * 0.30 +
-                    np.clip(1.0 - np.abs(v_clahe - 0.52) / 0.35, 0.0, 1.0) * 0.25,
-                    0.0
+                s = np.where(purple | (rel_v < 0.72), s, s * 0.35)
+            elif "embun" in n or "mildew" in n or "peronospora" in n:
+                pale = (hue >= 30.0) & (hue <= 100.0)
+                s = (
+                    0.40 * clip01((1.0 - rel_s) / 0.55) +
+                    0.30 * clip01(1.0 - np.abs(rel_v - 1.05) / 0.45) +
+                    0.30 * not_green
                 )
-            elif "rust" in name or "karat" in name:
-                # Karat Daun: Pustula jingga-oranye kemerahan
-                is_sym = (h_arr >= 7.0) & (h_arr <= 36.0) & (r > g * 1.03) & (s_arr >= 0.16)
-                score = np.where(
-                    is_sym,
-                    0.45 +
-                    np.clip((r - g) / 22.0, 0.0, 1.0) * 0.35 +
-                    np.clip((s_arr - 0.16) / 0.40, 0.0, 1.0) * 0.20,
-                    0.0
+                s = np.where(pale & (rel_s < 0.80), s, s * 0.30)
+            elif "karat" in n or "rust" in n or "puccinia" in n:
+                orange = (hue >= 8.0) & (hue <= 42.0) & (sat >= 0.30) & (r > g * 1.12)
+                s = (
+                    0.45 * orange.astype(np.float32) +
+                    0.35 * clip01((r - g) / 60.0) +
+                    0.20 * clip01((sat - 0.30) / 0.40)
                 )
-            elif "trotol" in name or "bercak" in name or "alternaria" in name or "purple" in name:
-                # Bercak Ungu / Trotol: Titik cekung gelap konsentris keunguan
-                is_sym = ((h_arr <= 20.0) | (h_arr >= 260.0) | (v_clahe < 0.45)) & (s_arr >= 0.09)
-                score = np.where(
-                    is_sym,
-                    0.40 +
-                    np.clip((0.50 - v_clahe) / 0.40, 0.0, 1.0) * 0.40 +
-                    np.clip((s_arr - 0.09) / 0.35, 0.0, 1.0) * 0.20,
-                    0.0
+                s = np.where(orange, s, s * 0.25)
+            elif "hawar" in n or "blight" in n or "stemphylium" in n or "colletotrichum" in n:
+                tan = (hue >= 15.0) & (hue <= 58.0) & (sat >= 0.10) & (sat <= 0.70)
+                s = (
+                    0.40 * not_green +
+                    0.30 * clip01((1.0 - rel_s) / 0.6 + 0.3) +
+                    0.30 * clip01(1.0 - np.abs(rel_v - 1.0) / 0.6)
                 )
-            elif "hawar" in name or "blight" in name or "stemphylium" in name or "colletotrichum" in name:
-                # Hawar Daun: Lesi kering memanjang warna jerami / nekrotik
-                is_sym = (h_arr >= 15.0) & (h_arr <= 55.0) & (v_clahe >= 0.26) & (s_arr >= 0.08)
-                score = np.where(
-                    is_sym,
-                    0.42 +
-                    np.clip((v_clahe - 0.25) / 0.45, 0.0, 1.0) * 0.33 +
-                    np.clip(1.0 - (exg / 25.0), 0.0, 1.0) * 0.25,
-                    0.0
+                s = np.where(tan, s, s * 0.30)
+            elif "moler" in n or "fusarium" in n or "inul" in n:
+                yellow = (hue >= 38.0) & (hue <= 68.0) & (sat >= 0.25)
+                s = (
+                    0.45 * yellow.astype(np.float32) +
+                    0.30 * clip01(rel_v - 0.8) +
+                    0.25 * not_green
                 )
-            elif "moler" in name or "fusarium" in name or "inul" in name:
-                # Layu Moler: Daun menguning terang klorotik meliuk
-                is_sym = (h_arr >= 24.0) & (h_arr <= 60.0) & (s_arr >= 0.16) & (v_clahe >= 0.22)
-                score = np.where(
-                    is_sym,
-                    0.42 +
-                    np.clip((s_arr - 0.16) / 0.40, 0.0, 1.0) * 0.33 +
-                    np.clip((v_clahe - 0.20) / 0.50, 0.0, 1.0) * 0.25,
-                    0.0
+                s = np.where(yellow, s, s * 0.25)
+            elif "virus" in n or "iysv" in n:
+                straw = (hue >= 28.0) & (hue <= 62.0) & (sat >= 0.10) & (sat <= 0.55)
+                s = (
+                    0.40 * not_green +
+                    0.30 * clip01(rel_v - 0.85) +
+                    0.30 * clip01((1.0 - rel_s) / 0.6)
                 )
-            elif "virus" in name or "iysv" in name:
-                # Virus IYSV: Lesi belah ketupat warna jerami pucat
-                is_sym = (h_arr >= 18.0) & (h_arr <= 56.0) & (v_clahe >= 0.28) & (s_arr >= 0.09)
-                score = np.where(
-                    is_sym,
-                    0.42 +
-                    np.clip((v_clahe - 0.26) / 0.45, 0.0, 1.0) * 0.33 +
-                    np.clip((s_arr - 0.09) / 0.35, 0.0, 1.0) * 0.25,
-                    0.0
-                )
+                s = np.where(straw, s, s * 0.30)
             else:
-                # Deviasi umum dari klorofil hijau
-                is_sym = (h_arr < 45.0) | (h_arr > 160.0) | (exg <= 0.0)
-                score = np.where(
-                    is_sym,
-                    np.clip(1.0 - (exg / 25.0), 0.0, 1.0) * 0.60 +
-                    np.clip((s_arr - 0.09) / 0.30, 0.0, 1.0) * 0.40,
-                    0.0
-                )
-            return np.where(is_plant, score, 0.0)
+                s = 0.7 * not_green + 0.3 * clip01(np.abs(1.0 - rel_v) / 0.5)
+            return np.where(leaf_region, s.astype(np.float32), 0.0)
 
-        # Ukuran radius dan jarak aman antar titik
-        base_rad = max(18, int(min(w, h) * 0.050))
-        max_rad = max(24, int(min(w, h) * 0.090))
-        min_dist = max(38, int(min(w, h) * 0.14))
+        # Kandidat lesi: di dalam daun & tidak hijau sehat
+        lesion_candidate = leaf_region & (~(green_core & (sat >= 0.16) & (greenness >= 0.55)))
+        lesion_candidate &= ~(is_specular | is_too_dark | is_skin)
 
-        # Fungsi pencarian focal point lesi fisik
-        def locate_focal_point(heat_map, mask_exclude=None):
-            h_eff = heat_map.copy()
-            if mask_exclude is not None:
-                h_eff = np.where(mask_exclude, 0.0, h_eff)
+        min_blob = max(6, int(0.00025 * img_area))
+        base_rad_w = max(9, int(min_side * 0.045))
+        max_rad_w = max(14, int(min_side * 0.10))
+        min_dist_w = max(18, int(min_side * 0.12))
 
-            vals_in_plant = h_eff[is_plant & (mask_exclude == False if mask_exclude is not None else True)]
-            if len(vals_in_plant) == 0 or np.max(vals_in_plant) <= 0.01:
-                coords_y, coords_x = np.where(is_plant & (mask_exclude == False if mask_exclude is not None else True))
-                if len(coords_y) > 0:
-                    mid_idx = len(coords_y) // 2
-                    return int(coords_x[mid_idx]), int(coords_y[mid_idx]), base_rad
-                return w // 2, h // 2, base_rad
+        def interior_point(mask_u8):
+            dist = cv2.distanceTransform(mask_u8, cv2.DIST_L2, 3)
+            iy, ix = np.unravel_index(int(np.argmax(dist)), dist.shape)
+            return int(ix), int(iy)
 
-            # Ambang dinamis persentil 80
-            th_val = max(float(np.percentile(vals_in_plant, 80)), 0.18)
-            bin_les = ((h_eff >= th_val) & is_plant).astype(np.uint8) * 255
+        def lesion_blobs(score_map, exclude=None, thr=0.42):
+            mask = lesion_candidate & (score_map >= thr)
+            if exclude is not None:
+                mask &= ~exclude
+            mask_u8 = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, k3)
+            n, lab, stats, _ = cv2.connectedComponentsWithStats(mask_u8, connectivity=8)
+            blobs = []
+            for i in range(1, n):
+                area = int(stats[i, cv2.CC_STAT_AREA])
+                if area < min_blob:
+                    continue
+                comp = (lab == i)
+                mean_s = float(score_map[comp].mean())
+                rating = mean_s * np.sqrt(area)
+                x0, y0 = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
+                bw, bh = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+                sub = comp[y0:y0 + bh, x0:x0 + bw].astype(np.uint8)
+                px, py = interior_point(np.pad(sub, 1))
+                cx, cy = x0 + px - 1, y0 + py - 1
+                rad = int(np.clip(np.sqrt(area / np.pi) * 1.35, base_rad_w, max_rad_w))
+                blobs.append({"x": cx, "y": cy, "r": rad, "rating": rating, "score": mean_s})
+            blobs.sort(key=lambda d: d["rating"], reverse=True)
+            return blobs
 
-            if cv2 is not None:
-                kernel_les = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-                bin_clean = cv2.morphologyEx(bin_les, cv2.MORPH_OPEN, kernel_les)
-                bin_clean = cv2.morphologyEx(bin_clean, cv2.MORPH_CLOSE, kernel_les)
-                contours, _ = cv2.findContours(bin_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                valid_c = [c for c in contours if cv2.contourArea(c) >= max(12, int(w * h * 0.00008))]
-            else:
-                valid_c = []
+        def peak_point(score_map, exclude=None):
+            sm = cv2.GaussianBlur(score_map, (0, 0), sigmaX=max(1.5, min_side * 0.012))
+            sm = np.where(leaf_region, sm, -1.0)
+            if exclude is not None:
+                sm = np.where(exclude, -1.0, sm)
+            iy, ix = np.unravel_index(int(np.argmax(sm)), sm.shape)
+            if sm[iy, ix] < 0:
+                return None
+            return {"x": int(ix), "y": int(iy), "r": base_rad_w, "rating": 0.0, "score": float(sm[iy, ix])}
 
-            if len(valid_c) > 0:
-                def contour_score(c):
-                    mask_c = np.zeros((h, w), dtype=np.uint8)
-                    cv2.drawContours(mask_c, [c], -1, 1, -1)
-                    vals = h_eff[mask_c > 0]
-                    if len(vals) == 0:
-                        return 0.0
-                    return float(np.max(vals) * 0.70 + np.mean(vals) * 0.30)
+        def find_spot(score_map, exclude=None):
+            for thr in (0.50, 0.40, 0.30):
+                blobs = lesion_blobs(score_map, exclude=exclude, thr=thr)
+                if blobs:
+                    return blobs[0], blobs
+            p = peak_point(score_map, exclude=exclude)
+            return p, ([p] if p else [])
 
-                valid_c.sort(key=contour_score, reverse=True)
-                top_c = valid_c[0]
-                area = cv2.contourArea(top_c)
-                r_calc = max(base_rad, min(int(np.sqrt(area / np.pi) * 1.15), max_rad))
+        def disk(cx, cy, rad):
+            yy, xx = np.ogrid[:hh, :ww]
+            return (xx - cx) ** 2 + (yy - cy) ** 2 < rad ** 2
 
-                # Weighted centroid di dalam kontur
-                mask_top = np.zeros((h, w), dtype=np.uint8)
-                cv2.drawContours(mask_top, [top_c], -1, 1, -1)
-                heat_in_c = np.where(mask_top > 0, h_eff, 0.0)
-                pts_y, pts_x = np.where(heat_in_c > 0.01)
-                if len(pts_y) > 0:
-                    weights = np.power(heat_in_c[pts_y, pts_x], 2)
-                    w_sum = float(np.sum(weights))
-                    if w_sum > 0:
-                        cx = int(np.round(np.sum(pts_x * weights) / w_sum))
-                        cy = int(np.round(np.sum(pts_y * weights) / w_sum))
-                        if is_plant[min(max(cy, 0), h - 1), min(max(cx, 0), w - 1)]:
-                            return cx, cy, r_calc
-                        else:
-                            pts = top_c.reshape(-1, 2)
-                            dists = (pts[:, 0] - cx)**2 + (pts[:, 1] - cy)**2
-                            best_idx = np.argmin(dists)
-                            return int(pts[best_idx, 0]), int(pts[best_idx, 1]), r_calc
-
-                M = cv2.moments(top_c)
-                if M["m00"] > 0:
-                    cx = int(M["m10"] / M["m00"])
-                    cy = int(M["m01"] / M["m00"])
-                    if not is_plant[min(max(cy, 0), h - 1), min(max(cx, 0), w - 1)]:
-                        pts = top_c.reshape(-1, 2)
-                        dists = (pts[:, 0] - cx)**2 + (pts[:, 1] - cy)**2
-                        best_idx = np.argmin(dists)
-                        cx, cy = int(pts[best_idx, 0]), int(pts[best_idx, 1])
-                    return cx, cy, r_calc
-
-            # Fallback jika kontur kosong: ambil piksel bernilai tertinggi
-            max_val = np.max(h_eff)
-            if max_val > 0.05:
-                top_thresh = max_val * 0.82
-                pts_y, pts_x = np.where((h_eff >= top_thresh) & is_plant)
-                if len(pts_y) > 0:
-                    weights = np.power(h_eff[pts_y, pts_x], 2)
-                    w_sum = float(np.sum(weights))
-                    if w_sum > 0:
-                        cx = int(np.round(np.sum(pts_x * weights) / w_sum))
-                        cy = int(np.round(np.sum(pts_y * weights) / w_sum))
-                        return cx, cy, base_rad
-
-            max_pos = np.argmax(h_eff)
-            cy, cx = divmod(max_pos, w)
-            return int(cx), int(cy), base_rad
-
-        # 4. Penentuan Titik & Multi-Penyakit Sesuai Permintaan User
-        spots = []
-        is_healthy_leaf = is_healthy or "sehat" in (primary_name or "").lower()
+        # ---------------------------------------------------------------
+        # 5. Penentuan titik retikel
+        # ---------------------------------------------------------------
+        spots_w = []
+        is_healthy_leaf = is_healthy or "sehat" in (primary_name or "").lower() or "healthy" in (primary_name or "").lower()
+        second_ok = bool(second_name) and ("sehat" not in second_name.lower()) and ("healthy" not in second_name.lower())
 
         if is_healthy_leaf:
-            # Daun Sehat Prima: Retikel Hijau
-            heat_prim = get_heatmap(primary_name, True)
-            cx1, cy1, r1 = locate_focal_point(heat_prim)
-            spots.append((cx1, cy1, r1, "[OK] Daun Sehat", "green"))
-        elif (has_multi_disease or is_differential) and second_name and ("sehat" not in (second_name or "").lower()):
-            # Multi-Penyakit Terdeteksi: Tanda Lebih Dari 1 Sesuai Nama Masing-Masing Penyakit!
-            title_1 = get_short_disease_title(primary_name)
-            title_2 = get_short_disease_title(second_name)
-
-            # Titik Penyakit 1 (Primer): Retikel Merah Crimson
-            heat_prim = get_heatmap(primary_name, False)
-            cx1, cy1, r1 = locate_focal_point(heat_prim)
-            spots.append((cx1, cy1, r1, f"[1] {title_1}", "red"))
-
-            # Titik Penyakit 2 (Sekunder): Retikel Oranye Amber (jarak aman dari titik 1)
-            y_g, x_g = np.ogrid[:h, :w]
-            excl_mask = ((x_g - cx1)**2 + (y_g - cy1)**2) < (min_dist**2)
-            heat_sec = get_heatmap(second_name, False)
-            cx2, cy2, r2 = locate_focal_point(heat_sec, mask_exclude=excl_mask)
-            spots.append((cx2, cy2, r2, f"[2] {title_2}", "orange"))
+            hg = (healthy_green if healthy_green.sum() >= 20 else leaf_region).astype(np.uint8)
+            n, lab, stats, _ = cv2.connectedComponentsWithStats(hg, connectivity=8)
+            if n > 1:
+                big = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+                cx, cy = interior_point((lab == big).astype(np.uint8))
+            else:
+                cx, cy = ww // 2, hh // 2
+            spots_w.append((cx, cy, base_rad_w, "[OK] Daun Sehat", "green"))
         else:
-            # Penyakit Tunggal: Tandai titik lesi fisik primer
             title_1 = get_short_disease_title(primary_name)
-            heat_prim = get_heatmap(primary_name, False)
-            cx1, cy1, r1 = locate_focal_point(heat_prim)
-            spots.append((cx1, cy1, r1, f"[1] {title_1}", "red"))
+            score_1 = disease_score(primary_name)
+            best_1, blobs_1 = find_spot(score_1)
+            if best_1 is None:
+                best_1 = {"x": ww // 2, "y": hh // 2, "r": base_rad_w}
+            spots_w.append((best_1["x"], best_1["y"], best_1["r"], f"[1] {title_1}", "red"))
+            excl = disk(best_1["x"], best_1["y"], max(min_dist_w, best_1["r"] * 2))
 
-            # Cari apakah ada lesi aktif sekunder dari penyakit yang sama di helai daun
-            y_g, x_g = np.ogrid[:h, :w]
-            excl_mask = ((x_g - cx1)**2 + (y_g - cy1)**2) < (min_dist**2)
-            h_remaining = np.where(excl_mask, 0.0, heat_prim)
-            if np.max(h_remaining) >= 0.40:
-                cx2, cy2, r2 = locate_focal_point(h_remaining, mask_exclude=excl_mask)
-                spots.append((cx2, cy2, r2, f"[1] {title_1} #2", "red"))
+            if (has_multi_disease or is_differential) and second_ok:
+                title_2 = get_short_disease_title(second_name)
+                score_2 = disease_score(second_name)
+                best_2, _ = find_spot(score_2, exclude=excl)
+                if best_2 is not None:
+                    spots_w.append((best_2["x"], best_2["y"], best_2["r"], f"[2] {title_2}", "orange"))
+            else:
+                # Bercak kedua dari penyakit yang sama, hanya jika benar-benar lesi nyata yang kuat
+                for blob in blobs_1[1:]:
+                    if blob.get("rating", 0.0) <= 0.0:
+                        break
+                    far = (blob["x"] - best_1["x"]) ** 2 + (blob["y"] - best_1["y"]) ** 2 >= min_dist_w ** 2
+                    if far and blob["rating"] >= 0.45 * best_1.get("rating", 1.0) and blob["score"] >= 0.45:
+                        spots_w.append((blob["x"], blob["y"], blob["r"], f"[1] {title_1} #2", "red"))
+                        break
 
-        # Pastikan spots tidak kosong
-        if len(spots) == 0:
-            spots.append((w // 2, h // 2, base_rad, "[1] Lesi Daun", "red"))
+        # ---------------------------------------------------------------
+        # 6. Skala balik ke resolusi asli & gambar HUD
+        # ---------------------------------------------------------------
+        inv = 1.0 / scale
+        spots = [
+            (int(round(x * inv)), int(round(y * inv)), max(10, int(round(rad * inv))), label, color)
+            for (x, y, rad, label, color) in spots_w
+        ]
 
-        # 5. Penggambaran HUD Reticle
         annotated = img_rgb.copy()
         draw = ImageDraw.Draw(annotated)
+        palette = {
+            "green": ((16, 185, 129), (167, 243, 208), (5, 150, 105)),
+            "orange": ((245, 158, 11), (254, 240, 138), (217, 119, 6)),
+            "red": ((239, 68, 68), (254, 202, 202), (220, 38, 38)),
+        }
+        min_wh = min(W, H)
+        line_w = max(2, int(min_wh * 0.005))
+        tick = max(8, int(min_wh * 0.018))
+        dot_r = max(3, int(min_wh * 0.007))
+        font_px = max(11, int(min_wh * 0.028))
+        try:
+            font = ImageFont.load_default(size=font_px)
+        except TypeError:
+            font = ImageFont.load_default()
 
-        for cx, cy, rad, badge_label, color_type in spots:
-            if color_type == "green":
-                color_hud = (16, 185, 129)
-                color_inner = (167, 243, 208)
-                badge_bg = (5, 150, 105)
-            elif color_type == "orange":
-                color_hud = (245, 158, 11)
-                color_inner = (254, 240, 138)
-                badge_bg = (217, 119, 6)
-            elif color_type == "cyan":
-                color_hud = (6, 182, 212)
-                color_inner = (165, 243, 252)
-                badge_bg = (14, 116, 144)
-            else:
-                color_hud = (239, 68, 68)
-                color_inner = (254, 202, 202)
-                badge_bg = (220, 38, 38)
-
-            line_w = max(2, int(min(w, h) * 0.005))
-            tick = max(8, int(min(w, h) * 0.018))
-            dot_r = max(3, int(min(w, h) * 0.007))
-
-            # Lingkaran luar HUD
-            draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=color_hud, width=line_w)
-            
-            # Lingkaran dalam HUD
+        for cx, cy, rad, label, color_type in spots:
+            c_hud, c_in, c_bg = palette.get(color_type, palette["red"])
+            draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=c_hud, width=line_w)
             inner_r = max(rad - line_w * 2, 6)
-            draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], outline=color_inner, width=max(1, line_w - 1))
-            
-            # Titik sentral bidik
-            draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r], fill=color_hud)
+            draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], outline=c_in, width=max(1, line_w - 1))
+            draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r], fill=c_hud)
+            draw.line([cx - rad - tick, cy, cx - rad + 3, cy], fill=c_hud, width=line_w)
+            draw.line([cx + rad - 3, cy, cx + rad + tick, cy], fill=c_hud, width=line_w)
+            draw.line([cx, cy - rad - tick, cx, cy - rad + 3], fill=c_hud, width=line_w)
+            draw.line([cx, cy + rad - 3, cx, cy + rad + tick], fill=c_hud, width=line_w)
 
-            # Garis bidik crosshair 4 arah
-            draw.line([cx - rad - tick, cy, cx - rad + 3, cy], fill=color_hud, width=line_w)
-            draw.line([cx + rad - 3, cy, cx + rad + tick, cy], fill=color_hud, width=line_w)
-            draw.line([cx, cy - rad - tick, cx, cy - rad + 3], fill=color_hud, width=line_w)
-            draw.line([cx, cy + rad - 3, cx, cy + rad + tick], fill=color_hud, width=line_w)
-
-            # Chip Badge Nama Gejala
-            font_scale = max(8, int(min(w, h) * 0.018))
-            badge_w = max(len(badge_label) * font_scale + 16, 75)
-            badge_h = max(18, font_scale + 8)
-            bx1 = max(2, cx - badge_w // 2)
-            by1 = cy - rad - badge_h - 6
-            bx2 = min(w - 2, bx1 + badge_w)
-            by2 = by1 + badge_h
-            if by1 < 3:
-                by1 = cy + rad + 6
-                by2 = by1 + badge_h
-            if by2 < h - 2:
-                draw.rounded_rectangle([bx1, by1, bx2, by2], radius=4, fill=badge_bg)
-                draw.text((bx1 + 6, by1 + 2), badge_label, fill=(255, 255, 255))
+            tb = draw.textbbox((0, 0), label, font=font)
+            tw, th = tb[2] - tb[0], tb[3] - tb[1]
+            pad = max(4, font_px // 3)
+            bw_, bh_ = tw + pad * 2, th + pad * 2
+            bx1 = int(np.clip(cx - bw_ // 2, 2, max(2, W - bw_ - 2)))
+            by1 = cy - rad - tick - bh_ - 2
+            if by1 < 2:
+                by1 = cy + rad + tick + 2
+            by1 = int(np.clip(by1, 2, max(2, H - bh_ - 2)))
+            draw.rounded_rectangle([bx1, by1, bx1 + bw_, by1 + bh_], radius=max(3, pad), fill=c_bg)
+            draw.text((bx1 + pad - tb[0], by1 + pad - tb[1]), label, fill=(255, 255, 255), font=font)
 
         return annotated, spots
     except Exception:
-        return img_rgb, [(w // 2, h // 2, 25, "[1] Daun", "red")]
+        return img_rgb, [(W // 2, H // 2, 25, "[1] Daun", "red")]
 
 # Alias kompatibilitas
 generate_keras_cam_map = generate_lesion_hud_map
@@ -3138,6 +3130,9 @@ if selected_image is not None and not file_error:
                         title_1 = get_short_disease_title(info.get('nama_id', 'Penyakit'))
                         title_2 = get_short_disease_title(second_info.get('nama_id', 'Penyakit')) if second_info else ""
                         has_multi = visual_evidence.get("has_multi_disease", False) or is_differential
+                        is_healthy_2 = bool(second_info) and (
+                            second_info.get("is_healthy", False) or second_info.get("status") == "healthy"
+                        )
 
                         if is_healthy:
                             map_caption = "Peta Verifikasi Jaringan Daun: Retikel Hijau [OK] memverifikasi helai daun bawang dalam kondisi sehat optimal berklorofil tinggi bebas lesi patogen."
