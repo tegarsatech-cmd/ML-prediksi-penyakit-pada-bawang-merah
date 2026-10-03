@@ -3519,6 +3519,8 @@ if selected_image is not None and not file_error:
                             third_name=third_info.get('nama_id', third_class_raw) if diag_mode == 'three_way' else None,
                             is_three_way=(diag_mode == 'three_way')
                         )
+                phys_content = st.session_state[phys_cache_key]
+                html_phys = format_card_text_to_html(phys_content)
 
                 phys_sub_text = (
                     f"Cocokkan tanda fisik berikut langsung di bedengan untuk memastikan apakah daun terserang <strong>{info['nama_id']}</strong> atau <strong>{second_info['nama_id']}</strong>:"
