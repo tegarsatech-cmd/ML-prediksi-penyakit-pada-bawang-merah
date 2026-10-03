@@ -2603,7 +2603,8 @@ def get_groq_recommendation(
     evidence_desc=None,
     third_disease_name=None,
     third_confidence=None,
-    is_three_way=False
+    is_three_way=False,
+    diff_data=None
 ):
     """
     Memanggil Groq API untuk menyusun petunjuk obat dan perawatan lahan yang panjang, mendalam,
@@ -2613,9 +2614,21 @@ def get_groq_recommendation(
     sev_str = f"Tingkat Keparahan Infeksi: {severity_level}\n" if severity_level else ""
     ev_str = f"Gejala Fisik Lapangan: {evidence_desc}\n" if evidence_desc else ""
 
+    diff_alert_str = ""
+    if diff_data:
+        c_title = diff_data.get("counterpart_title", "")
+        c_reason = diff_data.get("confusion_reason", "")
+        s_alert = diff_data.get("special_alert", "").replace("<strong>", "").replace("</strong>", "")
+        diff_alert_str = (
+            f"PERINGATAN PENCEGAHAN SALAH OBAT DI SAWAH:\n"
+            f"- Penyakit '{disease_name}' sangat rentan tertukar dengan '{c_title}'. Alasan: {c_reason}.\n"
+            f"- Kunci pembeda utama: {s_alert}.\n"
+            f"- WAJIB: Di bagian TINDAKAN dan REKOMENDASI OBAT SEMPROT, tegaskan obat apa yang TEPAT dan beri peringatan keras obat apa yang SALAH/DILARANG agar petani tidak salah belanja pestisida.\n\n"
+        )
+
     if is_three_way and second_disease_name and third_disease_name:
         angle_title = "Rekomendasi Terpadu 3 Spektrum Penyakit Bersaing (Riset Balitsa & BPTP Kementan)"
-        user_prompt = (
+        user_prompt = diff_alert_str + (
             f"VONIS DIAGNOSIS PENYAKIT (3 KEMUNGKINAN BERSAING): {disease_name}{latin_str} ({confidence:.1f}%), {second_disease_name} ({second_confidence:.1f}%), dan {third_disease_name} ({third_confidence:.1f}%).\n"
             f"{sev_str}"
             f"{ev_str}\n"
@@ -2642,7 +2655,7 @@ def get_groq_recommendation(
         )
     elif is_differential and second_disease_name:
         angle_title = "Diferensial Diagnosis & Perlindungan Spektrum Ganda"
-        user_prompt = (
+        user_prompt = diff_alert_str + (
             f"VONIS DIAGNOSIS PENYAKIT (KEMUNGKINAN GANDA): {disease_name}{latin_str} ({confidence:.1f}%) dan {second_disease_name} ({second_confidence:.1f}%).\n"
             f"{sev_str}"
             f"{ev_str}\n"
@@ -2673,7 +2686,7 @@ def get_groq_recommendation(
         else:
             angle_title, angle_desc = FOCUS_ANGLES[angle_idx]
 
-        user_prompt = (
+        user_prompt = diff_alert_str + (
             f"VONIS DIAGNOSIS RESMI: {disease_name}{latin_str}.\n"
             f"Tingkat Keyakinan Prediksi: {confidence:.1f}%.\n"
             f"{sev_str}"
@@ -3141,25 +3154,95 @@ def get_groq_physical_verification(
     second_name: str | None = None,
     is_differential: bool = False,
     third_name: str | None = None,
-    is_three_way: bool = False
+    is_three_way: bool = False,
+    diff_data: dict | None = None,
+    severity_level: str | None = None,
+    evidence_desc: str | None = None
 ) -> str:
     """
-    Memanggil Groq API untuk menyusun panduan verifikasi fisik lapangan singkat & padat
-    agar petani dapat langsung mencocokkan gejala khas di kebun bawang merah.
+    Menyusun panduan verifikasi karakteristik fisik langsung di sawah yang maksimal, terstruktur,
+    dan berbobot agronomi tinggi merujuk Balitsa Lembang & BPTP Kementan.
+    Mengintegrasikan data diferensial lapangan dan pembeda stadium (dini vs parah).
     """
-    if is_three_way and second_name and third_name:
-        fallback_content = (
-            f"• 🖐️ Uji Raba & Tekstur Daun: Periksa apakah helai daun berlendir basah khas {second_name}, berbercak kering/klorotik khas {third_name}, atau masih tegar sehat seperti {primary_name}.\n"
-            f"• 👃 Uji Aroma & Kelembapan: Jika tercium aroma langu/busuk menyengat di pagi hari, waspadai serangan bakteri/hawar basah. Jika tanpa aroma busuk melainkan bercak kering, waspadai jamur atau virus.\n"
-            f"• 🔍 Uji Bentuk Bercak: Amati pola bercak apakah meluas dari ujung daun (hawar), membentuk garis klorosis memanjang (virus), atau bercak cincin konsentris (trotol)."
-        )
+    p_lower = (primary_name or "").lower()
+
+    # Database Mandiri Protokol Uji Fisik Lapangan (Standar Balitsa & BPTP Kementan)
+    built_in_protocols = {
+        "trotol": [
+            ("🖐️ Uji Raba & Tekstur Daun", "Raba permukaan bercak dengan jari. Lesi terasa <strong>CEKUNG / MELEKUK KE DALAM (sunken)</strong> ke daging daun, bukan menonjol timbul."),
+            ("👆 Uji Usap Jari & Serbuk Spora", "Usap bagian tengah lesi saat berembun atau pagi hari. Meninggalkan lapisan tipis debu spora berwarna <strong>cokelat kehitaman / keunguan</strong> di jari."),
+            ("🔍 Uji Pola Lesi di Sinar Terang", "Arahkan helai daun ke cahaya terang. Terlihat jelas pola <strong>cincin konsentris (bull's eye)</strong> dengan lingkaran tepi berwarna ungu/kemerahan gelap dan bagian tengah mengering mengabu."),
+            ("⏱️ Pembeda Stadium Infeksi (Dini vs Lanjut)", "<strong>🌱 Stadium Dini:</strong> Bintik jarum basah transparan (<2 mm) tanpa cincin ungu.<br><strong>🚨 Stadium Lanjut:</strong> Bercak oval membesar (>10 mm), melekuk dalam, mulai bersambung (coalescing), dan helai daun patah/terkulai di titik lesi."),
+            ("💡 Kunci Pengamatan Cepat", "Lekukan melekuk bertepi ungu adalah tanda mutlak Trotol (Alternaria porri). Jangan tertukar dengan Karat (Karat menonjol ke atas dan berdebu oranye).")
+        ],
+        "rust": [
+            ("🖐️ Uji Raba & Tekstur Daun", "Raba helaian daun. Terasa bintil-bintil kecil <strong>MENONJOL KASAR KE ATAS (pustula timbul)</strong> menyerupai bintil jerawat kecil."),
+            ("👆 Uji Usap Jari (Uji Paling Akurat)", "Usapkan ibu jari atau tisu putih pada bintil. Pustula yang matang akan pecah dan meninggalkan <strong>SERBUK DEBU JINGGA / MERAH TEMBAGA</strong> tebal di jari (seperti debu karat besi)."),
+            ("🔍 Uji Pola Lesi di Sinar Terang", "Bintil karat tersebar acak merata di kedua sisi daun, tidak memiliki pola cekung cincin ungu konsentris."),
+            ("⏱️ Pembeda Stadium Infeksi (Dini vs Lanjut)", "<strong>🌱 Stadium Dini:</strong> Bintik kuning kecil pucat tertutup lapisan kulit epidermis tipis daun.<br><strong>🚨 Stadium Lanjut:</strong> Pustula meletus massal mengeluarkan serbuk karat tebal, daun menjadi kaku dan kering terbakar."),
+            ("💡 Kunci Pengamatan Cepat", "Jika diusap jari ada debu oranye/karat menempel = Karat Daun murni. Wajib fungisida triazol/strobilurin, jangan berikan bakterisida!")
+        ],
+        "hawar": [
+            ("🖐️ Uji Raba & Tekstur Daun", "Raba ujung helai daun yang mengering. Terasa <strong>KERING KERTAS, SANGAT TIPIS, DAN KELABU KAKU</strong> merambat dari pucuk ke arah pangkal (dieback)."),
+            ("👆 Uji Usap Jari & Serbuk", "Usap permukaan bercak putih. <strong>BERSIH, TIDAK MENINGGALKAN SERBUK ORANYE</strong> (membedakannya secara pasti dari Karat Daun)."),
+            ("🔍 Uji Pola Lesi di Sinar Terang", "Bercak memutih menyerupai <strong>selaput kertas tembus cahaya</strong>. Pada batas daun mati dan hijau terdapat titik spora hitam kecil memanjang."),
+            ("⏱️ Pembeda Stadium Infeksi (Dini vs Lanjut)", "<strong>🌱 Stadium Dini:</strong> Ujung pucuk daun mengering 1-2 cm berwarna jerami pucat.<br><strong>🚨 Stadium Lanjut:</strong> Selaput kertas memutih menjalar hingga setengah helai daun, helai daun terbelah dan mati total."),
+            ("💡 Kunci Pengamatan Cepat", "Daun mengering tipis seperti kertas dari pucuk tanpa serbuk karat dan tanpa lekukan cincin ungu.")
+        ],
+        "moler": [
+            ("🖐️ Uji Raba & Bentuk Daun", "Helai daun tidak tumbuh tegak, melainkan <strong>LEMAS, MELIUK-LIUK / TERPUNTIR SPIRAL ABNORMAL</strong> menyerupai pita terpelintir (inul)."),
+            ("👆 Uji Cabut Tanaman (Uji Khas)", "Pegang pangkal batang dan tarik pelan ke atas. Tanaman terinfeksi Fusarium <strong>SANGAT MUDAH DICABUT SATU TANGAN</strong> karena akar membusuk."),
+            ("🔍 Uji Irisan Leher Batang & Umbi", "Belah membujur pangkal umbi. Terlihat cincin jaringan pembuluh berwarna <strong>cokelat kemerahan atau ungu kusam</strong> serta leher batang lunak basah."),
+            ("⏱️ Pembeda Stadium Infeksi (Dini vs Lanjut)", "<strong>🌱 Stadium Dini:</strong> Daun menguning pucat dan melengkung tidak teratur saat terik siang hari, kembali segar saat malam.<br><strong>🚨 Stadium Lanjut:</strong> Daun melintir spiral ekstrem, rebah di tanah, umbi lunak membusuk di dalam bedengan."),
+            ("💡 Kunci Pengamatan Cepat", "Daun melintir spiral + mudah dicabut + akar busuk = Moler Fusarium. Wajib kocor Trichoderma dan STOP pupuk Urea!")
+        ],
+        "iysv": [
+            ("🖐️ Uji Raba & Tekstur Daun", "Permukaan helai daun tetap <strong>HALUS RATA</strong>, tidak melekuk ke dalam dan tidak ada bintil kasar timbul."),
+            ("👆 Uji Usap Jari", "Usap bercak dengan jari. <strong>TIDAK MENINGGALKAN SERBUK SAMA SEKALI</strong> karena gejala berasal dari gangguan klorofil seluler akibat virus via Thrips."),
+            ("🔍 Uji Bentuk Bercak Khas", "Bercak klorotik berbentuk <strong>BELAH KETUPAT (diamond-shaped)</strong> atau kumparan spindle berwarna kuning jerami di tengah helai daun."),
+            ("⏱️ Pembeda Stadium Infeksi (Dini vs Lanjut)", "<strong>🌱 Stadium Dini:</strong> 1-2 bercak belah ketupat kuning pucat terisolasi.<br><strong>🚨 Stadium Lanjut:</strong> Bercak menyatu membentuk sabuk klorosis lebar melingkari daun, helai daun rapuh mudah patah di titik bercak."),
+            ("💡 Kunci Pengamatan Cepat", "Bercak belah ketupat tanpa serbuk. Virus tidak mempan fungisida; wajib basmi serangga vektor Thrips!")
+        ],
+        "mildew": [
+            ("🖐️ Uji Raba & Kelembapan", "Periksa helai daun di pagi hari sebelum terik. Bercak terasa <strong>LEMBAP DINGIN DAN BERLENDIR LEMBUT</strong>."),
+            ("👆 Uji Usap Jari Pagi Hari", "Usap permukaan daun berembun. Terasa ada <strong>LAPISAN BULU HALUS BELUDRU KEUNGUAN / KELABU</strong> di permukaan daun."),
+            ("🔍 Uji Pola Lesi di Sinar Terang", "Daun tampak pucat klorotik memanjang, lalu terkulai layu lemas dari titik infeksi."),
+            ("⏱️ Pembeda Stadium Infeksi (Dini vs Lanjut)", "<strong>🌱 Stadium Dini:</strong> Bercak hijau pucat kekuningan samar tanpa batas tegas.<br><strong>🚨 Stadium Lanjut:</strong> Lapisan bulu kelabu menyelimuti daun, daun mengering rebah ke tanah."),
+            ("💡 Kunci Pengamatan Cepat", "Lapisan bulu halus beludru di pagi hari yang lembap. Gunakan fungisida sistemik Dimetomorf/Simoksanil.")
+        ],
+        "sehat": [
+            ("🖐️ Uji Raba & Tekstur Daun", "Helai daun terasa <strong>KOKOH, TEGAR, DAN ELASTIS</strong>."),
+            ("👆 Uji Usap Jari", "Permukaan licin dilapisi lilin alami (kutikula), tidak ada lendir, serbuk spora, atau bercak nekrotik."),
+            ("🔍 Uji Visual", "Warna hijau segar merata dari pangkal sampai ujung daun."),
+            ("💡 Pemeliharaan", "Pertahankan drainase macak-macak, berikan pupuk berimbang, dan semprot penguat sel Kalsium-Silika.")
+        ]
+    }
+
+    matched_key = "trotol"
+    for k in built_in_protocols:
+        if k in p_lower or (k == "rust" and "karat" in p_lower) or (k == "trotol" and ("bercak" in p_lower or "ungu" in p_lower)):
+            matched_key = k
+            break
+
+    # Jika diff_data tersedia dari sistem logika pembeda, rangkum menjadi format checklist terpadu
+    if diff_data and diff_data.get("points"):
+        lines = []
+        c_title = diff_data.get("counterpart_title", "")
+        for pt in diff_data["points"]:
+            p_name = pt.get("param", "")
+            curr = pt.get("curr", "").replace("<strong>", "").replace("</strong>", "").replace("<em>", "").replace("</em>", "")
+            opp = pt.get("opp", "").replace("<strong>", "").replace("</strong>", "").replace("<em>", "").replace("</em>", "")
+            if c_title and opp:
+                lines.append(f"• **{p_name}**: Pada {primary_name}, {curr}. Sedangkan jika {c_title}: {opp}.")
+            else:
+                lines.append(f"• **{p_name}**: {curr}")
+        if diff_data.get("special_alert"):
+            clean_alert = diff_data["special_alert"].replace("<strong>", "").replace("</strong>", "").replace("<em>", "").replace("</em>", "")
+            lines.append(f"• 💡 **Kunci Pengamatan Cepat Lapangan**: {clean_alert}")
+        fallback_content = "\n".join(lines)
     else:
-        fallback_content = (
-            f"• 🖐️ Uji Raba Daun: Rasakan permukaan bercak pada helai daun. "
-            f"Jika basah berlendir dan bau busuk, kuat mengarah ke bakteri. Jika kering bertepung atau bintil kasar, mengarah ke jamur.\n"
-            f"• 👃 Uji Bau & Lendir: Daun yang terinfeksi bakteri busuk basah mengeluarkan aroma menyengat khas pembusukan sayur.\n"
-            f"• 🔍 Uji Bentuk Bercak: Cermati tepi bercak di bawah sinar terang; bercak jamur biasanya memiliki batas konsentris atau bintil oranye khas karat."
-        )
+        protocol_items = built_in_protocols.get(matched_key, built_in_protocols["trotol"])
+        fallback_content = "\n".join([f"• **{title}**: {desc}" for title, desc in protocol_items])
 
     api_key = get_groq_api_key()
     if not api_key:
@@ -3172,32 +3255,25 @@ def get_groq_physical_verification(
         "User-Agent": "AgroScan-Validator/1.0"
     }
 
-    if is_three_way and second_name and third_name:
-        prompt = (
-            f"Anda adalah Konsultan Proteksi Tanaman Bawang Merah (merujuk Balitsa Lembang & BPTP).\n"
-            f"Bantu petani mengidentifikasi 3 kemungkinan kondisi yang bersaing di kamera HP: '{primary_name}' vs '{second_name}' vs '{third_name}'.\n"
-            "Tuliskan panduan verifikasi fisik langsung di bedengan sawah dalam 3 poin ringkas dan padat:\n"
-            "1. 🖐️ Uji Raba & Tekstur Daun (Lendir basah licin vs serbuk tepung/bintil kering kasar vs helai licin sehat)\n"
-            "2. 👃 Uji Aroma Daun (Bau langu busuk bakteri vs daun kering jamur vs aroma segar)\n"
-            "3. 🔍 Uji Bentuk Bercak Lapangan (Kering ujung vs klorosis/belang virus vs bercak ungu konsentris)"
-        )
-    elif is_differential and second_name:
-        prompt = (
-            f"Anda adalah Konsultan Proteksi Tanaman Bawang Merah (merujuk Balitsa Lembang & BPTP).\n"
-            f"Bantu petani membedakan dua penyakit yang tampak mirip di kamera HP: '{primary_name}' vs '{second_name}'.\n"
-            "Tuliskan panduan verifikasi fisik langsung di bedengan sawah dalam 3 poin ringkas dan padat:\n"
-            "1. 🖐️ Uji Raba & Tekstur Daun (Lendir basah licin vs serbuk tepung/bintil kering kasar)\n"
-            "2. 👃 Uji Aroma Daun (Bau langu busuk bakteri vs daun kering jamur)\n"
-            "3. 🔍 Uji Bentuk Bercak & Usapan Jari (Bercak lemas memanjang vs cincin konsentris vs debu karat oranye)"
-        )
-    else:
-        prompt = (
-            f"Anda adalah Konsultan Proteksi Tanaman Bawang Merah.\n"
-            f"Berikan 3 cara cepat verifikasi fisik di sawah untuk memastikan penyakit '{primary_name}':\n"
-            "1. 🖐️ Uji Raba & Tekstur Permukaan Daun\n"
-            "2. 👃 Uji Bau & Lendir Daun\n"
-            "3. 🔍 Ciri Khas Bentuk Bercak Lapangan"
-        )
+    diff_hint = ""
+    if diff_data:
+        diff_hint = f"Perhatikan pembeda dengan {diff_data.get('counterpart_title', '')}: {diff_data.get('confusion_reason', '')}. Kunci penting: {diff_data.get('special_alert', '')}\n"
+
+    prompt = (
+        f"Anda adalah Konsultan Proteksi Tanaman Bawang Merah (merujuk Balitsa Lembang & BPTP Kementan).\n"
+        f"Tanaman terdeteksi: '{primary_name}'"
+        + (f" bersaing dengan '{second_name}'" if second_name else "")
+        + (f" dan '{third_name}'" if third_name else "") + ".\n"
+        + (f"Tingkat Keparahan Visual: {severity_level}\n" if severity_level else "")
+        + diff_hint
+        + "Tuliskan panduan verifikasi fisik langsung di bedengan sawah dalam 4-5 poin terstruktur berformat bullet point (- / •):\n"
+        "1. 🖐️ Uji Raba & Tekstur Permukaan Daun (Cekung melekuk vs menonjol kasar bintil vs lemas basah)\n"
+        "2. 👆 Uji Usap Jari & Serbuk Spora (Serbuk karat jingga vs debu hitam spora vs bersih tanpa serbuk)\n"
+        "3. 🔍 Uji Terawang Sinar & Pola Lesi Khas (Pola cincin ungu konsentris vs selaput memutih tipis vs garis klorosis)\n"
+        "4. ⏱️ Pembeda Stadium Infeksi (Dini vs Lanjut) (Ciri bintik awal vs ciri fase parah yang rawan patah/rebah)\n"
+        "5. 💡 Kunci Pengamatan Cepat Lapangan (Aturan emas 1 detik membedakan dengan penyakit lain)\n"
+        "Gunakan bahasa Indonesia lugas, ringkas, padat, dan sangat mudah dipraktikkan petani di kebun."
+    )
 
     models_to_try = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
     for model_name in models_to_try:
@@ -3208,7 +3284,7 @@ def get_groq_physical_verification(
                 json={
                     "model": model_name,
                     "temperature": 0.3,
-                    "max_tokens": 400,
+                    "max_tokens": 450,
                     "messages": [
                         {"role": "system", "content": "Anda adalah dokter tanaman hortikultura yang memberi instruksi cek fisik langsung di sawah secara singkat, padat, dan jelas untuk petani."},
                         {"role": "user", "content": prompt}
@@ -4516,9 +4592,18 @@ if selected_image is not None and not file_error:
                     st.progress(min(max(float(prob_val), 0.0), 1.0))
 
             # ==============================================================================
-            # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN
+            # ==============================================================================
+            # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN & INTEGRASI LOGIKA PEMBEDA
             # ==============================================================================
             if not is_pure_healthy:
+                # Logika Pembeda Gejala Serupa tetap aktif di backend untuk memperkaya verifikasi fisik dan dokter tanaman
+                diff_data = get_disease_differential_breakdown(
+                    primary_name=info['nama_id'],
+                    second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way') and second_info) else None,
+                    diag_mode=diag_mode,
+                    is_papery_blight=diag_info.get("is_papery_blight", False)
+                )
+
                 phys_cache_key = f"phys_{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}"
                 if phys_cache_key not in st.session_state:
                     with st.spinner("🔬 Menyiapkan panduan verifikasi fisik lapangan..."):
@@ -4527,44 +4612,41 @@ if selected_image is not None and not file_error:
                             second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way')) else None,
                             is_differential=(diag_mode == 'two_way'),
                             third_name=third_info.get('nama_id', third_class_raw) if diag_mode == 'three_way' else None,
-                            is_three_way=(diag_mode == 'three_way')
+                            is_three_way=(diag_mode == 'three_way'),
+                            diff_data=diff_data,
+                            severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
+                            evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None
                         )
                 phys_content = st.session_state[phys_cache_key]
                 html_phys = format_card_text_to_html(phys_content)
 
                 phys_sub_text = (
                     f"Cocokkan tanda fisik berikut langsung di bedengan untuk memastikan apakah daun terserang <strong>{info['nama_id']}</strong> atau <strong>{second_info['nama_id']}</strong>:"
-                    if is_differential
+                    if is_differential and second_info
                     else f"Cocokkan tanda fisik berikut langsung pada tanaman di sawah untuk memastikan gejala penyakit <strong>{info['nama_id']}</strong>:"
                 )
 
                 st.markdown(f"""
-                    <div style="background: #FFFFFF; border-radius: 16px; border: 1.5px solid #CBD5E1; padding: 1.15rem 1.25rem; margin: 1rem 0; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
-                        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem;">
-                            <span style="font-size: 1.35rem;">🔬</span>
-                            <span style="font-size: 1.1rem; font-weight: 800; color: #0F172A;">Verifikasi Karakteristik Fisik Langsung di Sawah</span>
+                    <div style="background: #FFFFFF; border-radius: 16px; border: 1.5px solid #CBD5E1; padding: 1.25rem 1.35rem; margin: 1.1rem 0; box-shadow: 0 3px 8px rgba(0,0,0,0.04);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 0.65rem;">
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                <span style="font-size: 1.4rem;">🔬</span>
+                                <span style="font-size: 1.15rem; font-weight: 800; color: #0F172A;">Verifikasi Karakteristik Fisik Langsung di Sawah</span>
+                            </div>
+                            <span style="background: #F0FDF4; color: #166534; font-size: 0.8rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; border: 1px solid #BBF7D0;">
+                                Protokol Standar Balitsa & BPTP
+                            </span>
                         </div>
                         <div style="font-size: 0.88rem; color: #475569; margin-bottom: 0.85rem; line-height: 1.55;">
                             {phys_sub_text}
                         </div>
-                        <div style="background: #F8FAFC; border-radius: 12px; padding: 0.95rem 1.1rem; border-left: 4px solid #0284C7; font-size: 0.92rem; color: #1E293B; line-height: 1.65;">
+                        <div style="background: #F8FAFC; border-radius: 12px; padding: 1rem 1.15rem; border-left: 4px solid #0284C7; font-size: 0.92rem; color: #1E293B; line-height: 1.7; border: 1px solid #E2E8F0; border-left-width: 4px; border-left-color: #0284C7;">
                             {html_phys}
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
-
-                # ==============================================================================
-                # MODUL PEMBEDA GEJALA SERUPA (PENCEGAH SALAH OBAT DI SAWAH)
-                # ==============================================================================
-                diff_data = get_disease_differential_breakdown(
-                    primary_name=info['nama_id'],
-                    second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way') and second_info) else None,
-                    diag_mode=diag_mode,
-                    is_papery_blight=diag_info.get("is_papery_blight", False)
-                )
-                if diff_data:
-                    html_diff = render_differential_comparison_html(diff_data)
-                    st.markdown(html_diff, unsafe_allow_html=True)
+            else:
+                diff_data = None
 
             # ==============================================================================
             # 9. LANGKAH 3: PETUNJUK OBAT & PERAWATAN DARI DOKTER TANAMAN (GROQ AI)
@@ -4592,7 +4674,8 @@ if selected_image is not None and not file_error:
                         evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
                         third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
                         third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
-                        is_three_way=(diag_mode == "three_way")
+                        is_three_way=(diag_mode == "three_way"),
+                        diff_data=diff_data
                     )
                     st.session_state["ai_text_saved"] = ai_text
                     st.session_state["ai_angle_saved"] = ai_angle or "Pendekatan Terpadu Lapangan (Database Mandiri Sistem)"
@@ -4673,7 +4756,8 @@ if selected_image is not None and not file_error:
                         is_differential=(diag_mode == "two_way"),
                         third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
                         third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
-                        is_three_way=(diag_mode == "three_way")
+                        is_three_way=(diag_mode == "three_way"),
+                        diff_data=diff_data
                     )
                     if new_text:
                         st.session_state["ai_text_saved"] = new_text
