@@ -242,23 +242,26 @@ st.markdown("""
         background-color: #0369A1 !important;
     }
 
-    /* Tombol Khusus Sidebar (Bebas Terpotong/Anti-Crop, Font Pas & Terbaca Jelas) */
+    /* Tombol Khusus Sidebar (Bebas Terpotong/Anti-Crop, Teks Singkat Standar/Redup/Ketat) */
     [data-testid="stSidebar"] div.stButton > button {
-        min-height: 42px !important;
-        font-size: 0.88rem !important;
+        min-height: 38px !important;
+        font-size: 0.82rem !important;
         font-weight: 700 !important;
-        padding: 0.45rem 0.5rem !important;
-        border-radius: 10px !important;
-        white-space: normal !important;
-        word-break: normal !important;
-        line-height: 1.25 !important;
+        padding: 0.35rem 0.2rem !important;
+        border-radius: 8px !important;
+        white-space: nowrap !important;
+        line-height: 1.2 !important;
+        overflow: visible !important;
         text-overflow: clip !important;
     }
     [data-testid="stSidebar"] div.stButton > button p {
-        font-size: 0.88rem !important;
+        font-size: 0.82rem !important;
         margin: 0 !important;
-        line-height: 1.25 !important;
-        white-space: normal !important;
+        padding: 0 !important;
+        line-height: 1.2 !important;
+        white-space: nowrap !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
     }
 
     /* 4. Tab Navigasi Kamera & Galeri (Kontras Jelas) */
@@ -1602,11 +1605,13 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
         logits = (model(x) + model(x_flip)) / 2.0
 
         # 5. probs = softmax(logits / temperature, dim=1)
-        temperature = float(meta.get("temperature", 0.05))
+        temperature = float(meta.get("temperature", 0.50))
+        if temperature < 0.20:
+            temperature = 0.50
         probs_tensor = torch.softmax(logits / temperature, dim=1)[0]
 
-    # 6. Ambil kelas tertinggi & evaluasi conf_threshold (0.70)
-    conf_threshold = float(meta.get("conf_threshold", 0.70))
+    # 6. Ambil kelas tertinggi & evaluasi conf_threshold
+    conf_threshold = float(meta.get("conf_threshold", 0.65))
     top_idx = int(torch.argmax(probs_tensor).item())
     top_confidence_val = float(probs_tensor[top_idx].item())
     top_confidence = round(top_confidence_val * 100.0, 1)
@@ -2372,20 +2377,20 @@ with st.sidebar:
     st.markdown("### ⚙️ Validasi Foto Bawang")
     st.caption("Pilih preset cepat atau geser slider sesuai kondisi foto lapangan:")
 
-    # Tombol Preset Cepat Langsung Sinkron ke Web (Tata Letak Bebas Terpotong)
-    if st.button("🌾 Standar Lapangan (65% | 8%)", help="Rekomendasi Balitsa untuk tanaman rumpun sawah normal", use_container_width=True):
-        st.session_state["conf_slider"] = 65
-        st.session_state["leaf_slider"] = 8
-        st.rerun()
-
-    c_pre1, c_pre2 = st.columns(2)
-    with c_pre1:
-        if st.button("☁️ Redup (50% | 5%)", help="Untuk foto sore hari / cuaca mendung / gejala awal tipis", use_container_width=True):
+    # Tombol Preset Cepat Langsung Sinkron ke Web (Hanya Keterangan Singkat: Standar, Redup, Ketat)
+    col_pre1, col_pre2, col_pre3 = st.columns(3)
+    with col_pre1:
+        if st.button("🌾 Standar", help="Preset Standar Sawah (Keyakinan 65% | Daun 8%)", use_container_width=True):
+            st.session_state["conf_slider"] = 65
+            st.session_state["leaf_slider"] = 8
+            st.rerun()
+    with col_pre2:
+        if st.button("☁️ Redup", help="Preset Cuaca Redup / Gejala Dini (Keyakinan 50% | Daun 5%)", use_container_width=True):
             st.session_state["conf_slider"] = 50
             st.session_state["leaf_slider"] = 5
             st.rerun()
-    with c_pre2:
-        if st.button("🔬 Ketat (80% | 20%)", help="Untuk foto makro studio / uji lab sangat ketat", use_container_width=True):
+    with col_pre3:
+        if st.button("🔬 Ketat", help="Preset Super Ketat Lab (Keyakinan 80% | Daun 20%)", use_container_width=True):
             st.session_state["conf_slider"] = 80
             st.session_state["leaf_slider"] = 20
             st.rerun()
@@ -2621,6 +2626,36 @@ if selected_image is not None and not file_error:
     st.image(selected_image, caption="Foto Daun yang Dipilih", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # Monitor Real-Time Kanopi Daun (Live Responsif terhadap Slider Sensitivitas Daun di Sidebar)
+    is_plant_live, reason_live, plant_ratio_live = check_shallot_leaf_mask(selected_image, min_ratio=min_leaf_ratio)
+    ratio_pct_live = plant_ratio_live * 100.0
+    is_passed_live = (plant_ratio_live >= min_leaf_ratio)
+
+    m_color = "#16a34a" if is_passed_live else "#dc2626"
+    m_bg = "#f0fdf4" if is_passed_live else "#fef2f2"
+    m_border = "#86efac" if is_passed_live else "#fca5a5"
+    m_icon = "🟢" if is_passed_live else "🔴"
+    m_status_title = "MEMENUHI SYARAT VALIDASI" if is_passed_live else f"DI BAWAH BATAS VALIDASI ({ratio_pct_live:.1f}% < {min_leaf_ratio_pct}%)"
+
+    st.markdown(f"""
+        <div style="background: {m_bg}; border: 1.5px solid {m_border}; border-radius: 12px; padding: 10px 14px; margin: 6px 0 14px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-weight: 700; color: #1e293b; font-size: 0.90rem;">🍃 Monitor Validasi Kanopi Daun (Live Real-Time):</span>
+                <span style="font-weight: 800; color: {m_color}; font-size: 0.85rem;">{m_icon} {m_status_title}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: #475569;">
+                <span>Daun Terdeteksi: <strong style="color: #0f172a;">{ratio_pct_live:.1f}%</strong></span>
+                <span>•</span>
+                <span>Batas Slider Anda: <strong style="color: #0f172a;">{min_leaf_ratio_pct}%</strong></span>
+                <span>•</span>
+                <span>Standar Sawah: <strong style="color: #166534;">8%</strong></span>
+            </div>
+            <div style="background: #e2e8f0; border-radius: 999px; height: 8px; width: 100%; margin-top: 8px; overflow: hidden;">
+                <div style="background: {m_color}; width: {min(max(ratio_pct_live, 0.0), 100.0):.1f}%; height: 100%; border-radius: 999px;"></div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
     # Identifikasi unik gambar aktif berbasis hash konten citra
     img_bytes = selected_image.tobytes()
     img_hash = hashlib.md5(img_bytes[:65536]).hexdigest()[:12]
@@ -2670,7 +2705,7 @@ if selected_image is not None and not file_error:
                             <strong>🛠️ Cara Menyesuaikan di Sidebar:</strong>
                             <ol style="margin: 2px 0 8px 16px;">
                                 <li>Buka menu sebelah kiri (Sidebar) bagian <strong>⚙️ Validasi Foto Bawang</strong>.</li>
-                                <li>Klik preset <strong>🌾 Standar Lapangan (65% | 8%)</strong> atau geser slider <strong>Sensitivitas Daun</strong> ke angka <strong>8%</strong>.</li>
+                                <li>Klik preset <strong>🌾 Standar</strong> atau geser slider <strong>Sensitivitas Daun</strong> ke angka <strong>8%</strong>.</li>
                             </ol>
                         </div>
                     </div>
@@ -2709,6 +2744,8 @@ if selected_image is not None and not file_error:
         # TAHAP 2: PROSES DIAGNOSIS EFFICIENTNET-B0 TORCHSCRIPT
         # ==============================================================================
         with st.spinner("🔍 Sedang menganalisis kondisi daun bawang merah dengan EfficientNet-B0 TorchScript..."):
+            meta_run = meta_config.copy()
+            meta_run["conf_threshold"] = conf_threshold
             (
                 score,
                 top_indices,
@@ -2725,7 +2762,7 @@ if selected_image is not None and not file_error:
                 visual_evidence,
                 api_output
             ) = predict_disease(
-                selected_image, model, meta=meta_config, enforce_verification=False
+                selected_image, model, meta=meta_run, enforce_verification=False
             )
             # Selaraskan alias variabel agar konsisten (mencegah NameError)
             metadata = info
@@ -2759,7 +2796,7 @@ if selected_image is not None and not file_error:
                         <strong>🛠️ Cara Menyesuaikan di Sidebar:</strong>
                         <ol style="margin: 2px 0 8px 16px;">
                             <li>Buka sidebar kiri pada bagian <strong>⚙️ Validasi Foto Bawang</strong>.</li>
-                            <li>Klik preset <strong>☁️ Redup (50% | 5%)</strong> atau geser slider <strong>Batas Keyakinan</strong> ke angka <strong>50%</strong>.</li>
+                            <li>Klik preset <strong>☁️ Redup</strong> atau geser slider <strong>Batas Keyakinan</strong> ke angka <strong>50%</strong>.</li>
                         </ol>
                     </div>
                 </div>
@@ -2784,6 +2821,21 @@ if selected_image is not None and not file_error:
                 <div class="step-header">
                     <div class="step-num">2</div>
                     <div class="step-title">Hasil Pemeriksaan Daun</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Bar Perbandingan Keyakinan AI vs Ambang Batas Slider (Transparan & Responsif)
+            st.markdown(f"""
+                <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 10px 14px; margin: 4px 0 14px 0; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                    <div>
+                        🎯 <strong>Tingkat Keyakinan AI:</strong> <span style="color: #15803d; font-weight: 800; font-size: 1rem;">{top_confidence:.1f}%</span> 
+                        <span style="color: #64748b; font-size: 0.82rem;">(Batas Keyakinan Slider Anda: <strong>{conf_threshold_pct}%</strong>)</span>
+                    </div>
+                    <div>
+                        <span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">
+                            🟢 Memenuhi Batas Keyakinan (+{(top_confidence - conf_threshold_pct):.1f}%)
+                        </span>
+                    </div>
                 </div>
             """, unsafe_allow_html=True)
 
