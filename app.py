@@ -568,10 +568,34 @@ st.markdown("""
         background-color: #FFFFFF !important;
         border: 2px solid #94A3B8 !important;
         border-radius: 14px !important;
-        padding: 0.8rem !important;
+        padding: 1rem !important;
     }
     [data-testid="stCameraInput"] * {
         color: #0F172A !important;
+    }
+
+    /* Pemisah Lega & Bersih Antara Frame Foto/Video Kamera dengan Tombol Take Photo (Anti-Nempel) */
+    [data-testid="stCameraInput"] video,
+    [data-testid="stCameraInput"] img {
+        margin-bottom: 1.3rem !important;
+        border-radius: 12px !important;
+        display: block !important;
+    }
+    [data-testid="stCameraInput"] > div:has(button) {
+        margin-top: 1.25rem !important;
+        padding-top: 0.5rem !important;
+    }
+    [data-testid="stCameraInput"] button[kind="primary"],
+    [data-testid="stCameraInput"] button[data-testid="stBaseButton-primary"] {
+        margin-top: 1.3rem !important;
+        margin-bottom: 0.65rem !important;
+        min-height: 48px !important;
+        padding: 0.65rem 1.5rem !important;
+    }
+    [data-testid="stCameraInput"] button[kind="secondary"]:not([aria-label*="switch"]):not([title*="switch"]),
+    [data-testid="stCameraInput"] button[data-testid="stBaseButton-secondary"]:not([aria-label*="switch"]):not([title*="switch"]) {
+        margin-top: 1.15rem !important;
+        margin-bottom: 0.5rem !important;
     }
 
     /* Ikon Ganti Kamera Depan/Belakang di HP / Mobile (Wajib Hitam Pekat, Kontras Tinggi & Tidak Samar) */
@@ -602,18 +626,18 @@ st.markdown("""
         box-shadow: 0 2px 6px rgba(0,0,0,0.25) !important;
     }
 
-    /* 8. Expander & Alert (Dikecilkan Ramping & Proporsional di Mobile & Desktop) */
+    /* 8. Expander & Alert Umum */
     [data-testid="stExpander"] {
         background-color: #FFFFFF !important;
         border: 1.5px solid #CBD5E1 !important;
-        border-radius: 10px !important;
-        margin-bottom: 0.5rem !important;
+        border-radius: 12px !important;
+        margin-bottom: 0.6rem !important;
         box-shadow: 0 1px 3px rgba(0,0,0,0.03) !important;
     }
     [data-testid="stExpander"] summary {
         background-color: #F8FAFC !important;
-        padding: 0.45rem 0.75rem !important;
-        border-radius: 8px !important;
+        padding: 0.5rem 0.85rem !important;
+        border-radius: 10px !important;
         min-height: unset !important;
         gap: 8px !important;
     }
@@ -624,49 +648,75 @@ st.markdown("""
     }
     [data-testid="stExpanderDetails"] {
         background-color: #FFFFFF !important;
-        padding: 0.65rem 0.85rem !important;
+        padding: 0.75rem 0.95rem !important;
     }
     [data-testid="stExpanderDetails"] * {
         color: #0F172A !important;
     }
 
-    /* Kotak Khusus Panduan & Kategori Sidebar (Dikecilkan Lebih Ramping di Mobile & Desktop) */
+    /* Kotak Khusus Panduan & Kategori Sidebar (Lebih Lebar, Lega, Rapi, Teks Anti-Ngepas Garis) */
     [data-testid="stSidebar"] [data-testid="stExpander"] {
         background-color: #FFFFFF !important;
-        border: 1px solid #CBD5E1 !important;
-        border-radius: 8px !important;
-        margin-bottom: 0.35rem !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.02) !important;
+        border: 1.5px solid #CBD5E1 !important;
+        border-radius: 10px !important;
+        margin-bottom: 0.55rem !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.03) !important;
+        overflow: hidden !important;
     }
     [data-testid="stSidebar"] [data-testid="stExpander"] summary {
         background-color: #F8FAFC !important;
-        padding: 0.32rem 0.55rem !important;
-        border-radius: 7px !important;
+        padding: 0.48rem 0.85rem !important;
+        border-radius: 9px !important;
         min-height: unset !important;
-        gap: 6px !important;
+        gap: 8px !important;
     }
     [data-testid="stSidebar"] [data-testid="stExpander"] summary * {
         color: #0F172A !important;
         font-weight: 700 !important;
-        font-size: 0.80rem !important;
-        line-height: 1.3 !important;
+        font-size: 0.83rem !important;
+        line-height: 1.35 !important;
     }
     [data-testid="stSidebar"] [data-testid="stExpander"] summary svg {
-        width: 14px !important;
-        height: 14px !important;
+        width: 15px !important;
+        height: 15px !important;
     }
     [data-testid="stSidebar"] [data-testid="stExpanderDetails"] {
         background-color: #FFFFFF !important;
-        padding: 0.45rem 0.6rem !important;
-        font-size: 0.78rem !important;
+        padding: 0.85rem 1.15rem !important;
+        font-size: 0.80rem !important;
+        box-sizing: border-box !important;
     }
     [data-testid="stSidebar"] [data-testid="stExpanderDetails"] * {
         color: #1E293B !important;
-        font-size: 0.78rem !important;
-        line-height: 1.4 !important;
+        font-size: 0.80rem !important;
+        line-height: 1.52 !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] ul {
+        margin: 4px 0 8px 18px !important;
+        padding-left: 2px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] li {
+        margin-bottom: 0.38rem !important;
+        line-height: 1.5 !important;
     }
 
-    /* Sidebar Terang Berbatas Tegas */
+    /* Lebarkan Kolom Sidebar agar Kotak Panduan Memiliki Ruang Nyaman & Leluasa */
+    [data-testid="stSidebar"] {
+        min-width: 360px !important;
+        max-width: 440px !important;
+    }
+    @media (min-width: 1025px) {
+        [data-testid="stSidebar"] {
+            min-width: 385px !important;
+            max-width: 460px !important;
+        }
+    }
+    @media (max-width: 768px) {
+        [data-testid="stSidebar"] {
+            min-width: 88vw !important;
+            max-width: 94vw !important;
+        }
+    }
     [data-testid="stSidebar"], [data-testid="stSidebar"] > div {
         background-color: #E2E8F0 !important;
     }
@@ -2768,31 +2818,31 @@ with st.sidebar:
     # --------------------------------------------------------------------------
     with st.expander("📖 Panduan Penggunaan Web", expanded=False):
         st.markdown("""
-        <div style="font-size: 0.76rem; line-height: 1.38; color: #334155;">
+        <div style="font-size: 0.80rem; line-height: 1.5; color: #334155; padding: 2px 4px;">
         
-        <strong style="color: #166534;">📸 1. Pengambilan Foto:</strong>
-        <ul style="margin: 1px 0 4px 12px; padding: 0;">
+        <strong style="color: #166534; font-size: 0.82rem;">📸 1. Pengambilan Foto:</strong>
+        <ul style="margin: 3px 0 8px 16px; padding: 0;">
             <li><strong>Jarak:</strong> 10–20 cm tegak lurus daun, fokus tajam & tidak blur.</li>
             <li><strong>Cahaya:</strong> Terang alami, hindari bayangan pekat & silau.</li>
             <li><strong>Posisi:</strong> Jangan tutupi bercak lesi dengan jari/tangan.</li>
         </ul>
 
-        <strong style="color: #166534;">🎯 2. Arti Retikel HUD Scanner:</strong>
-        <ul style="margin: 1px 0 4px 12px; padding: 0;">
+        <strong style="color: #166534; font-size: 0.82rem;">🎯 2. Arti Retikel HUD Scanner:</strong>
+        <ul style="margin: 3px 0 8px 16px; padding: 0;">
             <li><span style="color: #dc2626; font-weight: 700;">🔴 [1] Merah:</span> Lesi aktif penyakit utama.</li>
             <li><span style="color: #d97706; font-weight: 700;">🟠 [2] Oranye:</span> Lesi penyakit kedua.</li>
             <li><span style="color: #0284c7; font-weight: 700;">🔵 [3] Biru:</span> Lesi penyakit ketiga.</li>
             <li><span style="color: #16a34a; font-weight: 700;">🟢 [OK] Hijau:</span> Jaringan daun sehat prima.</li>
         </ul>
 
-        <strong style="color: #166534;">💾 3. Riwayat Diagnosa:</strong>
-        <ul style="margin: 1px 0 4px 12px; padding: 0;">
+        <strong style="color: #166534; font-size: 0.82rem;">💾 3. Riwayat Diagnosa:</strong>
+        <ul style="margin: 3px 0 8px 16px; padding: 0;">
             <li>Klik <strong>💾 Simpan Hasil</strong> untuk mencatat riwayat di browser.</li>
             <li>Tombol <strong>🗑️</strong> di riwayat untuk menghapus per entri.</li>
         </ul>
 
-        <strong style="color: #166534;">💊 4. Penanganan Tanaman:</strong>
-        <ul style="margin: 1px 0 1px 12px; padding: 0;">
+        <strong style="color: #166534; font-size: 0.82rem;">💊 4. Penanganan Tanaman:</strong>
+        <ul style="margin: 3px 0 2px 16px; padding: 0;">
             <li><strong>24 Jam:</strong> Pangkas & musnahkan daun sakit ke luar sawah.</li>
             <li><strong>Obat Semprot:</strong> Bahan aktif Balitsa per tangki 16L.</li>
         </ul>
@@ -2805,17 +2855,17 @@ with st.sidebar:
     # --------------------------------------------------------------------------
     with st.expander("🎯 Panduan Validasi Foto", expanded=False):
         st.markdown("""
-        <div style="font-size: 0.76rem; line-height: 1.38; color: #334155;">
+        <div style="font-size: 0.80rem; line-height: 1.5; color: #334155; padding: 2px 4px;">
         
-        <strong style="color: #166534;">📊 1. Batas Keyakinan Model:</strong>
-        <ul style="margin: 1px 0 4px 12px; padding: 0;">
+        <strong style="color: #166534; font-size: 0.82rem;">📊 1. Batas Keyakinan Model:</strong>
+        <ul style="margin: 3px 0 8px 16px; padding: 0;">
             <li><strong style="color: #b45309;">40% – 55% (Redup/Dini):</strong> Foto sore, mendung, atau bercak tipis.</li>
             <li><strong style="color: #15803d;">65% (Standar Balitsa - Rekomendasi):</strong> Pemantauan harian sawah.</li>
             <li><strong style="color: #b91c1c;">75% – 90% (Super Ketat):</strong> Standar sertifikasi benih / makro.</li>
         </ul>
 
-        <strong style="color: #166534;">🍃 2. Sensitivitas Daun Bawang:</strong>
-        <ul style="margin: 1px 0 1px 12px; padding: 0;">
+        <strong style="color: #166534; font-size: 0.82rem;">🍃 2. Sensitivitas Daun Bawang:</strong>
+        <ul style="margin: 3px 0 2px 16px; padding: 0;">
             <li><strong style="color: #b45309;">3% – 6% (Toleran):</strong> Daun tunggal / bibit muda / dipegang tangan.</li>
             <li><strong style="color: #15803d;">8% – 15% (Standar Sawah):</strong> Rumpun bawang normal umur 3–8 minggu.</li>
             <li><strong style="color: #b91c1c;">18% – 35% (Makro Penuh):</strong> Daun harus mendominasi layar foto.</li>
@@ -2833,19 +2883,19 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # Tampilkan 7 Kategori yang Dideteksi di Sidebar (Ukuran Dikecilkan Ramping)
+    # Tampilkan 7 Kategori yang Dideteksi di Sidebar (Lebih Lapang & Rapi)
     with st.expander("📋 7 Kategori Deteksi AI", expanded=False):
         for item in SUPPORTED_DISEASES_7:
             status_color = "#15803d" if item["is_healthy"] else ("#b45309" if item["status"] == "virus" else "#b91c1c")
             tag_text = "SEHAT" if item["is_healthy"] else ("VIRUS" if item["status"] == "virus" else "PENYAKIT")
             st.markdown(
-                f"<div style='margin-bottom: 4px; font-size: 0.76rem; background: #ffffff; padding: 4px 7px; border-radius: 6px; border: 1px solid #e2e8f0;'>"
-                f"<div style='display: flex; justify-content: space-between; align-items: center;'>"
-                f"<strong style='font-size: 0.78rem;'>{item['icon']} {item['nama_id']}</strong>"
-                f"<span style='background: {status_color}; color: #fff; font-size: 0.62rem; font-weight: 700; padding: 1px 5px; border-radius: 4px;'>{tag_text}</span>"
+                f"<div style='margin-bottom: 6px; font-size: 0.78rem; background: #ffffff; padding: 6px 10px; border-radius: 8px; border: 1.2px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.02);'>"
+                f"<div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;'>"
+                f"<strong style='font-size: 0.80rem; color: #0f172a;'>{item['icon']} {item['nama_id']}</strong>"
+                f"<span style='background: {status_color}; color: #fff; font-size: 0.64rem; font-weight: 700; padding: 2px 6px; border-radius: 4px;'>{tag_text}</span>"
                 f"</div>"
-                f"<span style='color: {status_color}; font-size: 0.70rem;'>• <em>{item['latin']}</em></span><br>"
-                f"<span style='color: #475569; font-size: 0.72rem; line-height: 1.3;'>🔍 {item['ciri_lapangan']}</span>"
+                f"<span style='color: {status_color}; font-size: 0.72rem; font-weight: 600;'>• <em>{item['latin']}</em></span><br>"
+                f"<span style='color: #475569; font-size: 0.74rem; line-height: 1.4; display: inline-block; margin-top: 2px;'>🔍 {item['ciri_lapangan']}</span>"
                 f"</div>",
                 unsafe_allow_html=True
             )
