@@ -1,5 +1,5 @@
 # 🧅 AgroScan - Pendeteksi Penyakit Daun Bawang Merah (EfficientNet-B0 TorchScript & AI Agro-Engine)
-![Version](https://img.shields.io/badge/Version-v3.1.0-success?style=flat-square) ![Status](https://img.shields.io/badge/Status-Live%20Production-blue?style=flat-square) ![Model](https://img.shields.io/badge/Model-EfficientNet--B0%20TorchScript%207%20Classes-green?style=flat-square)
+![Version](https://img.shields.io/badge/Version-v3.2.0-success?style=flat-square) ![Status](https://img.shields.io/badge/Status-Live%20Production-blue?style=flat-square) ![Model](https://img.shields.io/badge/Model-EfficientNet--B0%20TorchScript%207%20Classes-green?style=flat-square)
 
 Aplikasi sistem pakar diagnosis dan deteksi dini penyakit utama tanaman bawang merah (*Allium cepa*) berbasis Deep Learning **EfficientNet-B0 (TorchScript)** dengan 7 kategori kelas (6 penyakit utama + 1 sehat). Dilengkapi dengan Peta Deteksi Lesi HUD Scanner dan Rekomendasi Agronomi Resmi Balitsa / BPTP Kementerian Pertanian RI.
 
@@ -7,13 +7,13 @@ Aplikasi sistem pakar diagnosis dan deteksi dini penyakit utama tanaman bawang m
 
 ## 🚀 Fitur Unggulan Sistem
 
-1. **Model Deep Learning EfficientNet-B0 (TorchScript)**:
-   - Dilatih menggunakan transfer learning pada dataset citra daun bawang merah asli di lapangan.
+1. **Model Deep Learning EfficientNet-B0 (TorchScript - Balanced v2)**:
+   - Dilatih menggunakan transfer learning pada dataset citra daun bawang merah asli di lapangan dengan sampling seimbang (balanced class weighting).
    - Model disimpan dalam format TorchScript (`.pt`) — dimuat langsung dengan `torch.jit.load()` tanpa perlu definisi arsitektur.
    - Pipeline prediksi menggunakan **Test-Time Augmentation (TTA)** horizontal flip untuk meningkatkan akurasi.
    - Normalisasi input: ImageNet mean `[0.485, 0.456, 0.406]` dan std `[0.229, 0.224, 0.225]`.
-   - Temperature-scaled softmax (`T=0.05`) untuk kalibrasi probabilitas yang lebih tajam.
-   - Confidence threshold `0.70` — jika keyakinan di bawah ambang batas, sistem menampilkan "Tidak yakin" alih-alih menebak.
+   - Temperature-scaled softmax (`T=0.5`) untuk kalibrasi probabilitas yang proporsional dan tidak bias.
+   - Confidence threshold `0.65` — jika keyakinan di bawah ambang batas, sistem menampilkan "Perlu Verifikasi Lapangan" alih-alih menebak.
 
 2. **Diferensial Diagnosis (Kemungkinan A & Kemungkinan B) & Vonis Tunggal Presisi**:
    - Jika hanya 1 penyakit yang terdeteksi secara dominan, sistem menegakkan vonis tunggal dengan keyakinan tinggi.

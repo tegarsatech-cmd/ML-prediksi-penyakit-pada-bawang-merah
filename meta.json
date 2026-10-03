@@ -29,7 +29,7 @@
     0.224,
     0.225
   ],
-  "temperature": 0.05,
-  "conf_threshold": 0.7,
-  "data_config": "raw"
+  "temperature": 0.5,
+  "conf_threshold": 0.65,
+  "data_config": "balanced_v2"
 }
