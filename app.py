@@ -1515,6 +1515,10 @@ def generate_lesion_hud_map(
         s = np.where(leaf_region, s.astype(np.float32), 0.0)
         return s
 
+    leaf_dist = cv2.distanceTransform(leaf_region.astype(np.uint8), cv2.DIST_L2, 3)
+    max_d = float(leaf_dist.max())
+    leaf_interior = (leaf_dist >= max(1.5, min(3.0, max_d * 0.3))) if max_d >= 2.0 else leaf_region
+
     base_rad_w = max(9, int(min_side * 0.045))
     min_dist_w = max(18, int(min_side * 0.12))
 
@@ -1522,33 +1526,36 @@ def generate_lesion_hud_map(
         sm = score_map.copy()
         if exclude_mask is not None:
             sm = np.where(exclude_mask, 0.0, sm)
+        # Kunci ketat ke dalam area helai daun (bebas latar belakang & jari tangan)
+        sm = np.where(leaf_region, sm, 0.0)
+
         if sm.max() <= 0.05:
             fallback_score = np.where(leaf_region, not_green, 0.0)
             if exclude_mask is not None:
                 fallback_score = np.where(exclude_mask, 0.0, fallback_score)
             sm = fallback_score
 
-        smoothed = cv2.GaussianBlur(sm.astype(np.float32), (11, 11), 0)
+        smoothed = cv2.GaussianBlur(sm.astype(np.float32), (7, 7), 0)
+        # Berikan bobot jarak interior agar retikel tidak melenceng ke tepian helai daun
+        # Nol-kan piksel yang terlalu dekat tepi (leaf_dist < 1.5) agar retikel selalu berakar kuat di daging helai daun
+        smoothed = np.where(leaf_region & (leaf_dist >= 1.5), smoothed * np.clip(leaf_dist / max(2.0, float(base_rad_w * 0.75)), 0.1, 1.0), 0.0)
+
         iy, ix = np.unravel_index(np.argmax(smoothed), smoothed.shape)
         val_peak = float(smoothed[iy, ix])
-        if val_peak <= 0.01:
-            cnts, _ = cv2.findContours(leaf_region.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if cnts:
-                M = cv2.moments(cnts[0])
-                if M["m00"] > 0:
-                    return {"x": int(M["m10"] / M["m00"]), "y": int(M["m01"] / M["m00"]), "r": base_rad_w, "score": 0.0}
-            return {"x": ww // 2, "y": hh // 2, "r": base_rad_w, "score": 0.0}
 
-        local_thr = max(0.12, val_peak * 0.55)
-        local_mask = (smoothed >= local_thr).astype(np.uint8)
-        n_l, lab_l, stats_l, _ = cv2.connectedComponentsWithStats(local_mask, connectivity=8)
-        target_lab = lab_l[iy, ix]
-        if target_lab > 0:
-            area_l = stats_l[target_lab, cv2.CC_STAT_AREA]
-            rad_l = int(np.clip(np.sqrt(area_l / np.pi) * 1.25, base_rad_w, int(min_side * 0.09)))
-        else:
-            rad_l = base_rad_w
+        # Jika nilai terlalu kecil atau bukan pada daun, ambil titik terdalam di interior helai daun
+        if val_peak <= 0.001 or not leaf_region[iy, ix]:
+            target_mask = leaf_interior if (exclude_mask is None) else (leaf_interior & (~exclude_mask))
+            if not target_mask.any():
+                target_mask = leaf_region if (exclude_mask is None) else (leaf_region & (~exclude_mask))
+            if not target_mask.any():
+                target_mask = leaf_region
+            dist_cand = np.where(target_mask, leaf_dist, 0.0)
+            iy, ix = np.unravel_index(np.argmax(dist_cand), dist_cand.shape)
 
+        local_dist = float(leaf_dist[iy, ix])
+        # Batasi radius agar pas di dalam lebar helai daun
+        rad_l = int(np.clip(base_rad_w, 6, max(6, int(local_dist * 0.75))))
         return {"x": int(ix), "y": int(iy), "r": rad_l, "score": val_peak}
 
     def find_healthy_spot(exclude_mask=None):
@@ -1561,7 +1568,11 @@ def generate_lesion_hud_map(
                 hg &= ~exclude_mask
         dist = cv2.distanceTransform(hg.astype(np.uint8), cv2.DIST_L2, 3)
         iy, ix = np.unravel_index(int(np.argmax(dist)), dist.shape)
-        return {"x": int(ix), "y": int(iy), "r": base_rad_w, "score": 1.0}
+        if not leaf_region[iy, ix]:
+            iy, ix = np.unravel_index(int(np.argmax(leaf_dist)), leaf_dist.shape)
+        local_dist = float(leaf_dist[iy, ix])
+        rad_l = int(np.clip(base_rad_w, 6, max(6, int(local_dist * 0.75))))
+        return {"x": int(ix), "y": int(iy), "r": rad_l, "score": 1.0}
 
     spots_w = []
     p1_is_healthy = ("sehat" in (primary_name or "").lower()) or ("healthy" in (primary_name or "").lower())
@@ -1655,10 +1666,35 @@ def generate_lesion_hud_map(
             spots_w.append((spot_2["x"], spot_2["y"], spot_2["r"], f"[1] {title_1} #2", "red"))
 
     inv = 1.0 / scale
-    spots = [
-        (int(round(x * inv)), int(round(y * inv)), max(10, int(round(rad * inv))), label, color)
-        for (x, y, rad, label, color) in spots_w
-    ]
+    leaf_orig = cv2.resize(leaf_region.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST)
+    leaf_dist_orig = cv2.distanceTransform(leaf_orig, cv2.DIST_L2, 3)
+    leaf_orig_mask = (leaf_dist_orig > 0)
+
+    spots = []
+    for (x, y, rad, label, color) in spots_w:
+        ox = int(np.clip(round(x * inv), 0, W - 1))
+        oy = int(np.clip(round(y * inv), 0, H - 1))
+
+        # Pastikan titik berada kokoh di dalam helai daun
+        # Jika berada di luar atau di tepi tipis (leaf_dist < 6), cari titik jaringan terdekat yang lebih tebal di lesi lokal tersebut
+        if (not leaf_orig_mask[oy, ox]) or (leaf_dist_orig[oy, ox] < 6):
+            search_r = max(10, int(min_wh * 0.035))
+            y_min = max(0, oy - search_r)
+            y_max = min(H, oy + search_r + 1)
+            x_min = max(0, ox - search_r)
+            x_max = min(W, ox + search_r + 1)
+            sub_dist = leaf_dist_orig[y_min:y_max, x_min:x_max]
+            if sub_dist.any() and sub_dist.max() > 0:
+                sy, sx = np.unravel_index(np.argmax(sub_dist), sub_dist.shape)
+                ox, oy = x_min + int(sx), y_min + int(sy)
+            else:
+                iy_snap, ix_snap = np.unravel_index(np.argmax(leaf_dist_orig), leaf_dist_orig.shape)
+                ox, oy = int(ix_snap), int(iy_snap)
+
+        local_d = float(leaf_dist_orig[oy, ox])
+        # Batasi radius agar lingkaran retikel TIDAK PERNAH tembus ke luar batas helai daun
+        rad_orig = int(np.clip(round(rad * inv), 4, max(4, int(local_d * 0.68))))
+        spots.append((ox, oy, rad_orig, label, color))
 
     annotated = img_rgb.copy()
     draw = ImageDraw.Draw(annotated)
@@ -1670,7 +1706,6 @@ def generate_lesion_hud_map(
     }
     min_wh = min(W, H)
     line_w = max(2, int(min_wh * 0.005))
-    tick = max(8, int(min_wh * 0.018))
     dot_r = max(3, int(min_wh * 0.007))
     font_px = max(11, int(min_wh * 0.028))
     try:
@@ -1680,25 +1715,28 @@ def generate_lesion_hud_map(
 
     for cx, cy, rad, label, color_type in spots:
         c_hud, c_in, c_bg = palette.get(color_type, palette["red"])
+        local_d = float(leaf_dist_orig[cy, cx]) if (0 <= cy < H and 0 <= cx < W) else float(rad)
+        # Garis bidik (tick) dibatasi maksimal 22% dari jarak ke tepi daun, sehingga total (rad + tick) < 90% dari batas daun
+        local_tick = int(np.clip(max(3, int(min_wh * 0.012)), 2, max(2, int(local_d * 0.22))))
         draw.ellipse([cx - rad, cy - rad, cx + rad, cy + rad], outline=c_hud, width=line_w)
-        inner_r = max(rad - line_w * 2, 6)
+        inner_r = max(rad - line_w * 2, 3)
         draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], outline=c_in, width=max(1, line_w - 1))
         draw.ellipse([cx - dot_r, cy - dot_r, cx + dot_r, cy + dot_r], fill=c_hud)
-        draw.line([cx - rad - tick, cy, cx - rad + 3, cy], fill=c_hud, width=line_w)
-        draw.line([cx + rad - 3, cy, cx + rad + tick, cy], fill=c_hud, width=line_w)
-        draw.line([cx, cy - rad - tick, cx, cy - rad + 3], fill=c_hud, width=line_w)
-        draw.line([cx, cy + rad - 3, cx, cy + rad + tick], fill=c_hud, width=line_w)
+        draw.line([cx - rad - local_tick, cy, cx - rad + 2, cy], fill=c_hud, width=line_w)
+        draw.line([cx + rad - 2, cy, cx + rad + local_tick, cy], fill=c_hud, width=line_w)
+        draw.line([cx, cy - rad - local_tick, cx, cy - rad + 2], fill=c_hud, width=line_w)
+        draw.line([cx, cy + rad - 2, cx, cy + rad + local_tick], fill=c_hud, width=line_w)
 
         tb = draw.textbbox((0, 0), label, font=font)
         tw, th = tb[2] - tb[0], tb[3] - tb[1]
-        pad = max(4, font_px // 3)
+        pad = max(3, font_px // 4)
         bw_, bh_ = tw + pad * 2, th + pad * 2
         bx1 = int(np.clip(cx - bw_ // 2, 2, max(2, W - bw_ - 2)))
-        by1 = cy - rad - tick - bh_ - 2
+        by1 = cy - rad - local_tick - bh_ - 2
         if by1 < 2:
-            by1 = cy + rad + tick + 2
+            by1 = cy + rad + local_tick + 2
         by1 = int(np.clip(by1, 2, max(2, H - bh_ - 2)))
-        draw.rounded_rectangle([bx1, by1, bx1 + bw_, by1 + bh_], radius=max(3, pad), fill=c_bg)
+        draw.rounded_rectangle([bx1, by1, bx1 + bw_, by1 + bh_], radius=max(3, pad), fill=c_bg, outline=(255, 255, 255), width=1)
         draw.text((bx1 + pad - tb[0], by1 + pad - tb[1]), label, fill=(255, 255, 255), font=font)
 
     return annotated, spots
@@ -2031,7 +2069,10 @@ def get_groq_recommendation(
     is_differential=False,
     latin_name=None,
     severity_level=None,
-    evidence_desc=None
+    evidence_desc=None,
+    third_disease_name=None,
+    third_confidence=None,
+    is_three_way=False
 ):
     """
     Memanggil Groq API untuk menyusun petunjuk obat dan perawatan lahan yang panjang, mendalam,
@@ -2041,7 +2082,34 @@ def get_groq_recommendation(
     sev_str = f"Tingkat Keparahan Infeksi: {severity_level}\n" if severity_level else ""
     ev_str = f"Gejala Fisik Lapangan: {evidence_desc}\n" if evidence_desc else ""
 
-    if is_differential and second_disease_name:
+    if is_three_way and second_disease_name and third_disease_name:
+        angle_title = "Rekomendasi Terpadu 3 Spektrum Penyakit Bersaing (Riset Balitsa & BPTP Kementan)"
+        user_prompt = (
+            f"VONIS DIAGNOSIS PENYAKIT (3 KEMUNGKINAN BERSAING): {disease_name}{latin_str} ({confidence:.1f}%), {second_disease_name} ({second_confidence:.1f}%), dan {third_disease_name} ({third_confidence:.1f}%).\n"
+            f"{sev_str}"
+            f"{ev_str}\n"
+            "Anda bertindak sebagai Ahli Agronomi dan Konsultan Proteksi Tanaman Hortikultura Bawang Merah (merujuk pada riset resmi Balitsa Lembang, BPTP Kementan RI, dan Jurnal Fitopatologi Indonesia).\n"
+            "Bantu petani merangkum solusi penanganan terpadu langsung dari sumber-sumber terjamin ketika tanaman menunjukkan potensi 3 penyakit bersaing sekaligus:\n"
+            f"1. Ciri fisik pembeda langsung di bedengan sawah antara {disease_name}, {second_disease_name}, dan {third_disease_name} (tekstur helai daun, pola bercak, bau langu bakteri vs serbuk spora jamur vs klorosis virus/vektor thrips).\n"
+            "2. Rekomendasi obat semprot terpadu spektrum luas yang aman mencakup ketiga patogen secara berimbang tanpa merusak tanaman.\n\n"
+            "WAJIB susun jawaban ke dalam 3 bagian persis dengan judul pemisah berikut:\n\n"
+            "=== TINDAKAN LANGSUNG DI KEBUN ===\n"
+            "- Berikan langkah taktis darurat dalam 24 jam pertama di bedengan sawah.\n"
+            f"- Jelaskan panduan praktis membedakan {disease_name} vs {second_disease_name} vs {third_disease_name} secara visual dengan mata telanjang di sawah.\n"
+            "- Jelaskan teknik pemotongan daun bergejala dan sanitasi alat gunting/pisau agar patogen tidak menyebar ke tanaman sekitar.\n\n"
+            "=== REKOMENDASI OBAT SEMPROT ===\n"
+            "- Berikan kombinasi obat semprot terpadu yang aman mencakup spektrum ketiga masalah (kombinasi bakterisida tembaga seperti Tembaga Hidroksida / Kasugamisin, fungisida sistemik seperti Difenokonazol / Mankozeb / Azoksistrobin, dan perlakuan serangga vektor bila ada suspek virus).\n"
+            "- Sebutkan takaran dosis realistis (misal: 1,5 - 2 sendok makan per tangki semprot 16 Liter air).\n"
+            "- Sebutkan waktu semprot terbaik (pagi hari sebelum jam 09.00 saat embun mengering, atau sore setelah jam 16.00 saat angin tenang).\n"
+            "- Wajib ingatkan penambahan perekat/perata (surfactant) non-ionik agar obat menempel kuat di lapisan lilin daun bawang.\n\n"
+            "=== PERAWATAN LAHAN & PUPUK ===\n"
+            "Jelaskan bagian ini secara terstruktur dalam 4 poin praktis:\n"
+            "1. Pengaturan Parit & Tata Air: Atur muka air parit 20-25 cm di bawah bedengan (sistem macak-macak), buang genangan air hujan segera.\n"
+            "2. Manajemen Pupuk Khusus Masalah: Wajib STOP pupuk Nitrogen tunggal (Urea/ZA berlebih) yang memicu daun lunak, gantikan pupuk Kalium (KNO3 Putih / MKP).\n"
+            "3. Penguat Dinding Sel: Semprot pupuk Kalsium-Boron dan pupuk Silika cair berkala tiap 7-10 hari untuk mempertebal lapisan lilin daun.\n"
+            "4. Perawatan Tanah & Agens Hayati: Tabur kapur dolomit jika tanah masam (pH < 6), dan inokulasi agens hayati Trichoderma harzianum / Bacillus subtilis.\n"
+        )
+    elif is_differential and second_disease_name:
         angle_title = "Diferensial Diagnosis & Perlindungan Spektrum Ganda"
         user_prompt = (
             f"VONIS DIAGNOSIS PENYAKIT (KEMUNGKINAN GANDA): {disease_name}{latin_str} ({confidence:.1f}%) dan {second_disease_name} ({second_confidence:.1f}%).\n"
@@ -2328,11 +2396,19 @@ def get_groq_physical_verification(
             continue
 
     return fallback_content
-def get_system_agronomy_recommendation(info, second_info=None, is_differential=False, angle_title=None):
+def get_system_agronomy_recommendation(
+    info,
+    second_info=None,
+    is_differential=False,
+    third_info=None,
+    is_three_way=False,
+    angle_title=None
+):
     """
     Sistem Database Agronomi Mandiri (Built-in Agro-Engine):
     Menyusun rekomendasi lengkap, terstruktur, dan kaya agronomi resmi Balitsa/BPTP Kementan
     sebagai fallback otomatis jika kuota token Groq AI habis, terkena limit (429), atau offline.
+    Mendukung vonis tunggal, 2 spektrum bersaing, maupun 3 spektrum bersaing terpadu.
     Menghasilkan 3 kartu:
     1. Tindakan Langsung di Kebun (24 Jam Pertama)
     2. Rekomendasi Obat Semprot (Bahan Aktif Resmi Balitsa & Takaran Dosis Tangki)
@@ -2341,7 +2417,7 @@ def get_system_agronomy_recommendation(info, second_info=None, is_differential=F
     nama_1 = info.get("nama_id", "Penyakit Bawang")
     is_healthy = info.get("is_healthy", False) or info.get("status") == "healthy"
 
-    if is_healthy:
+    if is_healthy and not (is_three_way or is_differential):
         c1 = (
             "• Kondisi tanaman bawang merah sangat baik, segar optimal, dan tidak ditemukan lesi penyakit aktif.\n"
             "• Lakukan pemantauan rutin 2–3 hari sekali terutama di waktu pagi saat embun menempel di helai daun.\n"
@@ -2360,10 +2436,28 @@ def get_system_agronomy_recommendation(info, second_info=None, is_differential=F
         )
         return c1, c2, c3
 
-    if is_differential and second_info:
+    if is_three_way and second_info and third_info:
+        nama_2 = second_info.get("nama_id", "Penyakit Kedua")
+        nama_3 = third_info.get("nama_id", "Penyakit Ketiga")
+        c1 = (
+            f"• Waspada 3 Spektrum Gejala Bersaing di Lapangan: Periksa helai daun dengan cermat antara {nama_1}, {nama_2}, dan {nama_3} (Riset Balitsa Lembang & BPTP Kementan).\n"
+            f"• Karakteristik 1 ({nama_1}): {info.get('ciri_lapangan', '-')}\n"
+            f"• Karakteristik 2 ({nama_2}): {second_info.get('ciri_lapangan', '-')}\n"
+            f"• Karakteristik 3 ({nama_3}): {third_info.get('ciri_lapangan', '-')}\n"
+            "• Tindakan Taktis 24 Jam Pertama: Segera pangkas seluruh helai daun yang bergejala parah menggunakan gunting/pisau steril (usap alkohol 70% atau air sabun). Masukkan sisa potongan ke kantong tertutup dan bakar/kubur jauh dari saluran air irigasi."
+        )
+        c2 = (
+            f"• Solusi Penanganan Spektrum 1 ({nama_1}): {info.get('solusi', '-')}\n"
+            f"• Solusi Penanganan Spektrum 2 ({nama_2}): {second_info.get('solusi', '-')}\n"
+            f"• Solusi Penanganan Spektrum 3 ({nama_3}): {third_info.get('solusi', '-')}\n"
+            "• Takaran Dosis Tangki: Campurkan 1,5 hingga 2 sendok makan (20–25 gram/ml) per tangki semprot standar 16 Liter air.\n"
+            "• Waktu Semprot Terbaik: Pagi hari (pukul 06.00 – 08.30 WIB) saat embun mulai mengering, atau sore hari (pukul 16.00 WIB) saat cuaca teduh dan angin tenang.\n"
+            "• Wajib Tambahkan Perekat & Perata (Surfactant non-ionik) 1 tutup per tangki semprot agar lapisan lilin daun bawang terlapisi obat secara merata dan tidak mudah tercuci air hujan."
+        )
+    elif is_differential and second_info:
         nama_2 = second_info.get("nama_id", "Penyakit Serupa")
         c1 = (
-            f"• Waspada Gejala Serupa di Kebun: Bedakan segera antara {nama_1} vs {nama_2} langsung di bedengan.\n"
+            f"• Waspada Gejala Serupa di Kebun: Bedakan segera antara {nama_1} vs {nama_2} langsung di bedengan (Riset Balitsa & BPTP Kementan).\n"
             f"• Ciri Lapangan {nama_1}: {info.get('ciri_lapangan', '-')}\n"
             f"• Ciri Lapangan {nama_2}: {second_info.get('ciri_lapangan', '-')}\n"
             "• Tindakan Darurat 24 Jam: Pangkas seluruh helai daun yang bergejala menggunakan gunting bersih. Masukkan sisa pangkasan ke wadah tertutup dan musnahkan di luar areal sawah agar patogen tidak menyebar."
@@ -2397,7 +2491,15 @@ def get_system_agronomy_recommendation(info, second_info=None, is_differential=F
     )
     return c1, c2, c3
 
-def parse_groq_to_cards(ai_text, info, second_info=None, is_differential=False, angle_title=None):
+def parse_groq_to_cards(
+    ai_text,
+    info,
+    second_info=None,
+    is_differential=False,
+    third_info=None,
+    is_three_way=False,
+    angle_title=None
+):
     """
     Memecah teks balasan Groq menjadi 3 kartu panduan terstruktur.
     Jika ai_text kosong (kuota Groq habis / error / offline),
@@ -2407,6 +2509,8 @@ def parse_groq_to_cards(ai_text, info, second_info=None, is_differential=False, 
         info=info,
         second_info=second_info,
         is_differential=is_differential,
+        third_info=third_info,
+        is_three_way=is_three_way,
         angle_title=angle_title
     )
 
@@ -3561,12 +3665,15 @@ if selected_image is not None and not file_error:
                         disease_name=info["nama_id"],
                         confidence=top_confidence,
                         is_healthy=is_healthy,
-                        second_disease_name=second_info["nama_id"] if is_differential else None,
-                        second_confidence=second_confidence if is_differential else None,
-                        is_differential=is_differential,
+                        second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                        second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                        is_differential=(diag_mode == "two_way"),
                         latin_name=info.get("latin"),
                         severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
-                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None
+                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
+                        third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
+                        third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
+                        is_three_way=(diag_mode == "three_way")
                     )
                     st.session_state["ai_text_saved"] = ai_text
                     st.session_state["ai_angle_saved"] = ai_angle or "Pendekatan Terpadu Lapangan (Database Mandiri Sistem)"
@@ -3576,8 +3683,10 @@ if selected_image is not None and not file_error:
             kartu_tindakan, kartu_obat, kartu_lahan = parse_groq_to_cards(
                 st.session_state.get("ai_text_saved"),
                 info,
-                second_info=second_info if is_differential else None,
-                is_differential=is_differential,
+                second_info=second_info if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                is_differential=(diag_mode == "two_way"),
+                third_info=third_info if (diag_mode == "three_way" and third_info) else None,
+                is_three_way=(diag_mode == "three_way"),
                 angle_title=st.session_state.get("ai_angle_saved")
             )
             html_tindakan = format_card_text_to_html(kartu_tindakan)
@@ -3639,7 +3748,13 @@ if selected_image is not None and not file_error:
                         angle_idx=chosen_idx,
                         latin_name=info.get("latin"),
                         severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
-                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None
+                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
+                        second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                        second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                        is_differential=(diag_mode == "two_way"),
+                        third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
+                        third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
+                        is_three_way=(diag_mode == "three_way")
                     )
                     if new_text:
                         st.session_state["ai_text_saved"] = new_text
