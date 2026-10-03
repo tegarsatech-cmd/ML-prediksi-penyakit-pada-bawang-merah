@@ -626,6 +626,37 @@ st.markdown("""
         box-shadow: 0 2px 6px rgba(0,0,0,0.25) !important;
     }
 
+    /* 7b. Penggantian Pesan Izin Kamera Bawaan Streamlit (Anti-Bahasa Inggris & Ramah Petani) */
+    [data-testid="stCameraInput"] a[href*="streamlit.io"],
+    [data-testid="stCameraInput"] a[href*="camera"],
+    [data-testid="stCameraInput"] a[href*="knowledge-base"] {
+        font-size: 0 !important;
+        display: inline-block !important;
+        margin-top: 4px !important;
+    }
+    [data-testid="stCameraInput"] a[href*="streamlit.io"]::before,
+    [data-testid="stCameraInput"] a[href*="camera"]::before,
+    [data-testid="stCameraInput"] a[href*="knowledge-base"]::before {
+        content: "👉 Panduan cara mengizinkan kamera di browser Anda";
+        font-size: 0.85rem !important;
+        font-weight: 700 !important;
+        color: #1B5E20 !important;
+        text-decoration: underline !important;
+    }
+    [data-testid="stCameraInput"] [data-testid="stCameraInputWebcamComponent"] > div:not([data-testid="stCameraInputWebcamStyledBox"]) p {
+        font-size: 0 !important;
+        line-height: 1.5 !important;
+        margin-top: 8px !important;
+    }
+    [data-testid="stCameraInput"] [data-testid="stCameraInputWebcamComponent"] > div:not([data-testid="stCameraInputWebcamStyledBox"]) p::before {
+        content: "📷 Aplikasi memerlukan izin akses kamera Anda untuk memindai daun:";
+        display: block !important;
+        font-size: 0.95rem !important;
+        font-weight: 800 !important;
+        color: #0F172A !important;
+        margin-bottom: 4px !important;
+    }
+
     /* 8. Expander & Alert Umum */
     [data-testid="stExpander"] {
         background-color: #FFFFFF !important;
@@ -804,6 +835,77 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# Permintaan Izin Kamera Otomatis Saat Web Baru Diakses (Mencegah Munculnya Dialog Error Bahasa Inggris)
+st.html("""
+<script>
+(function() {
+    async function autoRequestAgroCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            return;
+        }
+        try {
+            if (navigator.permissions && navigator.permissions.query) {
+                try {
+                    const status = await navigator.permissions.query({ name: 'camera' });
+                    if (status.state === 'granted') {
+                        const box = document.getElementById('agro-cam-perm-box');
+                        if (box) box.style.display = 'none';
+                        return;
+                    }
+                } catch(e) {}
+            }
+            
+            // Panggil getUserMedia saat baru akses web untuk memicu dialog izin asli browser
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' }
+            });
+            // Segera hentikan track agar kamera hardware siap digunakan Streamlit
+            stream.getTracks().forEach(function(t) { t.stop(); });
+            const box = document.getElementById('agro-cam-perm-box');
+            if (box) box.style.display = 'none';
+            console.log("Izin akses kamera berhasil diperoleh pada pembukaan web.");
+        } catch(err) {
+            console.warn("Status izin kamera awal:", err.name, err.message);
+        }
+    }
+
+    // Fungsi pemicu manual gesture pengguna (selalu diizinkan oleh kebijakan browser)
+    window.triggerAgroScanCameraPermission = async function() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Perhatian: Browser ponsel memerlukan koneksi aman (HTTPS atau localhost) untuk membuka kamera. Jika membuka lewat IP Wi-Fi lokal, gunakan Chrome Flags atau buka lewat HTTPS.");
+            return;
+        }
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            stream.getTracks().forEach(function(t) { t.stop(); });
+            const btn = document.getElementById('btn-agro-cam-perm');
+            if (btn) {
+                btn.innerText = "✅ Kamera Diizinkan! Memuat...";
+                btn.style.backgroundColor = "#15803D";
+            }
+            const box = document.getElementById('agro-cam-perm-box');
+            if (box) {
+                box.style.display = 'none';
+            }
+            setTimeout(function() {
+                window.location.reload();
+            }, 500);
+        } catch(err) {
+            alert("⚠️ Izin kamera belum diizinkan oleh browser.\\n\\nPetunjuk:\\n1. Klik ikon Gembok 🔒 atau Kamera di bilah alamat URL atas.\\n2. Ubah izin Kamera menjadi 'Izinkan' (Allow).\\n3. Muat ulang halaman.");
+        }
+    };
+
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setTimeout(autoRequestAgroCamera, 200);
+    } else {
+        window.addEventListener('DOMContentLoaded', function() {
+            setTimeout(autoRequestAgroCamera, 200);
+        });
+    }
+})();
+</script>
+""", unsafe_allow_javascript=True)
 
 # ==============================================================================
 # 2. ENSIKLOPEDIA & METADATA PENYAKIT DAUN BAWANG MERAH
@@ -3171,7 +3273,42 @@ file_error = False
 
 if is_cam_mode:
     cam_key = f"cam_field_v{st.session_state.get('cam_key_ver', 0)}"
+    
+    # Kotak Bantuan Cepat Izin Kamera (Mencegah pesan blokir & memandu perizinan di browser)
+    st.html("""
+    <div id="agro-cam-perm-box" style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 12px; padding: 10px 14px; margin: 6px 0 10px 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+        <div style="font-size: 0.86rem; color: #1E293B; line-height: 1.35;">
+            📷 <strong>Perizinan Kamera:</strong> Jika kamera belum aktif atau browser meminta izin:
+        </div>
+        <button id="btn-agro-cam-perm" onclick="if(window.triggerAgroScanCameraPermission){window.triggerAgroScanCameraPermission();}" style="background-color: #1B5E20; color: #FFFFFF; border: 1.5px solid #14532D; border-radius: 8px; padding: 7px 14px; font-weight: 800; font-size: 0.84rem; cursor: pointer;">
+            🔓 Izinkan Kamera Sekarang
+        </button>
+    </div>
+    """, unsafe_allow_javascript=True)
+
     cam_file = st.camera_input("Arahkan kamera dekat ke bagian daun yang sakit:", key=cam_key)
+    
+    with st.expander("ℹ️ Panduan Singkat Cara Mengizinkan Akses Kamera di Browser", expanded=False):
+        st.markdown("""
+        <div style="font-size: 0.80rem; line-height: 1.5; color: #334155; padding: 2px 4px;">
+            <strong style="color: #166534;">📱 Google Chrome di HP Android:</strong>
+            <ul style="margin: 2px 0 6px 16px; padding: 0;">
+                <li>Ketuk ikon <strong>Gembok 🔒 / Setelan</strong> di sebelah kiri bilah alamat URL atas.</li>
+                <li>Pilih <strong>Izin (Permissions)</strong> ➔ <strong>Kamera</strong> ➔ Pilih <strong>Izinkan (Allow)</strong>.</li>
+                <li>Muat ulang (refresh) halaman.</li>
+            </ul>
+            <strong style="color: #166534;">🍎 Safari di iPhone / iPad:</strong>
+            <ul style="margin: 2px 0 6px 16px; padding: 0;">
+                <li>Ketuk tombol <strong>aA</strong> di bilah alamat URL.</li>
+                <li>Pilih <strong>Pengaturan Situs Web (Website Settings)</strong> ➔ <strong>Kamera</strong> ➔ <strong>Izinkan (Allow)</strong>.</li>
+            </ul>
+            <strong style="color: #166534;">💻 Komputer / Laptop (Chrome / Edge):</strong>
+            <ul style="margin: 2px 0 2px 16px; padding: 0;">
+                <li>Klik ikon <strong>Kamera bertanda silang</strong> atau <strong>Gembok 🔒</strong> di bilah alamat atas.</li>
+                <li>Pilih <em>"Selalu izinkan situs ini mengakses kamera Anda"</em>, lalu tekan <strong>Selesai</strong>.</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
     if cam_file is not None:
         if cam_file.size > MAX_FILE_SIZE_BYTES:
             st.error(f"❌ Ukuran foto ({cam_file.size / (1024*1024):.1f} MB) melebihi batas maksimal {MAX_FILE_SIZE_MB} MB. Silakan ambil ulang dengan resolusi wajar.")
