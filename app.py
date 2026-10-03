@@ -1272,6 +1272,9 @@ def _hud_odd(n: int) -> int:
     n = max(3, int(n))
     return n if n % 2 == 1 else n + 1
 
+def clip01(x):
+    return np.clip(x, 0.0, 1.0)
+
 
 def generate_lesion_hud_map(
     image: Image.Image,
@@ -1286,18 +1289,9 @@ def generate_lesion_hud_map(
     **kwargs
 ):
     """
-    Peta HUD Scanner Titik Kerusakan Daun Bawang Merah (v4 - Leaf-Locked Lesion Blob Detection).
-
-    Alur algoritma:
-    1. Analisis di kanvas kerja (maks 512 px) agar ukuran kernel konsisten untuk foto HP beresolusi apa pun.
-    2. Masker DAUN KETAT: hijau klorofil (kromatisitas g/(r+g+b) + hue) dan jaringan kuning/jerami yang
-       TERHUBUNG dengan daun hijau. Tanah cokelat, kulit tangan, latar putih/gelap, dan silau DIBUANG.
-    3. Area daun diisi (fill holes) sehingga bercak di dalam helai daun ikut masuk, tetapi tanah di luar daun tidak.
-    4. Kandidat lesi = piksel di dalam daun yang BUKAN hijau sehat, dinilai dengan skor warna khas tiap penyakit
-       secara RELATIF terhadap kecerahan/saturasi median daun (adaptif terang, redup, bayangan).
-    5. Lesi dikelompokkan menjadi blob (connected components); retikel ditempatkan di titik terdalam blob
-       (distance transform) sehingga selalu tepat di atas bercak, tidak melengser ke objek lain.
-    6. Multi-penyakit: [1] penyakit utama (merah) & [2] penyakit kedua (oranye) pada blob berbeda.
+    Peta HUD Scanner Titik Kerusakan Daun Bawang Merah (v5 - True Leaf-Locked Lesion Detection).
+    Mendeteksi posisi bercak / pustule / nekrosis spesifik penyakit langsung pada helai daun,
+    mengabaikan latar belakang, tanah sawah, pantulan cahaya, dan tangan petani.
     """
     img_rgb = image.convert("RGB")
     W, H = img_rgb.size
@@ -1306,9 +1300,6 @@ def generate_lesion_hud_map(
         if cv2 is None:
             raise RuntimeError("OpenCV tidak tersedia")
 
-        # ---------------------------------------------------------------
-        # 0. Kanvas kerja
-        # ---------------------------------------------------------------
         scale = min(1.0, 512.0 / float(max(W, H)))
         ww, hh = max(8, int(round(W * scale))), max(8, int(round(H * scale)))
         work = img_rgb.resize((ww, hh), Image.Resampling.BILINEAR) if scale < 1.0 else img_rgb
@@ -1317,288 +1308,203 @@ def generate_lesion_hud_map(
         r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
 
         hsv = cv2.cvtColor(arr_u8, cv2.COLOR_RGB2HSV).astype(np.float32)
-        hue = hsv[:, :, 0] * 2.0          # 0..360
-        sat = hsv[:, :, 1] / 255.0        # 0..1
-        val = hsv[:, :, 2] / 255.0        # 0..1
+        hue = hsv[:, :, 0] * 2.0
+        sat = hsv[:, :, 1] / 255.0
+        val = hsv[:, :, 2] / 255.0
         total = r + g + b + 1.0
-        gn = g / total                    # kromatisitas hijau (tahan perubahan intensitas cahaya)
+        gn = g / total
         rn = r / total
         exg = 2.0 * g - r - b
         g_over_r = g / (r + 1.0)
-
         min_side = min(ww, hh)
         img_area = float(ww * hh)
 
-        # ---------------------------------------------------------------
-        # 1. Objek non-daun yang wajib dibuang
-        # ---------------------------------------------------------------
+        # 1. Deteksi objek non-daun yang wajib dibuang
         is_skin = (
             (hue >= 4.0) & (hue <= 30.0) & (sat >= 0.15) & (sat <= 0.62) &
             (val >= 0.30) & (r > g * 1.10) & (g > b * 1.02) & (rn >= 0.38)
         )
+        # Tanah sawah: kusam, tidak jenuh tinggi (sat < 0.50), bukan oranye karat cerah
         is_soil = (
-            (hue >= 8.0) & (hue <= 42.0) & (sat >= 0.15) & (g_over_r < 0.86) & (exg < 12.0)
+            (hue >= 8.0) & (hue <= 42.0) & (sat >= 0.15) & (sat <= 0.50) &
+            (g_over_r < 0.86) & (exg < 12.0) & (r - b < 70.0)
         )
         is_neutral = (sat < 0.10) & ((val > 0.85) | (val < 0.10))
         is_specular = (sat < 0.12) & (val > 0.90)
         is_too_dark = val < 0.07
 
-        # ---------------------------------------------------------------
-        # 2. Masker daun ketat
-        # ---------------------------------------------------------------
+        # 2. Daun hijau inti (green core) & jaringan kuning terhubung
         green_core = (
             (hue >= 42.0) & (hue <= 170.0) & (sat >= 0.12) & (val >= 0.08) &
-            (gn >= 0.355) & (exg > 6.0) & (~is_skin)
+            (gn >= 0.355) & (exg > 6.0) & (~is_skin) & (~is_soil)
         )
         yellow_tissue = (
             (hue >= 36.0) & (hue <= 72.0) & (sat >= 0.16) & (val >= 0.28) &
-            (g_over_r >= 0.84) & (~is_skin)
+            (g_over_r >= 0.84) & (~is_skin) & (~is_soil)
         )
 
         k3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         green_u8 = cv2.morphologyEx(green_core.astype(np.uint8), cv2.MORPH_OPEN, k3)
-
-        # Jaringan kuning/jerami hanya diterima jika satu komponen dengan daun hijau
         tissue = ((green_u8 > 0) | yellow_tissue).astype(np.uint8)
+
         n_t, lab_t, stats_t, _ = cv2.connectedComponentsWithStats(tissue, connectivity=8)
         keep = np.zeros(n_t, dtype=bool)
         if n_t > 1:
             green_count = np.bincount(lab_t.ravel(), weights=(green_u8.ravel() > 0), minlength=n_t)
             for i in range(1, n_t):
-                if green_count[i] >= max(12.0, 0.10 * stats_t[i, cv2.CC_STAT_AREA]):
+                if green_count[i] >= max(12.0, 0.08 * stats_t[i, cv2.CC_STAT_AREA]):
                     keep[i] = True
             if not keep[1:].any():
-                # Daun seluruhnya menguning (mis. Moler berat): pakai jaringan kuning terbesar
                 keep[1 + int(np.argmax(stats_t[1:, cv2.CC_STAT_AREA]))] = True
         leaf_core = keep[lab_t] if n_t > 1 else np.zeros((hh, ww), dtype=bool)
 
-        # Buang komponen kecil (gulma/noise latar) relatif terhadap helai daun terbesar
         core_u8 = cv2.morphologyEx(leaf_core.astype(np.uint8), cv2.MORPH_CLOSE, k3)
         n_c, lab_c, stats_c, _ = cv2.connectedComponentsWithStats(core_u8, connectivity=8)
         if n_c > 1:
             areas = stats_c[1:, cv2.CC_STAT_AREA]
-            min_keep = max(0.12 * float(areas.max()), 0.002 * img_area)
+            min_keep = max(0.08 * float(areas.max()), 0.002 * img_area)
             valid = np.zeros(n_c, dtype=bool)
             valid[1:] = areas >= min_keep
             core_u8 = valid[lab_c].astype(np.uint8)
 
-        # Tutup celah sempit + isi lubang: bercak di DALAM helai daun ikut masuk, tanah di luar tidak
-        k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (_hud_odd(min_side * 0.02), _hud_odd(min_side * 0.02)))
+        # Tutup celah lesi di DALAM helai daun menggunakan closing morfologi
+        k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (_hud_odd(min_side * 0.03), _hud_odd(min_side * 0.03)))
         closed = cv2.morphologyEx(core_u8, cv2.MORPH_CLOSE, k_close)
-        leaf_region = np.zeros_like(closed)
-        cnts, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if cnts:
-            cv2.drawContours(leaf_region, cnts, -1, 1, thickness=-1)
-        leaf_region = leaf_region.astype(bool)
 
-        # Hanya area hasil closing (bukan lubang yang dikelilingi daun) yang mirip tanah dibuang
-        hole_fill = leaf_region & (core_u8 == 0)
-        enclosed_hole = np.zeros((hh, ww), dtype=bool)
-        cnts_core, _ = cv2.findContours(core_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if cnts_core:
-            filled_core = np.zeros((hh, ww), dtype=np.uint8)
-            cv2.drawContours(filled_core, cnts_core, -1, 1, thickness=-1)
-            enclosed_hole = (filled_core > 0) & (core_u8 == 0)
-        bridged_gap = hole_fill & (~enclosed_hole)
-        leaf_region &= ~(bridged_gap & (is_soil | is_neutral | is_too_dark))
-        leaf_region &= ~(is_skin | is_specular)
+        # Isi HANYA lubang internal kecil (area < 3.5% img_area) di dalam masing-masing daun
+        leaf_region = closed.astype(bool)
+        inv_closed = (closed == 0).astype(np.uint8)
+        n_h, lab_h, stats_h, _ = cv2.connectedComponentsWithStats(inv_closed, connectivity=8)
+        for i in range(1, n_h):
+            area_h = stats_h[i, cv2.CC_STAT_AREA]
+            x0, y0 = stats_h[i, cv2.CC_STAT_LEFT], stats_h[i, cv2.CC_STAT_TOP]
+            w0, h0 = stats_h[i, cv2.CC_STAT_WIDTH], stats_h[i, cv2.CC_STAT_HEIGHT]
+            is_border = (x0 == 0) or (y0 == 0) or (x0 + w0 >= ww) or (y0 + h0 >= hh)
+            if (not is_border) and (area_h < 0.035 * img_area):
+                leaf_region |= (lab_h == i)
 
-        # Abaikan tepi bingkai 1.5%
+        leaf_region &= ~(is_soil | is_skin | is_neutral | is_specular | is_too_dark)
+
         mx, my = max(2, int(ww * 0.015)), max(2, int(hh * 0.015))
         leaf_region[:my, :] = False
         leaf_region[-my:, :] = False
         leaf_region[:, :mx] = False
         leaf_region[:, -mx:] = False
 
-        leaf_ok = int(leaf_region.sum()) >= max(60, int(0.004 * img_area))
-        if not leaf_ok:
-            # Fallback: area non-latar terbesar (bukan tanah/kulit/netral)
-            fallback = (~is_skin) & (~is_neutral) & (~is_soil) & (~is_too_dark)
-            fallback[:my, :] = False
-            fallback[-my:, :] = False
-            fallback[:, :mx] = False
-            fallback[:, -mx:] = False
-            leaf_region = fallback if fallback.sum() >= 60 else np.ones((hh, ww), dtype=bool)
+        if leaf_region.sum() < max(60, int(0.004 * img_area)):
+            leaf_region = (~is_skin) & (~is_soil) & (~is_too_dark)
 
-        # ---------------------------------------------------------------
-        # 3. Statistik daun sehat (normalisasi adaptif terhadap pencahayaan)
-        # ---------------------------------------------------------------
         healthy_green = green_core & leaf_region & (sat >= 0.18)
         ref_px = healthy_green if healthy_green.sum() >= 40 else leaf_region
         med_v = float(np.median(val[ref_px])) if ref_px.any() else 0.5
         med_s = float(np.median(sat[ref_px])) if ref_px.any() else 0.4
         med_v = max(med_v, 0.12)
         med_s = max(med_s, 0.10)
-        rel_v = val / med_v               # <1 lebih gelap dari daun normal, >1 lebih terang
+        rel_v = val / med_v
         rel_s = sat / med_s
 
         greenness = np.clip((gn - 0.33) / 0.10, 0.0, 1.0) * np.clip(exg / 40.0, 0.0, 1.0)
         not_green = 1.0 - greenness
 
-        def clip01(x):
-            return np.clip(x, 0.0, 1.0)
-
-        # ---------------------------------------------------------------
-        # 4. Skor warna khas tiap penyakit (0..1), hanya di dalam daun
-        # ---------------------------------------------------------------
-        def disease_score(name: str) -> np.ndarray:
+        # 3. Model Penilaian Warna dan Pola Lesi Spesifik Setiap Penyakit
+        def disease_score_map(name: str) -> np.ndarray:
             n = (name or "").lower()
-            if "trotol" in n or "bercak" in n or "alternaria" in n or "purple" in n:
-                purple = ((hue >= 250.0) | (hue <= 18.0)) & (sat >= 0.12)
-                s = (
-                    0.45 * clip01((1.0 - rel_v) / 0.45) +
-                    0.35 * purple.astype(np.float32) +
-                    0.20 * not_green
-                )
-                s = np.where(purple | (rel_v < 0.72), s, s * 0.35)
+            if "karat" in n or "rust" in n or "puccinia" in n:
+                rust_col = (hue >= 12.0) & (hue <= 48.0) & (r > g * 1.04) & (r > b * 1.20) & (sat >= 0.26)
+                s = np.where(rust_col, clip01((r - g) / 35.0) * clip01((sat - 0.25) / 0.35), 0.0)
+            elif "trotol" in n or "bercak" in n or "alternaria" in n or "purple" in n:
+                purple = ((hue >= 240.0) | (hue <= 24.0)) & (sat >= 0.10)
+                dark_sunken = (rel_v < 0.72) & (not_green > 0.25)
+                match = purple | dark_sunken
+                s = np.where(match, 0.50 * clip01((0.75 - rel_v) / 0.40) + 0.35 * purple.astype(np.float32) + 0.15 * not_green, 0.0)
             elif "embun" in n or "mildew" in n or "peronospora" in n:
-                pale = (hue >= 30.0) & (hue <= 100.0)
-                s = (
-                    0.40 * clip01((1.0 - rel_s) / 0.55) +
-                    0.30 * clip01(1.0 - np.abs(rel_v - 1.05) / 0.45) +
-                    0.30 * not_green
-                )
-                s = np.where(pale & (rel_s < 0.80), s, s * 0.30)
-            elif "karat" in n or "rust" in n or "puccinia" in n:
-                orange = (hue >= 8.0) & (hue <= 42.0) & (sat >= 0.30) & (r > g * 1.12)
-                s = (
-                    0.45 * orange.astype(np.float32) +
-                    0.35 * clip01((r - g) / 60.0) +
-                    0.20 * clip01((sat - 0.30) / 0.40)
-                )
-                s = np.where(orange, s, s * 0.25)
+                pale = (hue >= 30.0) & (hue <= 110.0) & (sat <= 0.35) & (val >= 0.25) & (val <= 0.90)
+                s = np.where(pale, 0.50 * clip01((0.36 - sat) / 0.25) + 0.30 * clip01(1.0 - np.abs(rel_v - 1.0) / 0.5) + 0.20 * not_green, 0.0)
             elif "hawar" in n or "blight" in n or "stemphylium" in n or "colletotrichum" in n:
-                tan = (hue >= 15.0) & (hue <= 58.0) & (sat >= 0.10) & (sat <= 0.70)
-                s = (
-                    0.40 * not_green +
-                    0.30 * clip01((1.0 - rel_s) / 0.6 + 0.3) +
-                    0.30 * clip01(1.0 - np.abs(rel_v - 1.0) / 0.6)
-                )
-                s = np.where(tan, s, s * 0.30)
+                tan = (hue >= 16.0) & (hue <= 62.0) & (sat >= 0.10) & (sat <= 0.65) & (val >= 0.30) & (not_green > 0.35)
+                s = np.where(tan, 0.45 * not_green + 0.35 * clip01((val - 0.30) / 0.40) + 0.20 * clip01((r - b) / 40.0), 0.0)
             elif "moler" in n or "fusarium" in n or "inul" in n:
-                yellow = (hue >= 38.0) & (hue <= 68.0) & (sat >= 0.25)
-                s = (
-                    0.45 * yellow.astype(np.float32) +
-                    0.30 * clip01(rel_v - 0.8) +
-                    0.25 * not_green
-                )
-                s = np.where(yellow, s, s * 0.25)
+                yellow = (hue >= 38.0) & (hue <= 68.0) & (sat >= 0.26) & (val >= 0.35) & (g > b * 1.15)
+                s = np.where(yellow, 0.50 * clip01((sat - 0.24) / 0.35) + 0.30 * clip01((val - 0.35) / 0.45) + 0.20 * not_green, 0.0)
             elif "virus" in n or "iysv" in n:
-                straw = (hue >= 28.0) & (hue <= 62.0) & (sat >= 0.10) & (sat <= 0.55)
-                s = (
-                    0.40 * not_green +
-                    0.30 * clip01(rel_v - 0.85) +
-                    0.30 * clip01((1.0 - rel_s) / 0.6)
-                )
-                s = np.where(straw, s, s * 0.30)
+                straw = (hue >= 26.0) & (hue <= 64.0) & (sat >= 0.10) & (sat <= 0.55) & (val >= 0.35) & (not_green > 0.35)
+                s = np.where(straw, 0.45 * not_green + 0.35 * clip01((val - 0.32) / 0.40) + 0.20 * clip01((0.55 - sat) / 0.35), 0.0)
             else:
-                s = 0.7 * not_green + 0.3 * clip01(np.abs(1.0 - rel_v) / 0.5)
-            return np.where(leaf_region, s.astype(np.float32), 0.0)
+                s = np.where(not_green > 0.30, 0.7 * not_green + 0.3 * clip01(np.abs(1.0 - rel_v) / 0.5), 0.0)
 
-        # Kandidat lesi: di dalam daun & tidak hijau sehat
-        lesion_candidate = leaf_region & (~(green_core & (sat >= 0.16) & (greenness >= 0.55)))
-        lesion_candidate &= ~(is_specular | is_too_dark | is_skin)
+            # Lesi wajib berada di dalam area daun yang terisolasi dari tanah/kulit
+            s = np.where(leaf_region, s.astype(np.float32), 0.0)
+            return s
 
-        min_blob = max(6, int(0.00025 * img_area))
         base_rad_w = max(9, int(min_side * 0.045))
-        max_rad_w = max(14, int(min_side * 0.10))
         min_dist_w = max(18, int(min_side * 0.12))
 
-        def interior_point(mask_u8):
-            dist = cv2.distanceTransform(mask_u8, cv2.DIST_L2, 3)
-            iy, ix = np.unravel_index(int(np.argmax(dist)), dist.shape)
-            return int(ix), int(iy)
+        def find_peak_spot(score_map, exclude_mask=None):
+            sm = score_map.copy()
+            if exclude_mask is not None:
+                sm = np.where(exclude_mask, 0.0, sm)
+            if sm.max() <= 0.05:
+                # Fallback jika warna spesifik sangat tipis: cari area paling terdegradasi di helai daun
+                fallback_score = np.where(leaf_region, not_green, 0.0)
+                if exclude_mask is not None:
+                    fallback_score = np.where(exclude_mask, 0.0, fallback_score)
+                sm = fallback_score
 
-        def lesion_blobs(score_map, exclude=None, thr=0.42):
-            mask = lesion_candidate & (score_map >= thr)
-            if exclude is not None:
-                mask &= ~exclude
-            mask_u8 = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, k3)
-            n, lab, stats, _ = cv2.connectedComponentsWithStats(mask_u8, connectivity=8)
-            blobs = []
-            for i in range(1, n):
-                area = int(stats[i, cv2.CC_STAT_AREA])
-                if area < min_blob:
-                    continue
-                comp = (lab == i)
-                mean_s = float(score_map[comp].mean())
-                rating = mean_s * np.sqrt(area)
-                x0, y0 = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
-                bw, bh = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
-                sub = comp[y0:y0 + bh, x0:x0 + bw].astype(np.uint8)
-                px, py = interior_point(np.pad(sub, 1))
-                cx, cy = x0 + px - 1, y0 + py - 1
-                rad = int(np.clip(np.sqrt(area / np.pi) * 1.35, base_rad_w, max_rad_w))
-                blobs.append({"x": cx, "y": cy, "r": rad, "rating": rating, "score": mean_s})
-            blobs.sort(key=lambda d: d["rating"], reverse=True)
-            return blobs
+            smoothed = cv2.GaussianBlur(sm.astype(np.float32), (11, 11), 0)
+            iy, ix = np.unravel_index(np.argmax(smoothed), smoothed.shape)
+            val_peak = float(smoothed[iy, ix])
+            if val_peak <= 0.01:
+                # Titik tengah daun jika tidak terdeteksi kerusakan
+                cnts, _ = cv2.findContours(leaf_region.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if cnts:
+                    M = cv2.moments(cnts[0])
+                    if M["m00"] > 0:
+                        return {"x": int(M["m10"] / M["m00"]), "y": int(M["m01"] / M["m00"]), "r": base_rad_w, "score": 0.0}
+                return {"x": ww // 2, "y": hh // 2, "r": base_rad_w, "score": 0.0}
 
-        def peak_point(score_map, exclude=None):
-            sm = cv2.GaussianBlur(score_map, (0, 0), sigmaX=max(1.5, min_side * 0.012))
-            sm = np.where(leaf_region, sm, -1.0)
-            if exclude is not None:
-                sm = np.where(exclude, -1.0, sm)
-            iy, ix = np.unravel_index(int(np.argmax(sm)), sm.shape)
-            if sm[iy, ix] < 0:
-                return None
-            return {"x": int(ix), "y": int(iy), "r": base_rad_w, "rating": 0.0, "score": float(sm[iy, ix])}
+            local_thr = max(0.12, val_peak * 0.55)
+            local_mask = (smoothed >= local_thr).astype(np.uint8)
+            n_l, lab_l, stats_l, _ = cv2.connectedComponentsWithStats(local_mask, connectivity=8)
+            target_lab = lab_l[iy, ix]
+            if target_lab > 0:
+                area_l = stats_l[target_lab, cv2.CC_STAT_AREA]
+                rad_l = int(np.clip(np.sqrt(area_l / np.pi) * 1.25, base_rad_w, int(min_side * 0.09)))
+            else:
+                rad_l = base_rad_w
 
-        def find_spot(score_map, exclude=None):
-            for thr in (0.50, 0.40, 0.30):
-                blobs = lesion_blobs(score_map, exclude=exclude, thr=thr)
-                if blobs:
-                    return blobs[0], blobs
-            p = peak_point(score_map, exclude=exclude)
-            return p, ([p] if p else [])
+            return {"x": int(ix), "y": int(iy), "r": rad_l, "score": val_peak}
 
-        def disk(cx, cy, rad):
-            yy, xx = np.ogrid[:hh, :ww]
-            return (xx - cx) ** 2 + (yy - cy) ** 2 < rad ** 2
-
-        # ---------------------------------------------------------------
-        # 5. Penentuan titik retikel
-        # ---------------------------------------------------------------
         spots_w = []
         is_healthy_leaf = is_healthy or "sehat" in (primary_name or "").lower() or "healthy" in (primary_name or "").lower()
         second_ok = bool(second_name) and ("sehat" not in second_name.lower()) and ("healthy" not in second_name.lower())
 
         if is_healthy_leaf:
             hg = (healthy_green if healthy_green.sum() >= 20 else leaf_region).astype(np.uint8)
-            n, lab, stats, _ = cv2.connectedComponentsWithStats(hg, connectivity=8)
-            if n > 1:
-                big = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-                cx, cy = interior_point((lab == big).astype(np.uint8))
-            else:
-                cx, cy = ww // 2, hh // 2
-            spots_w.append((cx, cy, base_rad_w, "[OK] Daun Sehat", "green"))
+            dist = cv2.distanceTransform(hg, cv2.DIST_L2, 3)
+            iy, ix = np.unravel_index(int(np.argmax(dist)), dist.shape)
+            spots_w.append((int(ix), int(iy), base_rad_w, "[OK] Daun Sehat", "green"))
         else:
             title_1 = get_short_disease_title(primary_name)
-            score_1 = disease_score(primary_name)
-            best_1, blobs_1 = find_spot(score_1)
-            if best_1 is None:
-                best_1 = {"x": ww // 2, "y": hh // 2, "r": base_rad_w}
-            spots_w.append((best_1["x"], best_1["y"], best_1["r"], f"[1] {title_1}", "red"))
-            excl = disk(best_1["x"], best_1["y"], max(min_dist_w, best_1["r"] * 2))
+            score_1 = disease_score_map(primary_name)
+            spot_1 = find_peak_spot(score_1)
+            spots_w.append((spot_1["x"], spot_1["y"], spot_1["r"], f"[1] {title_1}", "red"))
+
+            yy, xx = np.ogrid[:hh, :ww]
+            excl = (xx - spot_1["x"]) ** 2 + (yy - spot_1["y"]) ** 2 < max(min_dist_w, spot_1["r"] * 2) ** 2
 
             if (has_multi_disease or is_differential) and second_ok:
                 title_2 = get_short_disease_title(second_name)
-                score_2 = disease_score(second_name)
-                best_2, _ = find_spot(score_2, exclude=excl)
-                if best_2 is not None:
-                    spots_w.append((best_2["x"], best_2["y"], best_2["r"], f"[2] {title_2}", "orange"))
+                score_2 = disease_score_map(second_name)
+                spot_2 = find_peak_spot(score_2, exclude_mask=excl)
+                if spot_2 and spot_2["score"] >= 0.10:
+                    spots_w.append((spot_2["x"], spot_2["y"], spot_2["r"], f"[2] {title_2}", "orange"))
             else:
-                # Bercak kedua dari penyakit yang sama, hanya jika benar-benar lesi nyata yang kuat
-                for blob in blobs_1[1:]:
-                    if blob.get("rating", 0.0) <= 0.0:
-                        break
-                    far = (blob["x"] - best_1["x"]) ** 2 + (blob["y"] - best_1["y"]) ** 2 >= min_dist_w ** 2
-                    if far and blob["rating"] >= 0.45 * best_1.get("rating", 1.0) and blob["score"] >= 0.45:
-                        spots_w.append((blob["x"], blob["y"], blob["r"], f"[1] {title_1} #2", "red"))
-                        break
+                # Deteksi lesi kedua dari penyakit yang sama bila terdapat lesi sekunder yang signifikan
+                spot_2 = find_peak_spot(score_1, exclude_mask=excl)
+                if spot_2 and spot_2["score"] >= max(0.20, spot_1["score"] * 0.45):
+                    spots_w.append((spot_2["x"], spot_2["y"], spot_2["r"], f"[1] {title_1} #2", "red"))
 
-        # ---------------------------------------------------------------
-        # 6. Skala balik ke resolusi asli & gambar HUD
-        # ---------------------------------------------------------------
+        # 4. Skala balik ke resolusi gambar asli & gambar HUD
         inv = 1.0 / scale
         spots = [
             (int(round(x * inv)), int(round(y * inv)), max(10, int(round(rad * inv))), label, color)
