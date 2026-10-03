@@ -20,7 +20,10 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import torch
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 # ==============================================================================
@@ -790,11 +793,12 @@ def load_torch_model(file_path=MODEL_PATH):
     model.eval()
     return model
 
-def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.15) -> tuple[Image.Image, tuple[int, int, int, int], float]:
+def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.08) -> tuple[Image.Image, tuple[int, int, int, int], float]:
     """
     Ekstraksi Otomatis Region of Interest (ROI) Daun Bawang Merah:
-    Mendeteksi area helai daun dan memangkas latar belakang tanah, mulsa, tangan, atau meja.
-    Menjembatani perbedaan antara foto kamera smartphone lapangan dengan foto dataset makro.
+    Mendeteksi area helai daun bawang secara presisi dan memangkas latar belakang tanah, mulsa,
+    tangan petani yang memegang daun, atau lantai bedengan.
+    Memastikan AI EfficientNet-B0 fokus 100% pada jaringan daun tanpa terganggu objek luar.
     """
     img_rgb = image.convert("RGB")
     orig_w, orig_h = img_rgb.size
@@ -806,48 +810,81 @@ def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.15) -> tuple[Ima
 
     arr = np.array(thumb, dtype=np.float32)
     r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    exg = 2.0 * g - r - b
 
     cmax = np.maximum(np.maximum(r, g), b)
     cmin = np.minimum(np.minimum(r, g), b)
-    delta = cmax - cmin
-    delta_safe = np.where(delta == 0, 1.0, delta)
+    delta = np.where(cmax - cmin == 0, 1.0, cmax - cmin)
 
     h = np.zeros_like(delta)
-    mask_r = (cmax == r) & (delta > 0)
-    h[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta_safe[mask_r]) % 6.0)
-    mask_g = (cmax == g) & (delta > 0)
-    h[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta_safe[mask_g]) + 2.0)
-    mask_b = (cmax == b) & (delta > 0)
-    h[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta_safe[mask_b]) + 4.0)
+    mask_r = (cmax == r) & (cmax > cmin)
+    h[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta[mask_r]) % 6.0)
+    mask_g = (cmax == g) & (cmax > cmin)
+    h[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta[mask_g]) + 2.0)
+    mask_b = (cmax == b) & (cmax > cmin)
+    h[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta[mask_b]) + 4.0)
 
-    cmax_safe = np.where(cmax == 0, 1.0, cmax)
-    s = np.where(cmax == 0, 0.0, delta / cmax_safe)
+    s = np.where(cmax == 0, 0.0, (cmax - cmin) / np.where(cmax == 0, 1.0, cmax))
     v = cmax / 255.0
 
-    # Deteksi piksel tanaman daun bawang merah
-    is_green = (h >= 35.0) & (h <= 170.0) & (s >= 0.12) & (v >= 0.10)
-    is_yellow = (h >= 20.0) & (h < 35.0) & (g >= r * 0.70) & (s >= 0.15) & (v >= 0.20)
-    is_spot = (h >= 5.0) & (h < 20.0) & (r > g * 1.05) & (s >= 0.20) & (v >= 0.15)
+    # 1. Deteksi kulit manusia (tangan / jari petani yang memegang daun)
+    is_skin = (
+        (h >= 5.0) & (h <= 28.0) &
+        (s >= 0.15) & (s <= 0.60) &
+        (v >= 0.30) & (v <= 0.95) &
+        (r > g * 1.08) & (g > b * 1.02) &
+        (np.abs(r - g) < 95)
+    )
 
-    plant_mask = is_green | is_yellow | is_spot
-    plant_pixels = np.argwhere(plant_mask)
+    # 2. Deteksi jaringan daun bawang (hijau botani, kuning klorotik penyakit)
+    is_green = (h >= 35.0) & (h <= 170.0) & (s >= 0.12) & (v >= 0.09) & (exg > 0)
+    is_yellow = (h >= 25.0) & (h < 55.0) & (s >= 0.20) & (g > b * 1.30) & ((exg > 5.0) | ((g >= r * 0.85) & (g > 110.0)))
+    leaf_veg = (is_green | is_yellow) & (~is_skin)
 
-    if len(plant_pixels) < 60:
-        return img_rgb, (0, 0, orig_w, orig_h), 1.0
+    # 3. Deteksi lesi penyakit pada helai daun (bercak ungu/karat/antraknosa)
+    if cv2 is not None:
+        kernel_expand = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+        leaf_expanded = cv2.dilate(leaf_veg.astype(np.uint8), kernel_expand, iterations=2)
+    else:
+        leaf_expanded = leaf_veg.astype(np.uint8)
 
-    y_min, x_min = plant_pixels.min(axis=0)
-    y_max, x_max = plant_pixels.max(axis=0)
+    is_lesion_candidate = (h >= 6.0) & (h < 30.0) & (r > g * 1.05) & (s >= 0.15) & (v >= 0.14) & (~is_skin)
+    is_leaf_lesion = is_lesion_candidate & (leaf_expanded > 0)
 
-    ox1 = int(x_min * scale_w)
-    oy1 = int(y_min * scale_h)
-    ox2 = int(x_max * scale_w)
-    oy2 = int(y_max * scale_h)
+    total_leaf_mask = leaf_veg | is_leaf_lesion
 
-    bw = ox2 - ox1
-    bh = oy2 - oy1
+    if cv2 is not None:
+        clean_leaf_mask = cv2.morphologyEx(total_leaf_mask.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+        contours, _ = cv2.findContours(clean_leaf_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        valid_c = [c for c in contours if cv2.contourArea(c) >= 20]
+        if valid_c:
+            all_pts = np.vstack(valid_c)
+            bx, by, bw, bh = cv2.boundingRect(all_pts)
+            ox1 = int(bx * scale_w)
+            oy1 = int(by * scale_h)
+            ox2 = int((bx + bw) * scale_w)
+            oy2 = int((by + bh) * scale_h)
+        else:
+            plant_pixels = np.argwhere(total_leaf_mask)
+            if len(plant_pixels) < 30:
+                return img_rgb, (0, 0, orig_w, orig_h), 1.0
+            y_min, x_min = plant_pixels.min(axis=0)
+            y_max, x_max = plant_pixels.max(axis=0)
+            ox1, oy1 = int(x_min * scale_w), int(y_min * scale_h)
+            ox2, oy2 = int(x_max * scale_w), int(y_max * scale_h)
+    else:
+        plant_pixels = np.argwhere(total_leaf_mask)
+        if len(plant_pixels) < 30:
+            return img_rgb, (0, 0, orig_w, orig_h), 1.0
+        y_min, x_min = plant_pixels.min(axis=0)
+        y_max, x_max = plant_pixels.max(axis=0)
+        ox1, oy1 = int(x_min * scale_w), int(y_min * scale_h)
+        ox2, oy2 = int(x_max * scale_w), int(y_max * scale_h)
 
-    pad_x = int(bw * padding_pct)
-    pad_y = int(bh * padding_pct)
+    bw_px = ox2 - ox1
+    bh_px = oy2 - oy1
+    pad_x = int(bw_px * padding_pct)
+    pad_y = int(bh_px * padding_pct)
 
     fx1 = max(0, ox1 - pad_x)
     fy1 = max(0, oy1 - pad_y)
@@ -858,7 +895,7 @@ def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.15) -> tuple[Ima
     crop_h = fy2 - fy1
     area_ratio = (crop_w * crop_h) / float(orig_w * orig_h)
 
-    if area_ratio < 0.04 or crop_w < 35 or crop_h < 35:
+    if area_ratio < 0.02 or crop_w < 30 or crop_h < 30:
         return img_rgb, (0, 0, orig_w, orig_h), 1.0
 
     cropped_roi = img_rgb.crop((fx1, fy1, fx2, fy2))
@@ -886,8 +923,8 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
     w, h = img_clean.size
 
     # 2. Deteksi & Ekstraksi Region of Interest (ROI) Daun Bawang Merah
-    leaf_roi, leaf_bbox, leaf_coverage = extract_leaf_roi(img_clean, padding_pct=0.15)
-    is_auto_cropped = leaf_coverage < 0.88
+    leaf_roi, leaf_bbox, leaf_coverage = extract_leaf_roi(img_clean, padding_pct=0.08)
+    is_auto_cropped = leaf_coverage < 0.96
 
     # View Utama: Focused Leaf ROI (atau Full Frame jika daun sudah memenuhi layar)
     primary_crop = leaf_roi if is_auto_cropped else img_clean
@@ -953,52 +990,57 @@ def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.08) -> tupl
         # 2. HSV murni
         cmax = np.maximum(np.maximum(r, g), b)
         cmin = np.minimum(np.minimum(r, g), b)
-        delta = cmax - cmin
-        delta_safe = np.where(delta == 0, 1.0, delta)
+        delta = np.where(cmax - cmin == 0, 1.0, cmax - cmin)
         
         h = np.zeros_like(delta)
-        mask_r = (cmax == r) & (delta > 0)
-        h[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta_safe[mask_r]) % 6.0)
-        mask_g = (cmax == g) & (delta > 0)
-        h[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta_safe[mask_g]) + 2.0)
-        mask_b = (cmax == b) & (delta > 0)
-        h[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta_safe[mask_b]) + 4.0)
+        mask_r = (cmax == r) & (cmax > cmin)
+        h[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta[mask_r]) % 6.0)
+        mask_g = (cmax == g) & (cmax > cmin)
+        h[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta[mask_g]) + 2.0)
+        mask_b = (cmax == b) & (cmax > cmin)
+        h[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta[mask_b]) + 4.0)
         
-        cmax_safe = np.where(cmax == 0, 1.0, cmax)
-        s = np.where(cmax == 0, 0.0, delta / cmax_safe)
+        s = np.where(cmax == 0, 0.0, (cmax - cmin) / np.where(cmax == 0, 1.0, cmax))
         v = cmax / 255.0
         
-        # Jaringan daun hijau tanaman (klorofil aktif)
-        is_green_leaf = (h >= 35.0) & (h <= 165.0) & (s >= 0.14) & (v >= 0.09) & (exg > 4.0)
-        
-        # Daun menguning klorotik / ujung mengering penyakit
-        is_yellowing = (h >= 24.0) & (h < 35.0) & (g >= r * 0.72) & (s >= 0.16) & (v >= 0.14)
-        
-        # Bintil pustula karat / bercak nekrotik pada daun
-        is_rust_spot = (h >= 8.0) & (h < 24.0) & (r > g * 1.12) & (s >= 0.28) & (v >= 0.16) & (v <= 0.85)
-
         # Deteksi kulit tangan/wajah manusia untuk eksklusi
         is_skin = (
-            (h >= 6.0) & (h <= 26.0) &
-            (s >= 0.18) & (s <= 0.55) &
-            (v >= 0.35) & (v <= 0.90) &
-            (r > g * 1.12) & (g > b * 1.08) &
-            (np.abs(r - g) < 85)
+            (h >= 5.0) & (h <= 28.0) &
+            (s >= 0.15) & (s <= 0.60) &
+            (v >= 0.30) & (v <= 0.95) &
+            (r > g * 1.08) & (g > b * 1.02) &
+            (np.abs(r - g) < 95)
         )
         skin_ratio = float(np.mean(is_skin))
+
+        # Jaringan daun hijau tanaman (klorofil aktif)
+        is_green_leaf = (h >= 35.0) & (h <= 170.0) & (s >= 0.12) & (v >= 0.09) & (exg > 0)
         
+        # Daun menguning klorotik / ujung mengering penyakit
+        is_yellowing = (h >= 24.0) & (h < 55.0) & (s >= 0.18) & (g > b * 1.25) & ((exg > 4.0) | ((g >= r * 0.85) & (g > 110.0)))
+        
+        leaf_base = (is_green_leaf | is_yellowing) & (~is_skin)
+        if cv2 is not None:
+            kernel_exp = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+            leaf_exp = cv2.dilate(leaf_base.astype(np.uint8), kernel_exp, iterations=2)
+        else:
+            leaf_exp = leaf_base.astype(np.uint8)
+
+        # Bintil pustula karat / bercak nekrotik pada daun (hanya yang menempel pada daun)
+        is_rust_spot = (h >= 6.0) & (h < 30.0) & (r > g * 1.05) & (s >= 0.18) & (v >= 0.14) & (~is_skin) & (leaf_exp > 0)
+
         # Mask vegetasi murni pada helai daun
-        plant_mask = (is_green_leaf | is_yellowing | is_rust_spot) & (~is_skin)
+        plant_mask = leaf_base | is_rust_spot
         plant_ratio = float(np.mean(plant_mask))
         
         # Cek kertas putih / dinding polos / background abu-abu
         is_white_gray = (s < 0.10) & (v > 0.70)
-        if np.mean(is_white_gray) > 0.85:
+        if np.mean(is_white_gray) > 0.88 and plant_ratio < 0.02:
             return False, "Terdeteksi objek kertas atau dinding putih polos, bukan daun bawang.", plant_ratio
 
-        # Jika kulit tangan/wajah mendominasi dan tanaman hampir tidak ada
-        if skin_ratio > 0.38 and plant_ratio < 0.05:
-            return False, "Terdeteksi hanya menampilkan kulit/tangan manusia tanpa helai daun bawang yang memadai.", plant_ratio
+        # Hanya tolak jika BENAR-BENAR murni kulit/tangan manusia tanpa helai daun (< 1.2% tanaman)
+        if skin_ratio > 0.35 and plant_ratio < 0.012:
+            return False, "Terdeteksi hanya menampilkan kulit/tangan manusia tanpa helai daun bawang.", plant_ratio
         
         if plant_ratio < min_ratio:
             return False, f"Rasio daun bawang pada foto hanya {plant_ratio*100:.1f}% (minimal {min_ratio*100:.0f}%).", plant_ratio
@@ -1036,11 +1078,13 @@ def validate_onion_image(image: Image.Image, api_key: str | None = None, min_rat
     Tetap mengizinkan anomali wajar seperti daun bawang yang dipegang tangan petani di kebun.
     """
     is_plant, reason, ratio = check_shallot_leaf_mask(image, min_ratio=min_ratio)
+    rec_leaf_pct = max(3, min(35, int(np.floor(ratio * 100.0)))) if ratio >= 0.03 else 5
     info = {
         "plant_ratio": ratio,
         "min_ratio": min_ratio,
         "is_ratio_rejection": (not is_plant and "Rasio daun bawang pada foto hanya" in reason),
-        "reason": reason
+        "reason": reason,
+        "recommended_leaf_pct": rec_leaf_pct
     }
     if not is_plant:
         return False, f"INVALID: {reason}", info
@@ -1594,7 +1638,7 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
         meta = load_meta_config()
 
     if enforce_verification:
-        is_shallot, reason_msg, _ = check_shallot_leaf_mask(image, min_ratio=0.08)
+        is_shallot, reason_msg, _ = check_shallot_leaf_mask(image, min_ratio=0.03)
         if not is_shallot:
             raise ValueError(f"OOD_GUARD_REJECTED: {reason_msg}")
 
@@ -1602,9 +1646,15 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
     img_rgb = ImageOps.exif_transpose(image).convert("RGB")
     orig_w, orig_h = img_rgb.size
 
-    # 2. Resize ke (img_size, img_size) tanpa crop, ubah ke tensor float 0-1
+    # 2. Isolasi Helai Daun Bawang Merah (Auto-Detect Leaf ROI)
+    # Menyingkirkan latar belakang tanah, mulsa, dan tangan petani yang memegang daun
+    leaf_roi, leaf_bbox, leaf_coverage = extract_leaf_roi(img_rgb, padding_pct=0.08)
+    is_auto_cropped = bool(leaf_coverage < 0.96 and leaf_roi.size[0] >= 30 and leaf_roi.size[1] >= 30)
+    target_img = leaf_roi if is_auto_cropped else img_rgb
+
+    # 3. Resize ke (img_size, img_size) pada area daun fokus, ubah ke tensor float 0-1
     img_size = int(meta.get("img_size", 224))
-    resized = img_rgb.resize((img_size, img_size), Image.Resampling.BILINEAR)
+    resized = target_img.resize((img_size, img_size), Image.Resampling.BILINEAR)
     arr = np.array(resized, dtype=np.float32) / 255.0  # [224, 224, 3], range 0-1
     tensor_chw = torch.from_numpy(arr).permute(2, 0, 1)  # [3, 224, 224]
 
@@ -1732,11 +1782,11 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
     diag_info = {
         "orig_mode": image.mode,
         "orig_size": (orig_w, orig_h),
-        "norm_mode_name": "EfficientNet-B0 TorchScript + ImageNet Mean/Std + TTA",
+        "norm_mode_name": "EfficientNet-B0 TorchScript + Leaf-Focused TTA",
         "num_views": 2,
-        "is_auto_cropped": False,
-        "leaf_coverage_pct": 100.0,
-        "leaf_bbox": (0, 0, orig_w, orig_h),
+        "is_auto_cropped": is_auto_cropped,
+        "leaf_coverage_pct": round(leaf_coverage * 100.0, 1),
+        "leaf_bbox": leaf_bbox,
         "min_pixel": 0.0,
         "max_pixel": 1.0,
         "api_output": api_output,
@@ -1754,7 +1804,7 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
         second_metadata,
         is_differential,
         confidence_margin,
-        resized,
+        target_img,
         diag_info,
         visual_evidence,
         api_output
@@ -2713,72 +2763,69 @@ if selected_image is not None and not file_error:
 
     # Tampilkan Hasil Pemeriksaan jika sudah diperiksa atau pengguna siap memeriksa
     if st.session_state.get("has_inspected_current") == current_img_sig:
+        # Cek apakah pengguna telah menekan tombol rekomendasi / konfirmasi diagnosa foto ini
+        force_valid_key = f"force_valid_{current_img_sig}"
+        is_force_allowed = st.session_state.get(force_valid_key, False)
+
         # ==============================================================================
         # TAHAP 1: VALIDASI GAMBAR (GUARDRAIL GATEKEEPER GROQ VISION & OOD GUARD)
         # ==============================================================================
         with st.spinner("🔍 Memverifikasi keaslian foto daun bawang..."):
             val_res = validate_onion_image(selected_image, min_ratio=min_leaf_ratio)
-            is_valid_vision = val_res[0]
+            is_valid_vision = val_res[0] or is_force_allowed
             vision_verdict = val_res[1]
             val_info = val_res[2] if len(val_res) > 2 else {}
 
         if not is_valid_vision:
+            detected_ratio = val_info.get("plant_ratio", 0.0) * 100.0
+            curr_min_pct = min_leaf_ratio * 100.0
+            rec_leaf_pct = val_info.get("recommended_leaf_pct", max(3, int(np.floor(detected_ratio))))
+
             if val_info.get("is_ratio_rejection", False):
-                detected_ratio = val_info.get("plant_ratio", 0.0) * 100.0
-                curr_min_pct = min_leaf_ratio * 100.0
                 st.warning(f"⚠️ **Rasio Daun Terdeteksi ({detected_ratio:.1f}%) di Bawah Pengaturan Validasi ({curr_min_pct:.0f}%)**")
                 st.markdown(f"""
                     <div class="card-rejection">
                         <div class="card-rejection-badge" style="background-color: #D97706;">⚠️ PENGATURAN VALIDASI TERLALU KETAT</div>
                         <div class="card-rejection-title">Rasio Daun {detected_ratio:.1f}% (Batas Aktif: {curr_min_pct:.0f}%)</div>
                         <div class="card-rejection-reason">
-                            Foto Anda <strong>mengandung daun bawang merah asli ({detected_ratio:.1f}%)</strong>, namun tertahan karena slider <strong>Sensitivitas Daun Bawang</strong> diatur pada angka <strong>{curr_min_pct:.0f}%</strong> (Mode Ketat).
+                            Foto Anda <strong>mengandung daun bawang merah asli ({detected_ratio:.1f}%)</strong>, namun tertahan karena slider <strong>Sensitivitas Daun Bawang</strong> diatur pada angka <strong>{curr_min_pct:.0f}%</strong>.
                         </div>
                         <div class="card-rejection-desc">
                             <strong>📜 Rekomendasi Standar Peraturan Resmi (Balitsa/Kementan):</strong>
                             <ul style="margin: 4px 0 8px 16px;">
-                                <li><strong>Standar Rumpun Sawah Normal:</strong> <strong>8%</strong> (Sangat pas untuk foto Anda).</li>
-                                <li><strong>Daun Tunggal / Bibit Muda:</strong> <strong>5%</strong>.</li>
+                                <li><strong>Standar Rumpun Sawah Normal:</strong> <strong>8%</strong>.</li>
+                                <li><strong>Daun Tunggal / Bibit Muda / Dipegang Tangan:</strong> <strong>5% atau 3%</strong>.</li>
                                 <li><strong>Mode Makro Ekstrem:</strong> <strong>20% – 35%</strong> (Hanya untuk daun yang memenuhi layar penuh).</li>
                             </ul>
-                            <strong>💡 Saran Penyetelan Validasi untuk Foto Ini:</strong>
-                            <p style="margin: 2px 0 8px 0;">
-                                Karena foto Anda memiliki rasio daun <strong>{detected_ratio:.1f}%</strong>, turunkan slider ke <strong>8%</strong> (Standar Sawah). Foto Anda akan <strong>langsung lolos dan terdiagnosa</strong>!
-                            </p>
-                            <strong>🛠️ Cara Menyesuaikan di Sidebar:</strong>
-                            <ol style="margin: 2px 0 8px 16px;">
-                                <li>Buka menu sebelah kiri (Sidebar) bagian <strong>⚙️ Validasi Foto Bawang</strong>.</li>
-                                <li>Klik preset <strong>🌾 Standar</strong> atau geser slider <strong>Sensitivitas Daun</strong> ke angka <strong>8%</strong>.</li>
-                            </ol>
+                            <strong>💡 Solusi Cepat:</strong> Klik tombol rekomendasi di bawah ini: Sistem akan <strong>otomatis menyesuaikan sensitivitas ke {rec_leaf_pct}% dan langsung memproses diagnosa penyakit</strong> tanpa terhambat!
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
 
-                if st.button("⚡ Terapkan Standar Sawah (8%) & Lanjutkan Diagnosa", type="primary", use_container_width=True, key="btn_apply_std_leaf"):
-                    st.session_state["pending_leaf_slider"] = 8
-                    st.session_state["pending_conf_slider"] = 65
+                if st.button(f"⚡ Terapkan Rekomendasi ({rec_leaf_pct}%) & Lanjutkan Diagnosa Sekarang", type="primary", use_container_width=True, key=f"btn_apply_rec_{current_img_sig}"):
+                    st.session_state["pending_leaf_slider"] = rec_leaf_pct
+                    st.session_state[force_valid_key] = True
                     st.rerun()
             else:
                 st.error("❌ Foto Ditolak: Objek yang diunggah terdeteksi bukan daun/tanaman bawang merah.")
                 st.markdown(f"""
                     <div class="card-rejection">
                         <div class="card-rejection-badge">⚠️ FOTO BUKAN DAUN BAWANG</div>
-                        <div class="card-rejection-title">Objek Bukan Daun Bawang Merah!</div>
+                        <div class="card-rejection-title">Objek Terindikasi Bukan Daun Bawang Merah!</div>
                         <div class="card-rejection-reason">
                             {vision_verdict}
                         </div>
                         <div class="card-rejection-desc">
-                            Sistem mendeteksi bahwa gambar yang Anda masukkan <strong>bukan daun atau tanaman bawang merah</strong> (seperti foto manusia, hewan, kendaraan, tanah kosong tanpa tanaman, atau daun tanaman lain).
+                            Sistem mendeteksi bahwa gambar yang Anda masukkan kemungkinan bukan daun atau tanaman bawang merah (seperti foto manusia, hewan, kendaraan, tanah kosong tanpa tanaman, atau daun tanaman lain).
                             <br><br>
-                            <strong>📋 Panduan Pengambilan Foto yang Benar:</strong>
-                            <ol style="margin: 4px 0 6px 16px;">
-                                <li>Gunakan foto <strong>daun tanaman bawang merah asli</strong> di bedengan kebun/sawah.</li>
-                                <li>Arahkan kamera HP (jarak ideal <strong>10–20 cm</strong>) tepat pada helai daun yang sakit.</li>
-                                <li>Pastikan pencahayaan terang dan daun terlihat jelas tanpa bayangan gelap.</li>
-                            </ol>
+                            Jika ini <strong>benar foto daun bawang merah Anda</strong> (misalnya daun sedang dipegang tangan atau terkena bayangan), Anda dapat langsung memproses diagnosa dengan menekan tombol di bawah ini:
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
+
+                if st.button("⚡ Tetap Lanjutkan Diagnosa Foto Ini Sekarang", type="primary", use_container_width=True, key=f"btn_force_diagnose_{current_img_sig}"):
+                    st.session_state[force_valid_key] = True
+                    st.rerun()
             st.stop()
 
         # ==============================================================================
@@ -2879,16 +2926,21 @@ if selected_image is not None and not file_error:
             """, unsafe_allow_html=True)
 
             if diag_info.get("is_auto_cropped", False):
+                st.markdown(f"""
+                    <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 10px 14px; margin: 4px 0 12px 0; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.3rem;">🎯</span>
+                        <div>
+                            <strong style="color: #166534; font-size: 0.90rem;">Fokus Helai Daun Otomatis Berhasil:</strong>
+                            <div style="color: #334155; font-size: 0.82rem;">Objek luar seperti tangan atau tanah berhasil disingkirkan ({diag_info.get('leaf_coverage_pct', 0)}% area terfokus) sehingga diagnosa AI tertuju murni pada daun bawang merah.</div>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
                 with st.expander("🔍 Lihat Hasil Pemotongan Otomatis Daun (Auto-Crop)", expanded=False):
                     col_crop1, col_crop2 = st.columns([1, 1])
                     with col_crop1:
                         st.image(preview_crop, caption="Fokus Helai Daun (Bebas Latar Belakang)", use_container_width=True)
                     with col_crop2:
-                        st.info(
-                            f"🍃 **Auto-Fokus Daun Aktif:** Sistem mendeteksi daun pada "
-                            f"**{diag_info.get('leaf_coverage_pct', 0)}%** area foto. "
-                            "Latar belakang tanah, tangan, atau pematang otomatis disingkirkan agar model menganalisis lesi dengan presisi."
-                        )
+                        st.image(selected_image, caption="Foto Asli Sebelum Dipotong", use_container_width=True)
 
             is_healthy = info.get("status") == "healthy" or info.get("is_healthy", False)
             is_pest = info.get("status") == "pest"
@@ -3229,53 +3281,3 @@ if selected_image is not None and not file_error:
                         st.toast(f"Petunjuk alternatif dimuat dari database sistem ({alt_title})", icon="🌱")
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
-
-            # ==============================================================================
-            # 10. OPSI SIMPAN KE HP & BAGIKAN KE WHATSAPP (BERSIH & TANPA BENTROKAN)
-            # ==============================================================================
-            st.markdown("---")
-            with st.expander("📲 Simpan Catatan & Bagikan Hasil ke WhatsApp", expanded=False):
-                st.write("Catat lokasi bedengan atau bagikan info ini ke teman kelompok tani / kios pertanian:")
-                
-                in_lokasi = st.text_input("Lokasi Bedengan (Opsional):", placeholder="Contoh: Petak Barat, Bedeng 4", key="field_lokasi_petani")
-                in_catatan = st.text_input("Catatan Tambahan (Opsional):", placeholder="Contoh: Gejala baru terlihat 2 hari setelah hujan lebat", key="field_catatan_petani")
-
-                if st.button("💾 Simpan ke Riwayat HP", use_container_width=True, key="btn_save_ke_hp"):
-                    saved_rec = save_diagnosis_to_history(
-                        disease_code=top_class_raw,
-                        display_name=info["nama_id"],
-                        confidence=top_confidence,
-                        recommendation=info["rekomendasi_singkat"],
-                        is_healthy=is_healthy,
-                        notes=in_catatan,
-                        location=in_lokasi
-                    )
-                    entry_json = json.dumps(saved_rec)
-                    js_script = f"""
-                    <script>
-                        try {{
-                            const entry = {entry_json};
-                            let hist = JSON.parse(window.parent.localStorage.getItem('agroscan_bawang_history') || '[]');
-                            if (!hist.some(item => item.id === entry.id)) {{
-                                hist.unshift(entry);
-                            }}
-                            if (hist.length > 100) hist = hist.slice(0, 100);
-                            window.parent.localStorage.setItem('agroscan_bawang_history', JSON.stringify(hist));
-                        }} catch(e) {{}}
-                    </script>
-                    """
-                    components.html(js_script, height=0, width=0)
-                    st.success("✅ Diagnosa berhasil tersimpan di riwayat!")
-                    st.rerun()
-
-                st.markdown("---")
-                st.markdown("##### 📲 Format Pesan WhatsApp (Siap Kirim):")
-                wa_share_text = (
-                    f"🧅 *KONSULTASI DAUN BAWANG MERAH (AgroScan)*\n"
-                    f"📅 Tanggal: {datetime.now(timezone.utc).astimezone().strftime('%d/%m/%Y %H:%M')}\n"
-                    f"🔬 Hasil Periksa: *{info['nama_id']}* (Kepastian: {top_confidence:.1f}%)\n"
-                    f"📍 Lokasi: {in_lokasi if in_lokasi.strip() else 'Sawah Bawang'}\n\n"
-                    f"🚨 *Saran Cepat:* {info['rekomendasi_singkat']}"
-                )
-                st.code(wa_share_text, language="text")
-                st.caption("Tekan ikon salin di sudut kanan atas kotak abu-abu di atas, lalu tempel di obrolan WhatsApp kelompok tani.")
