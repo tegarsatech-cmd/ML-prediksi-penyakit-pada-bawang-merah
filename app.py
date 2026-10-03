@@ -2881,12 +2881,17 @@ def get_disease_differential_breakdown(primary_name: str, second_name: str | Non
                     "opp": "Hawar Bakteri: lesi memanjang <strong>tembus pandang seperti selaput kertas</strong> (papery). Hawar Jamur: pucuk daun mengering merambat ke bawah."
                 },
                 {
-                    "param": "🎨 Pusat Lesi & Warna",
-                    "curr": "Pusat lesi tampak <strong>semburat keunguan/merah tua melekuk ke dalam</strong>, bertepung beludru spora hitam jamur saat lembap.",
-                    "opp": "Hawar Bakteri: warna krem/putih jerami pucat tanpa semburat ungu. Hawar Stemphylium: cokelat tua dengan spora di batas area hijau."
+                    "param": "🌱 Ciri Stadium Awal (Dini)",
+                    "curr": "Bintik kecil melekuk (1-2 mm) putih keabu-abuan dengan <strong>titik ungu samar di tengah</strong>, daun masih tegak kokoh.",
+                    "opp": "Bercak basah kebasah-basahan (<em>water-soaked</em>) memanjang kecil di sela tulang daun atau pucuk menguning kusam."
                 },
                 {
-                    "param": "🖐️ Uji Raba & Aroma",
+                    "param": "🚨 Ciri Stadium Akhir / Parah",
+                    "curr": "Cincin konsentris melebar besar, luka mengering cokelat jerami rapuh, <strong>tertutup beludru hitam spora jamur</strong>, daun patah/terkulai.",
+                    "opp": "Seluruh helai daun <strong>memutih kering tipis seperti selaput kertas transparan</strong>, mudah robek ditiup angin, daun basah berbau langu busuk."
+                },
+                {
+                    "param": "🖐️ Uji Raba & Aroma Daun",
                     "curr": "Diraba rapuh kering; saat daun diremas tercium aroma dedaunan layu biasa tanpa bau busuk menyengat.",
                     "opp": "Hawar Bakteri: saat pagi berembun daun <strong>licin berlendir (ooze)</strong>; saat diremas tercium <strong>aroma langu agak busuk menyengat</strong>."
                 },
@@ -2915,12 +2920,17 @@ def get_disease_differential_breakdown(primary_name: str, second_name: str | Non
                     "opp": "Bercak oval melebar dengan lingkaran cincin konsentris bertingkat (berundak seperti sasaran tembak)."
                 },
                 {
-                    "param": "🎨 Warna & Pusat Bercak",
-                    "curr": "Cokelat jerami hingga putih pucat transparan, <strong>tidak memiliki rona keunguan</strong> di pusat bercak.",
-                    "opp": "Tampak semburat keunguan atau cokelat kemerahan gelap di pusat lesi."
+                    "param": "🌱 Ciri Stadium Awal (Dini)",
+                    "curr": "Bercak basah seperti tersiram air panas di badan daun, atau pucuk daun menguning kusam 1-2 cm.",
+                    "opp": "Bintik putih kecil cekung dengan bintik keunguan tipis di tengahnya."
                 },
                 {
-                    "param": "🖐️ Uji Raba & Aroma",
+                    "param": "🚨 Ciri Stadium Akhir / Parah",
+                    "curr": "Daun <strong>memutih pucat transparan seperti kertas selaput tipis</strong> (papery), hancur robek ditiup angin, basah berbau langu.",
+                    "opp": "Bercak membesar warna cokelat gelap dengan cincin bertingkat dan tertutup serbuk spora hitam beludru."
+                },
+                {
+                    "param": "🖐️ Uji Raba & Aroma Daun",
                     "curr": "Jika hawar bakteri: daun licin berlendir saat basah dan berbau langu busuk. Jika hawar jamur: kering rapuh.",
                     "opp": "Kering rapuh tanpa lendir, tidak berbau busuk."
                 },
@@ -2944,9 +2954,14 @@ def get_disease_differential_breakdown(primary_name: str, second_name: str | Non
                     "opp": "Permukaan daun bersih licin atau kering rapuh, <strong>tidak pernah ditumbuhi bulu beledu kelabu</strong>."
                 },
                 {
-                    "param": "🔍 Bentuk & Sifat Daun",
-                    "curr": "Bercak klorotik kuning pucat tanpa batas tegas di badan daun, helai daun lemas terkulai patah di titik bercak.",
-                    "opp": "Bercak memiliki batas tegas, berpusat cincin konsentris (Trotol) atau memanjang di pucuk daun (Hawar)."
+                    "param": "🌱 Ciri Stadium Awal (Dini)",
+                    "curr": "Bercak klorotik kuning pucat samar di badan daun tanpa batas tegas, daun sedikit lemas.",
+                    "opp": "Bercak berbatas tegas, berbentuk bintik melekuk berair atau bercak putih kecil."
+                },
+                {
+                    "param": "🚨 Ciri Stadium Akhir / Parah",
+                    "curr": "Seluruh helai daun terselubung bulu beledu kelabu, daun lemas terkulai lembek basah, <strong>rumpun tanaman ambruk serentak</strong>.",
+                    "opp": "Daun mengering kaku atau memutih tembus pandang tanpa kapang bulu kelabu."
                 },
                 {
                     "param": "💊 Pilihan Obat Semprot",
@@ -2966,6 +2981,16 @@ def get_disease_differential_breakdown(primary_name: str, second_name: str | Non
                     "param": "🔍 Tekstur Bintik (Kunci Mutlak)",
                     "curr": "Bintik berupa <strong>PUSTUL TIMBUL / MELEPUH MENONJOL</strong> yang terasa kasar saat diraba jari.",
                     "opp": "Bercak <strong>RATA SEJAJAR PERMUKAAN DAUN</strong> (mulus tanpa benjolan), sering berbentuk belah ketupat."
+                },
+                {
+                    "param": "🌱 Ciri Stadium Awal (Dini)",
+                    "curr": "Bintil kuning pucat kecil tersembunyi di bawah permukaan daun, belum pecah.",
+                    "opp": "Bintik klorotik kuning kecil soliter berbentuk berlian/belah ketupat."
+                },
+                {
+                    "param": "🚨 Ciri Stadium Akhir / Parah",
+                    "curr": "Pustul meletus massal mengeluarkan <strong>serbuk debu jingga/merah tembaga tebal</strong>, seluruh daun menguning kaku terbakar.",
+                    "opp": "Bercak belah ketupat menyatu membentuk sabuk klorosis lebar, helai daun kaku berkerut dan rapuh pecah."
                 },
                 {
                     "param": "🖐️ Uji Usapan Jari / Tisu",
@@ -2992,9 +3017,14 @@ def get_disease_differential_breakdown(primary_name: str, second_name: str | Non
                     "opp": "Karat: bintil bulat kecil melepuh kasar. Thrips biasa: bercak garis keperakan mengkilap."
                 },
                 {
-                    "param": "🖐️ Permukaan Daun",
-                    "curr": "Permukaan daun mulus rata (tidak menonjol), daun kaku berkerut dan mudah patah.",
-                    "opp": "Karat memiliki bintil pustul yang meletus mengeluarkan serbuk spora oranye."
+                    "param": "🌱 Ciri Stadium Awal (Dini)",
+                    "curr": "Bintik klorotik kuning kecil berbentuk belah ketupat terisolasi pada 1-2 helai daun.",
+                    "opp": "Bintil timbul tertutup lapisan epidermis daun."
+                },
+                {
+                    "param": "🚨 Ciri Stadium Akhir / Parah",
+                    "curr": "Bercak menyatu melingkari daun membentuk sabuk klorosis lebar, helai daun rapuh mudah patah di titik bercak.",
+                    "opp": "Seluruh daun dipenuhi serbuk oranye-merah karat."
                 },
                 {
                     "param": "💊 Pengendalian",
@@ -3014,6 +3044,16 @@ def get_disease_differential_breakdown(primary_name: str, second_name: str | Non
                     "param": "🌱 Bentuk Pertumbuhan Daun",
                     "curr": "Daun <strong>MELIUK-LIUK / TERPUNTIR SPIRAL ABNORMAL</strong> menyerupai pita terpelintir.",
                     "opp": "Daun tumbuh tegak lurus biasa, hanya pucuknya yang mengering kecokelatan."
+                },
+                {
+                    "param": "🌱 Ciri Stadium Awal (Dini)",
+                    "curr": "Daun mulai menguning pucat dan sedikit melengkung tidak teratur saat terik matahari.",
+                    "opp": "Pucuk daun mengering 1 cm karena sengatan panas atau defisiensi kalsium."
+                },
+                {
+                    "param": "🚨 Ciri Stadium Akhir / Parah",
+                    "curr": "Daun melintir spiral ekstrem (inul), leher batang lembek berair, akar membusuk kemerahan, tanaman mati rebah.",
+                    "opp": "Daun tetap tegak lurus, perakaran dan umbi di dalam tanah masih keras dan sehat."
                 },
                 {
                     "param": "🌾 Kondisi Perakaran & Umbi",
@@ -3043,52 +3083,55 @@ def get_disease_differential_breakdown(primary_name: str, second_name: str | Non
     return data
 
 def render_differential_comparison_html(data: dict) -> str:
-    """Merender tabel perbandingan diferensial berdesain modern, responsif, dan kontras tinggi."""
-    rows_html = ""
+    """Merender tabel perbandingan diferensial berdesain modern, responsif, dan bebas kebocoran kode markdown."""
+    rows_list = []
     for pt in data["points"]:
-        rows_html += f"""
-        <tr style="border-bottom: 1px solid #E2E8F0;">
-            <td style="padding: 10px 12px; font-weight: 700; color: #334155; vertical-align: top; background: #F8FAFC; border-right: 1px solid #E2E8F0;">{pt['param']}</td>
-            <td style="padding: 10px 12px; color: #0F172A; vertical-align: top; line-height: 1.55; border-right: 1px solid #E2E8F0; background: #FFFFFF;">{pt['curr']}</td>
-            <td style="padding: 10px 12px; color: #0F172A; vertical-align: top; line-height: 1.55; background: #FFFFFF;">{pt['opp']}</td>
-        </tr>
-        """
+        row = (
+            f'<tr style="border-bottom: 1px solid #E2E8F0;">'
+            f'<td style="padding: 10px 12px; font-weight: 700; color: #334155; vertical-align: top; background: #F8FAFC; border-right: 1px solid #E2E8F0;">{pt["param"]}</td>'
+            f'<td style="padding: 10px 12px; color: #0F172A; vertical-align: top; line-height: 1.55; border-right: 1px solid #E2E8F0; background: #FFFFFF;">{pt["curr"]}</td>'
+            f'<td style="padding: 10px 12px; color: #0F172A; vertical-align: top; line-height: 1.55; background: #FFFFFF;">{pt["opp"]}</td>'
+            f'</tr>'
+        )
+        rows_list.append(row)
 
-    html_out = f"""
-    <div style="background: #FFFFFF; border-radius: 16px; border: 2px solid #CBD5E1; padding: 1.25rem 1.35rem; margin: 1.2rem 0; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 0.65rem;">
-            <div style="display: flex; align-items: center; gap: 0.6rem;">
-                <span style="font-size: 1.4rem;">⚖️</span>
-                <span style="font-size: 1.15rem; font-weight: 800; color: #0F172A;">Pembeda Detail Gejala Penyakit Serupa (Pencegah Salah Obat di Sawah)</span>
-            </div>
-            <span style="background: #EFF6FF; color: #1D4ED8; font-size: 0.8rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; border: 1px solid #BFDBFE;">Komparasi Lapangan</span>
-        </div>
-        <div style="font-size: 0.90rem; color: #475569; margin-bottom: 1rem; line-height: 1.55;">
-            {data['confusion_reason']} Pelajari tabel perbandingan berikut agar tidak salah menentukan tindakan dan pembelian obat:
-        </div>
-        <div style="overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.9rem;">
-            <table style="width: 100%; border-collapse: separate; border-spacing: 0; border: 1.5px solid #CBD5E1; border-radius: 10px; overflow: hidden; font-size: 0.90rem;">
-                <thead>
-                    <tr style="background: #F1F5F9;">
-                        <th style="padding: 10px 12px; text-align: left; font-weight: 800; color: #334155; border-bottom: 2px solid #CBD5E1; border-right: 1px solid #CBD5E1; width: 22%;">Tanda Pengamatan</th>
-                        <th style="padding: 10px 12px; text-align: left; font-weight: 800; color: #B91C1C; border-bottom: 2px solid #CBD5E1; border-right: 1px solid #CBD5E1; width: 39%; background: #FEF2F2;">
-                            🎯 {data['primary_title']} (Terdeteksi)
-                        </th>
-                        <th style="padding: 10px 12px; text-align: left; font-weight: 800; color: #1D4ED8; border-bottom: 2px solid #CBD5E1; width: 39%; background: #EFF6FF;">
-                            {data['counterpart_icon']} {data['counterpart_title']} (Sering Tertukar)
-                        </th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows_html}
-                </tbody>
-            </table>
-        </div>
-        <div style="background: #FEF9C3; border: 1px solid #FDE047; border-left: 5px solid #CA8A04; border-radius: 10px; padding: 0.85rem 1.05rem; font-size: 0.88rem; color: #713F12; line-height: 1.6;">
-            {data['special_alert']}
-        </div>
-    </div>
-    """
+    table_body = "".join(rows_list)
+
+    html_out = (
+        f'<div style="background: #FFFFFF; border-radius: 16px; border: 2px solid #CBD5E1; padding: 1.25rem 1.35rem; margin: 1.2rem 0; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">'
+        f'<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 0.65rem;">'
+        f'<div style="display: flex; align-items: center; gap: 0.6rem;">'
+        f'<span style="font-size: 1.4rem;">⚖️</span>'
+        f'<span style="font-size: 1.15rem; font-weight: 800; color: #0F172A;">Pembeda Detail Gejala Penyakit Serupa (Pencegah Salah Obat di Sawah)</span>'
+        f'</div>'
+        f'<span style="background: #EFF6FF; color: #1D4ED8; font-size: 0.8rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; border: 1px solid #BFDBFE;">Komparasi Lapangan</span>'
+        f'</div>'
+        f'<div style="font-size: 0.90rem; color: #475569; margin-bottom: 1rem; line-height: 1.55;">'
+        f'{data["confusion_reason"]} Pelajari tabel perbandingan berikut agar tidak salah menentukan tindakan dan pembelian obat:'
+        f'</div>'
+        f'<div style="overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.9rem;">'
+        f'<table style="width: 100%; border-collapse: separate; border-spacing: 0; border: 1.5px solid #CBD5E1; border-radius: 10px; overflow: hidden; font-size: 0.90rem;">'
+        f'<thead>'
+        f'<tr style="background: #F1F5F9;">'
+        f'<th style="padding: 10px 12px; text-align: left; font-weight: 800; color: #334155; border-bottom: 2px solid #CBD5E1; border-right: 1px solid #CBD5E1; width: 22%;">Tanda Pengamatan</th>'
+        f'<th style="padding: 10px 12px; text-align: left; font-weight: 800; color: #B91C1C; border-bottom: 2px solid #CBD5E1; border-right: 1px solid #CBD5E1; width: 39%; background: #FEF2F2;">'
+        f'🎯 {data["primary_title"]} (Terdeteksi)'
+        f'</th>'
+        f'<th style="padding: 10px 12px; text-align: left; font-weight: 800; color: #1D4ED8; border-bottom: 2px solid #CBD5E1; width: 39%; background: #EFF6FF;">'
+        f'{data["counterpart_icon"]} {data["counterpart_title"]} (Sering Tertukar)'
+        f'</th>'
+        f'</tr>'
+        f'</thead>'
+        f'<tbody>'
+        f'{table_body}'
+        f'</tbody>'
+        f'</table>'
+        f'</div>'
+        f'<div style="background: #FEF9C3; border: 1px solid #FDE047; border-left: 5px solid #CA8A04; border-radius: 10px; padding: 0.85rem 1.05rem; font-size: 0.88rem; color: #713F12; line-height: 1.6;">'
+        f'{data["special_alert"]}'
+        f'</div>'
+        f'</div>'
+    )
     return html_out
 
 
