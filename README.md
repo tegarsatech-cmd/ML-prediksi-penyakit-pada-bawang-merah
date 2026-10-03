@@ -19,14 +19,16 @@ Aplikasi sistem pakar diagnosis dan deteksi dini penyakit utama tanaman bawang m
    - Jika hanya 1 penyakit yang terdeteksi secara dominan, sistem menegakkan vonis tunggal dengan keyakinan tinggi.
    - Diferensial diagnosis berdampingan aktif apabila terdapat dua penyakit yang bersaing ketat untuk membantu petani membedakan patogen di sawah.
 
-3. **Peta Titik Kerusakan pada Foto Daun (HUD Lesion Scanner)**:
-   - **Terkunci Mutlak pada Kerusakan Fisik**: Retikel scanner HANYA menandai titik lesi fisik nyata pada helai daun.
+3. **Peta Titik Kerusakan pada Foto Daun (HUD Lesion Scanner Presisi Tinggi)**:
+   - **Terkunci Mutlak pada Kerusakan Fisik**: Retikel scanner HANYA menandai titik lesi fisik nyata pada helai daun (anti-melengser, anti-acak).
+   - **Akurasi Tinggi untuk Seluruh 7 Kategori**: Seluruh kelas patogen (Bercak Ungu, Hawar Daun, Karat Daun, Layu Moler, IYSV, hingga Daun Sehat) ditandai dengan fokus tunggal setara ketepatan Embun Bulu.
    - **Segmentasi Kanopi Daun & Skin Tone Exclusion**: Membedakan warna kulit manusia dari daun, sehingga foto daun yang sedang dipegang tangan petani tetap terdeteksi presisi.
-   - **Penanda Langsung Nama Penyakit**: Retikel scanner modern berlabel nama penyakit spesifik.
+   - **Penanda Langsung Nama Penyakit**: Retikel Merah untuk penyakit primer, Oranye untuk diferensial kedua, dan Hijau Zamrud untuk validasi daun sehat.
 
-4. **Verifikasi Karakteristik Fisik Langsung di Sawah**:
-   - Panduan praktis lapangan mencakup **Uji Raba** (lendir basah vs tepung serbuk kering), **Uji Aroma Daun** (langu busuk bakteri vs daun kering jamur), dan **Uji Usapan Jari** untuk memvalidasi diagnosis langsung di bedengan.
-   - Dilengkapi sistem cadangan offline mandiri jika koneksi AI terputus.
+4. **Buku Panduan Penggunaan Web di Sidebar**:
+   - Panduan interaktif ringkas, padat, dan jelas mengenai cara pengambilan foto yang benar (jarak 10-20 cm, fokus helai daun).
+   - Penjelasan teknis pengaturan ambang keyakinan (Confidence Threshold) dan sensitivitas kanopi daun.
+   - Tata cara membaca retikel HUD scanner dan manajemen penyimpanan riwayat per butir.
 
 5. **Petunjuk Obat & Perawatan dari Dokter Tanaman (3 Kartu Terstruktur)**:
    - **Kartu 1 - Tindakan Langsung di Kebun**: Prosedur darurat pemangkasan presisi dan sanitasi 24 jam pertama.
@@ -38,20 +40,9 @@ Aplikasi sistem pakar diagnosis dan deteksi dini penyakit utama tanaman bawang m
    - Menolak objek yang bukan tanaman bawang merah secara ramah dan edukatif.
    - Batas ukuran upload: maksimal **5 MB** (format: JPG, JPEG, PNG, WEBP).
 
-7. **Riwayat Pemeriksaan Tanpa Database Eksternal**:
-   - Otomatis mencatat riwayat diagnosa per sesi.
-   - Fitur ekspor riwayat ke format **CSV** dan **JSON**.
-
-8. **Format Keluaran API JSON**:
-   - Setiap prediksi menghasilkan respon JSON standar untuk integrasi backend/mobile:
-   ```json
-   {
-     "label": "Sehat",
-     "confidence": 0.93,
-     "uncertain": false,
-     "probabilities": { "Sehat": 0.93, "Bercak Ungu / Trotol (Alternaria porri)": 0.03, ... }
-   }
-   ```
+7. **Riwayat Pemeriksaan & Penyimpanan Mandiri**:
+   - Pengguna bebas memilih kapan menyimpan diagnosa dengan tombol `💾 Simpan Hasil ke Riwayat`.
+   - Riwayat dapat dipantau dan dihapus per butir (`🗑️`) langsung di sidebar.
 
 ---
 
