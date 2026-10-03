@@ -4,8 +4,17 @@
 # Fitur: Class Balancing (Daun Sehat & Penyakit 100% Seimbang, Tanpa Bias)
 # ==============================================================================
 
-# 1. Install Library Pendukung
-!pip install -q kagglehub torchvision torch Pillow tqdm scikit-learn
+# 1. Install Library Pendukung (Otomatis jika belum terpasang di Colab/Python)
+import sys
+import subprocess
+
+for pkg in ["kagglehub", "torchvision", "torch", "Pillow", "tqdm", "scikit-learn"]:
+    try:
+        mod_name = "sklearn" if pkg == "scikit-learn" else ("PIL" if pkg == "Pillow" else pkg)
+        __import__(mod_name)
+    except ImportError:
+        print(f"Menginstal paket {pkg}...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", pkg])
 
 import os
 import shutil
@@ -290,7 +299,19 @@ with open(meta_path, "w", encoding="utf-8") as f:
 print("✅ File meta.json berhasil disimpan:", meta_path)
 
 # 9. Kemas ke ZIP & Download Otomatis
-!zip -j /content/model_bawang_7kelas_balanced.zip /content/bawang_efficientnet_b0_ts.pt /content/meta.json
-from google.colab import files
-files.download('/content/model_bawang_7kelas_balanced.zip')
-print("\n🎉 SELESAI! File 'model_bawang_7kelas_balanced.zip' otomatis diunduh ke laptop Anda!")
+import zipfile
+
+zip_path = "/content/model_bawang_7kelas_balanced.zip"
+with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+    if os.path.exists(ts_path):
+        zipf.write(ts_path, arcname=os.path.basename(ts_path))
+    if os.path.exists(meta_path):
+        zipf.write(meta_path, arcname=os.path.basename(meta_path))
+print("✅ File ZIP berhasil dibuat:", zip_path)
+
+try:
+    from google.colab import files
+    files.download(zip_path)
+    print("\n🎉 SELESAI! File 'model_bawang_7kelas_balanced.zip' otomatis diunduh ke laptop Anda!")
+except ImportError:
+    print(f"\n🎉 Model dan meta telah selesai dikemas di: {zip_path}")
