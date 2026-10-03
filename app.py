@@ -73,11 +73,23 @@ st.markdown("""
             font-size: 1.55rem !important;
         }
         div.stButton > button {
-            min-height: 54px !important;
-            font-size: 1.1rem !important;
+            min-height: 52px !important;
+            font-size: 1.05rem !important;
         }
         .card-ai-step {
-            padding: 1.15rem 1.15rem !important;
+            padding: 1.1rem !important;
+        }
+        .card-rejection {
+            padding: 1.15rem 1rem !important;
+            border-radius: 14px !important;
+        }
+        .card-rejection-title {
+            font-size: 1.35rem !important;
+            line-height: 1.3 !important;
+        }
+        .card-rejection-reason {
+            font-size: 0.95rem !important;
+            padding: 0.75rem 0.9rem !important;
         }
     }
 
@@ -242,26 +254,31 @@ st.markdown("""
         background-color: #0369A1 !important;
     }
 
-    /* Tombol Khusus Sidebar (Bebas Terpotong/Anti-Crop, Teks Singkat Standar/Redup/Ketat) */
-    [data-testid="stSidebar"] div.stButton > button {
-        min-height: 38px !important;
-        font-size: 0.82rem !important;
+    /* Tombol Khusus Sidebar (Responsif, Pas di Kolom, Anti-Meluber & Terbaca Sempurna di Semua Perangkat) */
+    [data-testid="stSidebar"] div.stButton > button,
+    [data-testid="stSidebar"] .stDownloadButton > button {
+        min-height: 40px !important;
+        font-size: 0.88rem !important;
         font-weight: 700 !important;
-        padding: 0.35rem 0.2rem !important;
-        border-radius: 8px !important;
-        white-space: nowrap !important;
-        line-height: 1.2 !important;
-        overflow: visible !important;
-        text-overflow: clip !important;
+        padding: 0.45rem 0.65rem !important;
+        border-radius: 9px !important;
+        white-space: normal !important;
+        word-break: normal !important;
+        line-height: 1.25 !important;
+        overflow: hidden !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        margin-bottom: 4px !important;
     }
-    [data-testid="stSidebar"] div.stButton > button p {
-        font-size: 0.82rem !important;
+    [data-testid="stSidebar"] div.stButton > button p,
+    [data-testid="stSidebar"] .stDownloadButton > button p {
+        font-size: 0.88rem !important;
         margin: 0 !important;
         padding: 0 !important;
-        line-height: 1.2 !important;
-        white-space: nowrap !important;
-        overflow: visible !important;
-        text-overflow: clip !important;
+        line-height: 1.25 !important;
+        white-space: normal !important;
+        word-break: normal !important;
     }
 
     /* 4. Tab Navigasi Kamera & Galeri (Kontras Jelas) */
@@ -2260,6 +2277,15 @@ except (OSError, ValueError, FileNotFoundError, AttributeError) as e:
     class_names = []
 
 # ==============================================================================
+# SINKRONISASI PENDING STATE SEBELUM WIDGET SLIDER DI-INSTANTIATE
+# Mencegah StreamlitWidgetAlreadyInstantiatedError saat tombol aksi ditekan
+# ==============================================================================
+if "pending_conf_slider" in st.session_state:
+    st.session_state["conf_slider"] = int(st.session_state.pop("pending_conf_slider"))
+if "pending_leaf_slider" in st.session_state:
+    st.session_state["leaf_slider"] = int(st.session_state.pop("pending_leaf_slider"))
+
+# ==============================================================================
 # 5. SIDEBAR: PENGATURAN TEKNIS & RIWAYAT (DIPINDAHKAN AGAR TIDAK MEMBINGUNGKAN)
 # ==============================================================================
 with st.sidebar:
@@ -2377,23 +2403,42 @@ with st.sidebar:
     st.markdown("### ⚙️ Validasi Foto Bawang")
     st.caption("Pilih preset cepat atau geser slider sesuai kondisi foto lapangan:")
 
-    # Tombol Preset Cepat Langsung Sinkron ke Web (Hanya Keterangan Singkat: Standar, Redup, Ketat)
-    col_pre1, col_pre2, col_pre3 = st.columns(3)
-    with col_pre1:
-        if st.button("🌾 Standar", help="Preset Standar Sawah (Keyakinan 65% | Daun 8%)", use_container_width=True):
-            st.session_state["conf_slider"] = 65
-            st.session_state["leaf_slider"] = 8
-            st.rerun()
-    with col_pre2:
-        if st.button("☁️ Redup", help="Preset Cuaca Redup / Gejala Dini (Keyakinan 50% | Daun 5%)", use_container_width=True):
-            st.session_state["conf_slider"] = 50
-            st.session_state["leaf_slider"] = 5
-            st.rerun()
-    with col_pre3:
-        if st.button("🔬 Ketat", help="Preset Super Ketat Lab (Keyakinan 80% | Daun 20%)", use_container_width=True):
-            st.session_state["conf_slider"] = 80
-            st.session_state["leaf_slider"] = 20
-            st.rerun()
+    current_conf = st.session_state.get("conf_slider", default_conf_pct)
+    current_leaf = st.session_state.get("leaf_slider", 8)
+
+    # Tombol Preset Cepat Langsung Sinkron ke Web (Vertikal Lebar Penuh: 100% Bebas Terpotong di Semua HP & Layar)
+    if st.button(
+        "🌾 Standar",
+        help="Preset Standar Sawah (Keyakinan 65% | Daun 8%)",
+        type="primary" if (current_conf == 65 and current_leaf == 8) else "secondary",
+        use_container_width=True,
+        key="btn_preset_standar"
+    ):
+        st.session_state["pending_conf_slider"] = 65
+        st.session_state["pending_leaf_slider"] = 8
+        st.rerun()
+
+    if st.button(
+        "☁️ Redup",
+        help="Preset Cuaca Redup / Gejala Dini (Keyakinan 50% | Daun 5%)",
+        type="primary" if (current_conf == 50 and current_leaf == 5) else "secondary",
+        use_container_width=True,
+        key="btn_preset_redup"
+    ):
+        st.session_state["pending_conf_slider"] = 50
+        st.session_state["pending_leaf_slider"] = 5
+        st.rerun()
+
+    if st.button(
+        "🔬 Ketat",
+        help="Preset Super Ketat Lab (Keyakinan 80% | Daun 20%)",
+        type="primary" if (current_conf == 80 and current_leaf == 20) else "secondary",
+        use_container_width=True,
+        key="btn_preset_ketat"
+    ):
+        st.session_state["pending_conf_slider"] = 80
+        st.session_state["pending_leaf_slider"] = 20
+        st.rerun()
 
     # Inisialisasi default jika belum ada di session_state
     if "conf_slider" not in st.session_state:
@@ -2405,7 +2450,6 @@ with st.sidebar:
         "Batas Keyakinan / Confidence Threshold (%)",
         min_value=20,
         max_value=90,
-        value=st.session_state["conf_slider"],
         step=5,
         key="conf_slider",
         help="Jika kepastian model di bawah nilai ini, foto akan ditandai 'Tidak yakin, foto kurang jelas atau bukan daun bawang'."
@@ -2440,7 +2484,6 @@ with st.sidebar:
         "Sensitivitas Daun Bawang (%)",
         min_value=3,
         max_value=35,
-        value=st.session_state["leaf_slider"],
         step=1,
         key="leaf_slider",
         help="Persentase minimal kanopi daun bawang merah yang harus ada pada foto. Naikkan jika ingin validasi lebih ketat menolak foto selain bawang."
@@ -2529,7 +2572,7 @@ with st.sidebar:
     else:
         st.caption("Belum ada riwayat yang disimpan. Klik tombol '💾 Simpan Hasil ke Riwayat' setelah foto diperiksa.")
 
-    if st.button("🔄 Bersihkan Cache & Muat Ulang Model", use_container_width=True):
+    if st.button("🔄 Bersihkan Cache Sesi", use_container_width=True, key="btn_clear_cache_sidebar"):
         st.cache_resource.clear()
         st.cache_data.clear()
         if "has_inspected_current" in st.session_state:
@@ -2639,11 +2682,11 @@ if selected_image is not None and not file_error:
 
     st.markdown(f"""
         <div style="background: {m_bg}; border: 1.5px solid {m_border}; border-radius: 12px; padding: 10px 14px; margin: 6px 0 14px 0;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
                 <span style="font-weight: 700; color: #1e293b; font-size: 0.90rem;">🍃 Monitor Validasi Kanopi Daun (Live Real-Time):</span>
                 <span style="font-weight: 800; color: {m_color}; font-size: 0.85rem;">{m_icon} {m_status_title}</span>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: #475569;">
+            <div style="display: flex; align-items: center; gap: 8px 12px; font-size: 0.85rem; color: #475569; flex-wrap: wrap;">
                 <span>Daun Terdeteksi: <strong style="color: #0f172a;">{ratio_pct_live:.1f}%</strong></span>
                 <span>•</span>
                 <span>Batas Slider Anda: <strong style="color: #0f172a;">{min_leaf_ratio_pct}%</strong></span>
@@ -2711,12 +2754,10 @@ if selected_image is not None and not file_error:
                     </div>
                 """, unsafe_allow_html=True)
 
-                col_fix1, col_fix2 = st.columns([3, 2])
-                with col_fix1:
-                    if st.button("⚡ Terapkan Standar Sawah (8%) & Lanjutkan Diagnosa", type="primary", use_container_width=True, key="btn_apply_std_leaf"):
-                        st.session_state["leaf_slider"] = 8
-                        st.session_state["conf_slider"] = 65
-                        st.rerun()
+                if st.button("⚡ Terapkan Standar Sawah (8%) & Lanjutkan Diagnosa", type="primary", use_container_width=True, key="btn_apply_std_leaf"):
+                    st.session_state["pending_leaf_slider"] = 8
+                    st.session_state["pending_conf_slider"] = 65
+                    st.rerun()
             else:
                 st.error("❌ Foto Ditolak: Objek yang diunggah terdeteksi bukan daun/tanaman bawang merah.")
                 st.markdown(f"""
@@ -2802,11 +2843,9 @@ if selected_image is not None and not file_error:
                 </div>
             """, unsafe_allow_html=True)
 
-            col_cf1, col_cf2 = st.columns([3, 2])
-            with col_cf1:
-                if st.button("⚡ Gunakan Mode Redup (50%) & Cek Ulang Sekarang", type="primary", use_container_width=True, key="btn_apply_conf_redup"):
-                    st.session_state["conf_slider"] = 50
-                    st.rerun()
+            if st.button("⚡ Gunakan Mode Redup (50%) & Cek Ulang Sekarang", type="primary", use_container_width=True, key="btn_apply_conf_redup"):
+                st.session_state["pending_conf_slider"] = 50
+                st.rerun()
             st.stop()  # Hentikan eksekusi, jangan tebak penyakit & jangan panggil resep obat
 
         # ==============================================================================
