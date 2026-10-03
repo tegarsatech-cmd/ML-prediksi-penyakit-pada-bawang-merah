@@ -2184,15 +2184,7 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
         temperature = float(meta.get("temperature", 0.50))
         if temperature < 0.20:
             temperature = 0.50
-        probs_tensor = torch.softmax(logits / temperature, dim=1)[0]
-
-    # 6. Ambil kelas tertinggi & evaluasi conf_threshold
-    conf_threshold = float(meta.get("conf_threshold", 0.65))
-    top_idx = int(torch.argmax(probs_tensor).item())
-    top_confidence_val = float(probs_tensor[top_idx].item())
-    top_confidence = round(top_confidence_val * 100.0, 1)
-
-    uncertain = bool(top_confidence_val < conf_threshold)
+        probs_tensor = torch.softmax(logits / temperature, dim=1)[0].clone()
 
     class_labels = meta.get("class_labels_id", [
         "Downy mildew",
@@ -2203,6 +2195,84 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
         "Bercak Ungu / Trotol (Alternaria porri)",
         "Rust"
     ])
+
+    # ==============================================================================
+    # LOGIKA PENGAMAN BOTANI (RULE-BASED BOTANICAL DISAMBIGUATION)
+    # Menghilangkan bias & label-noise dataset Kaggle pada patogen yang tumpang tindih
+    # ==============================================================================
+    try:
+        chk_w, chk_h = target_img.size
+        chk_scale = min(1.0, 384.0 / float(max(chk_w, chk_h)))
+        chk_sw, chk_sh = max(8, int(round(chk_w * chk_scale))), max(8, int(round(chk_h * chk_scale)))
+        chk_img = target_img.resize((chk_sw, chk_sh), Image.Resampling.BILINEAR) if chk_scale < 1.0 else target_img
+        chk_arr = np.asarray(chk_img, dtype=np.float32)
+        chk_r, chk_g, chk_b = chk_arr[:, :, 0], chk_arr[:, :, 1], chk_arr[:, :, 2]
+        chk_hsv = cv2.cvtColor(chk_arr.astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.float32)
+        chk_hue = chk_hsv[:, :, 0] * 2.0
+        chk_sat = chk_hsv[:, :, 1] / 255.0
+        chk_val = chk_hsv[:, :, 2] / 255.0
+        total_leaf_px = float(chk_sw * chk_sh)
+
+        # Ciri 1: Pusat melekuk ungu/cokelat gelap konsentris (Ciri Mutlak Bercak Ungu / Alternaria porri)
+        is_purple_sunken = (
+            ((chk_hue >= 235.0) | (chk_hue <= 30.0)) &
+            (chk_sat >= 0.12) & (chk_sat <= 0.75) &
+            (chk_val >= 0.10) & (chk_val <= 0.68) &
+            (chk_r > chk_g * 1.04) & (chk_r > chk_b * 1.02)
+        )
+        is_yellow_halo = (chk_hue >= 32.0) & (chk_hue <= 72.0) & (chk_sat >= 0.18) & (chk_val >= 0.28)
+        ratio_purple = np.count_nonzero(is_purple_sunken) / total_leaf_px
+        ratio_yellow = np.count_nonzero(is_yellow_halo) / total_leaf_px
+
+        # Ciri 2: Massa spora kehitaman/kelabu gelap (Ciri Mutlak Hawar Daun Stemphylium aktif)
+        is_leaf_tissue = (chk_hue >= 25.0) & (chk_hue <= 165.0) & (chk_sat >= 0.10)
+        is_dark_spores = is_leaf_tissue & (chk_val <= 0.32) & (chk_val >= 0.05) & (chk_sat <= 0.45)
+        ratio_spores = np.count_nonzero(is_dark_spores) / total_leaf_px
+
+        # Ciri 3: Bintil timbul oranye menyala (Ciri Mutlak Karat Daun / Puccinia allii)
+        is_rust_pustule = (
+            (chk_hue >= 10.0) & (chk_hue <= 48.0) &
+            (chk_r > chk_g * 1.06) & (chk_r > chk_b * 1.25) &
+            (chk_sat >= 0.28) & (chk_val >= 0.25)
+        )
+        ratio_rust = np.count_nonzero(is_rust_pustule) / total_leaf_px
+
+        # --- PENGAMAN 1: KOREKSI BIAS TROTOL VS DOWNY MILDEW ---
+        # Jika ada lesi melekuk ungu/cokelat konsentris dengan halo kuning, itu 100% Trotol, bukan Downy Mildew
+        if ratio_purple >= 0.015 and ratio_yellow >= 0.02:
+            p_downy = probs_tensor[0].item()
+            p_trotol = probs_tensor[5].item()
+            if p_downy > p_trotol:
+                probs_tensor[5] = p_downy * 0.90 + p_trotol
+                probs_tensor[0] = p_downy * 0.10
+                probs_tensor = probs_tensor / probs_tensor.sum()
+
+        # --- PENGAMAN 2: KOREKSI SEHAT PALSU PADA DAUN HAWARD/SPORA HITAM ---
+        # Jika daun dipenuhi spora hitam pekat hawar atau tip dieback, daun tidak boleh divonis sehat
+        if ratio_spores >= 0.015:
+            p_sehat = probs_tensor[1].item()
+            if p_sehat > 0.10:
+                probs_tensor[3] = probs_tensor[3] + p_sehat * 0.85
+                probs_tensor[1] = p_sehat * 0.15
+                probs_tensor = probs_tensor / probs_tensor.sum()
+
+        # --- PENGAMAN 3: PENGUATAN KARAT DAUN JIKA PUSTULA TERDETEKSI JELAS ---
+        if ratio_rust >= 0.008:
+            p_rust = probs_tensor[6].item()
+            if p_rust > 0.05 and p_rust < 0.65:
+                probs_tensor[6] = max(p_rust, 0.75)
+                probs_tensor = probs_tensor / probs_tensor.sum()
+
+    except Exception:
+        pass
+
+    # 6. Ambil kelas tertinggi & evaluasi conf_threshold
+    conf_threshold = float(meta.get("conf_threshold", 0.65))
+    top_idx = int(torch.argmax(probs_tensor).item())
+    top_confidence_val = float(probs_tensor[top_idx].item())
+    top_confidence = round(top_confidence_val * 100.0, 1)
+
+    uncertain = bool(top_confidence_val < conf_threshold)
 
     raw_class_name = class_labels[top_idx]
     if uncertain:
