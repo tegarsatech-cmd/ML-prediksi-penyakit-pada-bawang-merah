@@ -3548,9 +3548,6 @@ with st.sidebar:
                         st.rerun()
                 st.markdown("<hr style='margin: 3px 0 6px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
 
-        df_hist = pd.DataFrame(history_list)
-        kolom_ekspor = [col for col in ["waktu", "penyakit", "confidence", "status", "lokasi", "catatan", "rekomendasi"] if col in df_hist.columns]
-        
         # Unduh Laporan Excel Lengkap (.XLSX) dengan Foto Daun & Keterangan Analisis
         excel_bytes = generate_excel_history_report(history_list)
         st.download_button(
@@ -3558,16 +3555,6 @@ with st.sidebar:
             data=excel_bytes,
             file_name=f"riwayat_analisis_bawang_{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-
-        # Download CSV Ringkas
-        csv_bytes = df_hist[kolom_ekspor].to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Unduh Data Tabel (.CSV)",
-            data=csv_bytes,
-            file_name=f"riwayat_bawang_{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
             use_container_width=True
         )
 
