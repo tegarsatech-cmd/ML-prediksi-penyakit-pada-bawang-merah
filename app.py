@@ -1631,12 +1631,12 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
 
 def compute_shallot_leaf_score(image: Image.Image) -> float:
     """
-    Kalkulator Skor Keaslian, Kepadatan, Morfologi, dan Ketajaman Daun Bawang Merah (Allium cepa):
-    1. Deteksi Wajah/Kulit Manusia (YCrCb + RGB): Foto wajah/tubuh/selfie ditekan ke skor sangat rendah (5% - 22%).
-    2. Deteksi Benda Non-Tanaman (Bantal, kasur, pakaian, perabotan, dinding, tanah kosong): Skor ditekan (2% - 20%).
+    Kalkulator Skor Keaslian, Kepadatan, Morfologi Silinder, dan Ketajaman Daun Bawang Merah (Allium cepa):
+    1. Deteksi Wajah/Kulit Manusia (YCrCb + RGB): Foto wajah/tubuh/selfie ditekan ke skor sangat rendah (2% - 15%).
+    2. Deteksi Benda Non-Tanaman (Bantal, kasur, pakaian, perabotan, dinding, tanah kosong): Skor ditekan (1% - 18%).
     3. Deteksi Daun Bawang Asli:
        - Daun bawang jelas/sehat/bergejala: Skor terjamin >= 60.0% (62% - 98%) tergantung kerapatan kanopi, morfologi tabung, dan ketajaman fokus.
-       - Daun bawang satu helai kecil di tanah / bibit muda: Skor berada di zona toleransi (47% - 59.9%) untuk verifikasi 2 langkah.
+       - Daun bawang samar-samar / satu helai kecil di tanah / bibit muda: Skor berada di zona toleransi (47% - 58.5%) untuk verifikasi 2 langkah.
     """
     try:
         thumb = image.convert("RGB").resize((224, 224))
@@ -1650,12 +1650,12 @@ def compute_shallot_leaf_score(image: Image.Image) -> float:
             cr = ycrcb[..., 1].astype(np.float32)
             cb = ycrcb[..., 2].astype(np.float32)
             is_skin = (
-                (y >= 60.0) &
-                (cr >= 133.0) & (cr <= 175.0) &
-                (cb >= 80.0) & (cb <= 128.0) &
+                (y >= 80.0) &
+                (cr >= 135.0) & (cr <= 175.0) &
+                (cb >= 85.0) & (cb <= 125.0) &
                 (r > g) & (g > b) &
-                ((r - g) >= 12.0) & ((r - g) <= 85.0) &
-                ((r - b) >= 15.0)
+                ((r - g) >= 15.0) & ((r - g) <= 80.0) &
+                ((r - b) >= 20.0)
             )
             skin_ratio = float(np.mean(is_skin))
         else:
@@ -1681,8 +1681,8 @@ def compute_shallot_leaf_score(image: Image.Image) -> float:
         # Daun hijau aktif botani (klorofil aktif)
         is_green_leaf = (
             (h >= 36.0) & (h <= 165.0) &
-            (s >= 0.15) & (v >= 0.10) &
-            (exg > 8.0) & (g > r * 1.03) & (g > b * 1.05)
+            (s >= 0.16) & (v >= 0.10) &
+            (exg > 8.0) & (g > r * 1.04) & (g > b * 1.06)
         )
         if ycrcb is not None:
             is_green_leaf = is_green_leaf & (~is_skin)
@@ -1690,67 +1690,84 @@ def compute_shallot_leaf_score(image: Image.Image) -> float:
         # Daun menguning klorotik / lesi hawar pada daun
         is_yellowing = (
             (h >= 24.0) & (h < 55.0) &
-            (s >= 0.20) & (v >= 0.18) &
+            (s >= 0.22) & (v >= 0.18) &
             (g > b * 1.25) &
-            ((exg > 5.0) | ((g >= r * 0.88) & (g > 115.0)))
+            ((exg > 5.0) | ((g >= r * 0.90) & (g > 115.0)))
         )
         if ycrcb is not None:
             is_yellowing = is_yellowing & (~is_skin)
 
-        leaf_mask = is_green_leaf | is_yellowing
+        leaf_mask = (is_green_leaf | is_yellowing).astype(np.uint8)
         leaf_ratio = float(np.mean(leaf_mask))
 
-        # Jika foto manusia / kulit dominan tanpa daun bawang signifikan:
-        if skin_ratio > 0.12 and leaf_ratio < 0.05:
-            score = max(5.0, (1.0 - skin_ratio) * 18.0)
+        # A. DISKUALIFIKASI CEPAT OBJEK BUKAN TANAMAN (0 Token, Tolak Langsung < 47%):
+        # 1. Wajah / kulit manusia dominan tanpa daun signifikan
+        if skin_ratio > 0.08 and leaf_ratio < 0.04:
+            score = max(2.0, (1.0 - skin_ratio) * 12.0)
             return round(score, 1)
 
-        # Jika tidak ada daun sama sekali (dinding, perabotan, kasur, bantal ungu, kain, kertas):
-        if leaf_ratio < 0.02:
-            score = max(2.0, leaf_ratio * 300.0)
+        # 2. Foto tanpa daun sama sekali (kamar tidur, bantal ungu, kasur, perabotan, tembok, kertas):
+        if leaf_ratio < 0.015:
+            score = max(1.5, leaf_ratio * 120.0)
             return round(score, 1)
 
-        # 3. Morfologi helai memanjang (khas famili bawang / Allium)
-        tube_ratio = 0.0
+        # 3. Analisis Morfologi Silinder Kontur Helai Daun Bawang (Tubular Geometry)
+        tube_coverage = 0.0
+        num_tubes = 0
         if cv2 is not None:
-            clean_mask = cv2.morphologyEx(leaf_mask.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
-            tubes = cv2.morphologyEx(clean_mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (2, 6)))
-            tube_ratio = float(np.mean(tubes))
+            clean_mask = cv2.morphologyEx(leaf_mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2)))
+            contours, _ = cv2.findContours(clean_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            elongated_leaf_px = 0
+            for c in contours:
+                area = cv2.contourArea(c)
+                if area >= 20:
+                    rect = cv2.minAreaRect(c)
+                    w_box, h_box = rect[1]
+                    if w_box > 0 and h_box > 0:
+                        aspect = max(w_box, h_box) / min(w_box, h_box)
+                        # Daun bawang merah memiliki kontur silinder memanjang (aspect ratio >= 1.6)
+                        if aspect >= 1.6:
+                            elongated_leaf_px += area
+                            num_tubes += 1
+            tube_coverage = float(elongated_leaf_px) / (224.0 * 224.0)
 
-        # 4. Kejelasan fokus & kontras helai daun
+        # B. JIKA TIDAK ADA STRUKTUR HELAI MEMANJANG SAMA SEKALI (Bercak bulat baju, wallpaper, benda acak):
+        if num_tubes == 0 or tube_coverage < 0.005:
+            score = max(2.0, min(24.0, leaf_ratio * 150.0))
+            return round(score, 1)
+
+        # 4. Kejelasan fokus & kontras helai daun (Laplacian Variance)
         clarity_factor = 0.5
         if cv2 is not None:
             gray = cv2.cvtColor(arr.astype(np.uint8), cv2.COLOR_RGB2GRAY)
             lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-            clarity_factor = min(1.0, lap_var / 350.0)
+            clarity_factor = min(1.0, lap_var / 280.0)
 
-        # 5. Penghasilan Skor Daun Bawang:
-        # Jika daun bawang terdeteksi nyata:
-        # a) Helai kecil / bibit muda di tanah luas (2% - 5.9% area):
-        # Skor masuk ke zona toleransi (47.0% - 59.5%) sehingga bisa diverifikasi 2 langkah
-        if leaf_ratio < 0.06:
-            base_score = 47.0
-            canopy_bonus = (leaf_ratio / 0.06) * 8.0
-            clarity_bonus = clarity_factor * 4.0
-            score = base_score + canopy_bonus + clarity_bonus
-            return round(min(59.5, max(47.0, score)), 1)
+        # C. PEMETAAN ATURAN SKOR SESUAI PERMINTAAN USER:
+        # 1. Daun Bawang Samar-Samar / Sedikit / Bibit Kecil di Tanah:
+        # Terbukti ada helai silinder daun bawang, tapi areanya kecil (tube_coverage < 0.04) atau agak buram
+        if tube_coverage < 0.04 or clarity_factor < 0.28:
+            # Zona Toleransi: 47.0% s/d 58.5% -> Wajib Verifikasi 2 Langkah!
+            base_tol = 47.0
+            tube_add = min(7.0, (tube_coverage / 0.04) * 7.0)
+            clarity_add = clarity_factor * 4.5
+            score = base_tol + tube_add + clarity_add
+            return round(min(58.5, max(47.0, score)), 1)
 
-        # b) Daun bawang standar / jelas (>= 6% area):
-        # Skor langsung di atas 60% (62% - 98%) tergantung kejelasan dan kerapatan
-        base_score = 62.0
-        canopy_bonus = min(18.0, ((leaf_ratio - 0.06) / 0.20) * 18.0)
-        tube_bonus = min(8.0, (tube_ratio / 0.06) * 8.0)
-        clarity_bonus = clarity_factor * 10.0
+        # 2. Daun Bawang Jelas & Rumpun Terfokus (Pokoknya kalau terdeteksi bawang jelas, skor >= 60%):
+        base_pass = 62.0
+        canopy_bonus = min(18.0, ((leaf_ratio - 0.04) / 0.20) * 18.0)
+        tube_bonus = min(10.0, (tube_coverage / 0.08) * 10.0)
+        clarity_bonus = clarity_factor * 8.5
 
         hand_penalty = 0.0
-        if skin_ratio > 0.20:
-            hand_penalty = min(6.0, (skin_ratio - 0.20) * 15.0)
+        if skin_ratio > 0.15:
+            hand_penalty = min(6.0, (skin_ratio - 0.15) * 18.0)
 
-        final_score = base_score + canopy_bonus + tube_bonus + clarity_bonus - hand_penalty
-        final_score = max(60.0, min(98.5, final_score))
-        return round(final_score, 1)
+        final_score = base_pass + canopy_bonus + tube_bonus + clarity_bonus - hand_penalty
+        return round(min(98.5, max(60.0, final_score)), 1)
     except Exception:
-        return 50.0
+        return 10.0
 
 def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.50) -> tuple[bool, str, float]:
     """
