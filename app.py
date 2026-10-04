@@ -1381,6 +1381,36 @@ def load_torch_model(file_path=MODEL_PATH):
     model.eval()
     return model
 
+def detect_skin_ratio(image: Image.Image) -> float:
+    """Menghitung rasio warna kulit manusia murni pada citra untuk deteksi wajah/anggota tubuh dominan tanpa salah mendeteksi daun kering/tanah."""
+    try:
+        img_rgb = image.copy().convert("RGB")
+        img_rgb.thumbnail((224, 224), Image.Resampling.BILINEAR)
+        arr = np.array(img_rgb, dtype=np.uint8)
+        if cv2 is not None:
+            ycrcb = cv2.cvtColor(arr, cv2.COLOR_RGB2YCrCb)
+            y = ycrcb[..., 0].astype(np.float32)
+            cr = ycrcb[..., 1].astype(np.float32)
+            cb = ycrcb[..., 2].astype(np.float32)
+        else:
+            return 0.0
+        r = arr[..., 0].astype(np.float32)
+        g = arr[..., 1].astype(np.float32)
+        b = arr[..., 2].astype(np.float32)
+
+        # Kulit manusia murni: Y (60-240), Cr (133-175), Cb (80-128), R > G > B, dan R - G >= 12
+        is_skin = (
+            (y >= 60.0) &
+            (cr >= 133.0) & (cr <= 175.0) &
+            (cb >= 80.0) & (cb <= 128.0) &
+            (r > g) & (g > b) &
+            ((r - g) >= 12.0) & ((r - g) <= 85.0) &
+            ((r - b) >= 15.0)
+        )
+        return float(np.mean(is_skin))
+    except Exception:
+        return 0.0
+
 def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.08) -> tuple[Image.Image, tuple[int, int, int, int], float]:
     """
     Ekstraksi Otomatis Region of Interest (ROI) Daun Bawang Merah:
@@ -1443,6 +1473,13 @@ def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.08) -> tuple[Ima
 
     if cv2 is not None:
         clean_leaf_mask = cv2.morphologyEx(total_leaf_mask.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+        leaf_pct = float(np.mean(clean_leaf_mask))
+        skin_pct = detect_skin_ratio(thumb)
+
+        # Mencegah auto-crop salah sasaran pada wajah manusia, perabotan, atau jika daun tidak signifikan (< 3.5%)
+        if leaf_pct < 0.035 or (skin_pct > 0.12 and leaf_pct < 0.06):
+            return img_rgb, (0, 0, orig_w, orig_h), 1.0
+
         contours, _ = cv2.findContours(clean_leaf_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         valid_c = [c for c in contours if cv2.contourArea(c) >= 20]
         if valid_c:
@@ -1450,12 +1487,10 @@ def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.08) -> tuple[Ima
             bx, by, bw, bh = cv2.boundingRect(all_pts)
             raw_coverage = (bw * bh) / float(thumb_dim * thumb_dim)
         else:
-            bx, by, bw, bh = 0, 0, thumb_dim, thumb_dim
-            raw_coverage = 1.0
+            return img_rgb, (0, 0, orig_w, orig_h), 1.0
 
         # SMART CENTER SALIENCY CROP:
-        # Jika dedaunan terdeteksi menyentuh hampir seluruh sudut layar (tanaman campur / pot penuh dari jauh)
-        # Pangkas dedaunan luar/perifer dan fokuskan pada rumpun daun bawang di area tengah bidikan!
+        # Hanya aktif jika dedaunan nyata terdeteksi menyentuh hampir seluruh sudut layar (rumpun daun bawang padat di pot/kebun)
         if raw_coverage >= 0.85 or (bx <= 3 and by <= 3 and bw >= thumb_dim - 6 and bh >= thumb_dim - 6):
             # 1. Filter morfologi silinder vertikal (helai daun bawang merah tegak memanjang)
             kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 7))
@@ -1594,26 +1629,44 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
 
     return batch_array, view_primary, weights, diag_info
 
-def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.08) -> tuple[bool, str, float]:
+def compute_shallot_leaf_score(image: Image.Image) -> float:
     """
-    Validasi Citra Daun Bawang Merah (Pre-Inference Guard):
-    Memeriksa spektrum kromatisitas dan morfologi tanaman bawang merah (Allium cepa)
-    menggunakan kombinasi Excess Green Index (ExG) dan analisis HSV botani.
-    Mencegah input non-tanaman: wajah, tangan tanpa daun, tanah/dinding polos, pakaian, kendaraan, hewan, dokumen.
+    Kalkulator Skor Keaslian, Kepadatan, Morfologi, dan Ketajaman Daun Bawang Merah (Allium cepa):
+    1. Deteksi Wajah/Kulit Manusia (YCrCb + RGB): Foto wajah/tubuh/selfie ditekan ke skor sangat rendah (5% - 22%).
+    2. Deteksi Benda Non-Tanaman (Bantal, kasur, pakaian, perabotan, dinding, tanah kosong): Skor ditekan (2% - 20%).
+    3. Deteksi Daun Bawang Asli:
+       - Daun bawang jelas/sehat/bergejala: Skor terjamin >= 60.0% (62% - 98%) tergantung kerapatan kanopi, morfologi tabung, dan ketajaman fokus.
+       - Daun bawang satu helai kecil di tanah / bibit muda: Skor berada di zona toleransi (47% - 59.9%) untuk verifikasi 2 langkah.
     """
     try:
         thumb = image.convert("RGB").resize((224, 224))
         arr = np.array(thumb, dtype=np.float32)
         r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
         
-        # 1. Excess Green Index (ExG) botani: 2G - R - B
-        exg = 2.0 * g - r - b
+        # 1. Deteksi kulit/wajah manusia murni (YCrCb + RGB)
+        ycrcb = cv2.cvtColor(arr.astype(np.uint8), cv2.COLOR_RGB2YCrCb) if cv2 is not None else None
+        if ycrcb is not None:
+            y = ycrcb[..., 0].astype(np.float32)
+            cr = ycrcb[..., 1].astype(np.float32)
+            cb = ycrcb[..., 2].astype(np.float32)
+            is_skin = (
+                (y >= 60.0) &
+                (cr >= 133.0) & (cr <= 175.0) &
+                (cb >= 80.0) & (cb <= 128.0) &
+                (r > g) & (g > b) &
+                ((r - g) >= 12.0) & ((r - g) <= 85.0) &
+                ((r - b) >= 15.0)
+            )
+            skin_ratio = float(np.mean(is_skin))
+        else:
+            skin_ratio = 0.0
         
-        # 2. HSV murni
+        # 2. Excess Green & HSV untuk Daun Bawang Merah Asli
+        exg = 2.0 * g - r - b
         cmax = np.maximum(np.maximum(r, g), b)
         cmin = np.minimum(np.minimum(r, g), b)
         delta = np.where(cmax - cmin == 0, 1.0, cmax - cmin)
-        
+
         h = np.zeros_like(delta)
         mask_r = (cmax == r) & (cmax > cmin)
         h[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta[mask_r]) % 6.0)
@@ -1621,87 +1674,99 @@ def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.08) -> tupl
         h[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta[mask_g]) + 2.0)
         mask_b = (cmax == b) & (cmax > cmin)
         h[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta[mask_b]) + 4.0)
-        
+
         s = np.where(cmax == 0, 0.0, (cmax - cmin) / np.where(cmax == 0, 1.0, cmax))
         v = cmax / 255.0
-        
-        # Deteksi kulit tangan/wajah manusia untuk eksklusi
-        is_skin = (
-            (h >= 5.0) & (h <= 28.0) &
-            (s >= 0.15) & (s <= 0.60) &
-            (v >= 0.30) & (v <= 0.95) &
-            (r > g * 1.08) & (g > b * 1.02) &
-            (np.abs(r - g) < 95)
+
+        # Daun hijau aktif botani (klorofil aktif)
+        is_green_leaf = (
+            (h >= 36.0) & (h <= 165.0) &
+            (s >= 0.15) & (v >= 0.10) &
+            (exg > 8.0) & (g > r * 1.03) & (g > b * 1.05)
         )
-        skin_ratio = float(np.mean(is_skin))
+        if ycrcb is not None:
+            is_green_leaf = is_green_leaf & (~is_skin)
 
-        # Jaringan daun hijau tanaman (klorofil aktif)
-        is_green_leaf = (h >= 35.0) & (h <= 170.0) & (s >= 0.12) & (v >= 0.09) & (exg > 0)
-        
-        # Daun menguning klorotik / ujung mengering penyakit
-        is_yellowing = (h >= 24.0) & (h < 55.0) & (s >= 0.18) & (g > b * 1.25) & ((exg > 4.0) | ((g >= r * 0.85) & (g > 110.0)))
-        
-        leaf_base = (is_green_leaf | is_yellowing) & (~is_skin)
-        if cv2 is not None:
-            kernel_exp = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
-            leaf_exp = cv2.dilate(leaf_base.astype(np.uint8), kernel_exp, iterations=2)
-        else:
-            leaf_exp = leaf_base.astype(np.uint8)
-
-        # Bintil pustula karat / bercak nekrotik pada daun (hanya yang menempel pada daun)
-        is_rust_spot = (h >= 6.0) & (h < 30.0) & (r > g * 1.05) & (s >= 0.18) & (v >= 0.14) & (~is_skin) & (leaf_exp > 0)
-
-        # Mask vegetasi murni pada helai daun
-        plant_mask = leaf_base | is_rust_spot
-        plant_ratio = float(np.mean(plant_mask))
-        
-        # Cek kertas putih / dinding polos / background abu-abu
-        is_white_gray = (s < 0.10) & (v > 0.70)
-        if np.mean(is_white_gray) > 0.88 and plant_ratio < 0.02:
-            return False, "Terdeteksi objek kertas atau dinding putih polos, bukan daun bawang.", plant_ratio
-
-        # Deteksi kulit/wajah manusia mendominasi tanpa tanaman (selfie wajah / foto tubuh murni)
-        # Jika ada helai daun (plant_ratio >= 0.015), foto diizinkan agar dapat divalidasi oleh Gemini
-        if skin_ratio > 0.35 and plant_ratio < 0.015:
-            return False, "Terdeteksi wajah atau kulit manusia mendominasi tanpa tanaman daun bawang merah.", plant_ratio
-        
-        if plant_ratio < min_ratio:
-            return False, f"Rasio daun bawang pada foto hanya {plant_ratio*100:.1f}% (minimal {min_ratio*100:.0f}%).", plant_ratio
-
-        return True, "Valid", plant_ratio
-    except Exception as e:
-        return True, f"Bypass: {e}", 1.0
-
-def detect_skin_ratio(image: Image.Image) -> float:
-    """Menghitung rasio warna kulit manusia murni pada citra untuk deteksi wajah/anggota tubuh dominan tanpa salah mendeteksi daun kering/tanah."""
-    try:
-        img_rgb = image.copy().convert("RGB")
-        img_rgb.thumbnail((224, 224), Image.Resampling.BILINEAR)
-        arr = np.array(img_rgb, dtype=np.uint8)
-        if cv2 is not None:
-            ycrcb = cv2.cvtColor(arr, cv2.COLOR_RGB2YCrCb)
-            y = ycrcb[..., 0].astype(np.float32)
-            cr = ycrcb[..., 1].astype(np.float32)
-            cb = ycrcb[..., 2].astype(np.float32)
-        else:
-            return 0.0
-        r = arr[..., 0].astype(np.float32)
-        g = arr[..., 1].astype(np.float32)
-        b = arr[..., 2].astype(np.float32)
-
-        # Kulit manusia murni: Cr spesifik (133-173), Cb (85-125), Y >= 80, R > G > B, dan R - G >= 15
-        # Ini mencegah daun hawar/kering (kuning-cokelat) atau tanah terdeteksi sebagai kulit manusia
-        is_skin = (
-            (y >= 80.0) &
-            (cr >= 135.0) & (cr <= 173.0) &
-            (cb >= 85.0) & (cb <= 125.0) &
-            (r > g) & (g > b) &
-            ((r - g) >= 15.0) & ((r - g) <= 80.0) &
-            ((r - b) >= 20.0)
+        # Daun menguning klorotik / lesi hawar pada daun
+        is_yellowing = (
+            (h >= 24.0) & (h < 55.0) &
+            (s >= 0.20) & (v >= 0.18) &
+            (g > b * 1.25) &
+            ((exg > 5.0) | ((g >= r * 0.88) & (g > 115.0)))
         )
-        return float(np.mean(is_skin))
+        if ycrcb is not None:
+            is_yellowing = is_yellowing & (~is_skin)
+
+        leaf_mask = is_green_leaf | is_yellowing
+        leaf_ratio = float(np.mean(leaf_mask))
+
+        # Jika foto manusia / kulit dominan tanpa daun bawang signifikan:
+        if skin_ratio > 0.12 and leaf_ratio < 0.05:
+            score = max(5.0, (1.0 - skin_ratio) * 18.0)
+            return round(score, 1)
+
+        # Jika tidak ada daun sama sekali (dinding, perabotan, kasur, bantal ungu, kain, kertas):
+        if leaf_ratio < 0.02:
+            score = max(2.0, leaf_ratio * 300.0)
+            return round(score, 1)
+
+        # 3. Morfologi helai memanjang (khas famili bawang / Allium)
+        tube_ratio = 0.0
+        if cv2 is not None:
+            clean_mask = cv2.morphologyEx(leaf_mask.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+            tubes = cv2.morphologyEx(clean_mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (2, 6)))
+            tube_ratio = float(np.mean(tubes))
+
+        # 4. Kejelasan fokus & kontras helai daun
+        clarity_factor = 0.5
+        if cv2 is not None:
+            gray = cv2.cvtColor(arr.astype(np.uint8), cv2.COLOR_RGB2GRAY)
+            lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+            clarity_factor = min(1.0, lap_var / 350.0)
+
+        # 5. Penghasilan Skor Daun Bawang:
+        # Jika daun bawang terdeteksi nyata:
+        # a) Helai kecil / bibit muda di tanah luas (2% - 5.9% area):
+        # Skor masuk ke zona toleransi (47.0% - 59.5%) sehingga bisa diverifikasi 2 langkah
+        if leaf_ratio < 0.06:
+            base_score = 47.0
+            canopy_bonus = (leaf_ratio / 0.06) * 8.0
+            clarity_bonus = clarity_factor * 4.0
+            score = base_score + canopy_bonus + clarity_bonus
+            return round(min(59.5, max(47.0, score)), 1)
+
+        # b) Daun bawang standar / jelas (>= 6% area):
+        # Skor langsung di atas 60% (62% - 98%) tergantung kejelasan dan kerapatan
+        base_score = 62.0
+        canopy_bonus = min(18.0, ((leaf_ratio - 0.06) / 0.20) * 18.0)
+        tube_bonus = min(8.0, (tube_ratio / 0.06) * 8.0)
+        clarity_bonus = clarity_factor * 10.0
+
+        hand_penalty = 0.0
+        if skin_ratio > 0.20:
+            hand_penalty = min(6.0, (skin_ratio - 0.20) * 15.0)
+
+        final_score = base_score + canopy_bonus + tube_bonus + clarity_bonus - hand_penalty
+        final_score = max(60.0, min(98.5, final_score))
+        return round(final_score, 1)
     except Exception:
-        return 0.0
+        return 50.0
+
+def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.50) -> tuple[bool, str, float]:
+    """
+    Validasi Citra Daun Bawang Merah (Pre-Inference Guard):
+    Menggunakan compute_shallot_leaf_score untuk mendeteksi keaslian, kepadatan, morfologi,
+    dan ketajaman helai daun bawang merah.
+    """
+    base_thresh = float(min_ratio * 100.0) if min_ratio <= 1.0 else float(min_ratio)
+    tolerance_thresh = base_thresh - 3.0
+    score = compute_shallot_leaf_score(image)
+    ratio = score / 100.0
+
+    if score >= tolerance_thresh:
+        return True, "Valid", ratio
+    else:
+        return False, f"Score kanopi daun bawang ({score:.1f}%) di bawah batas minimal toleransi ({tolerance_thresh:.0f}%).", ratio
 
 def get_groq_api_key() -> str:
     """
@@ -1745,52 +1810,63 @@ def get_gemini_api_key() -> str:
 
     return ""
 
-def validate_onion_image(image: Image.Image, api_key: str | None = None, min_ratio: float = 0.08):
+def validate_onion_image(image: Image.Image, api_key: str | None = None, min_ratio: float = 0.50):
     """
     Sistem Validasi Guardrail Gatekeeper Citra Tanaman Bawang Merah:
-    Memverifikasi kelayakan foto daun bawang merah sebelum proses diagnosa.
-    - Zona 1 (Score Memenuhi Syarat, ratio >= min_ratio): Lolos langsung ke diagnosa.
-    - Zona 2 (Score di Tengah-tengah / Mendekati Batas, borderline <= ratio < min_ratio): 
-      Dialihkan ke Verifikasi AI 2 Langkah Gemini untuk mendeteksi apakah layak didiagnosa atau tidak.
-    - Zona 3 (Score di Bawah Batas Toleransi, ratio < borderline): 
-      Ditolak agar tidak semua score/foto sembarangan dapat dideteksi.
+    Memverifikasi kelayakan foto daun bawang merah sebelum proses diagnosa:
+    - Zona 1 (Lolos Langsung, Score >= pass_thresh): Lolos langsung tanpa verifikasi 2 langkah.
+    - Zona 2 (Zona Toleransi, tolerance_thresh <= Score < pass_thresh): 
+      Masuk ke Verifikasi AI 2 Langkah Gemini untuk memvalidasi kelayakan objek tanaman.
+    - Zona 3 (Ditolak Langsung, Score < tolerance_thresh): 
+      Ditolak tegas demi menjaga akurasi diagnosa dan meminta pengguna mengambil foto ulang yang benar.
     """
-    is_plant, reason, ratio = check_shallot_leaf_mask(image, min_ratio=min_ratio)
-    rec_leaf_pct = max(3, min(35, int(np.floor(ratio * 100.0)))) if ratio >= 0.03 else 5
-    
-    # Batas toleransi kelayakan (score di tengah-tengah / mendekati batas minimal):
-    # Standar toleransi proporsional: 65% dari batas minimal, dengan lantai dasar 4.5% (toleransi tidak terlalu tinggi)
-    borderline_ratio = max(0.045, min_ratio * 0.65)
-    
+    base_thresh = float(min_ratio * 100.0) if min_ratio <= 1.0 else float(min_ratio)
+    pass_thresh = base_thresh + 10.0
+    tolerance_thresh = base_thresh - 3.0
+
+    score = compute_shallot_leaf_score(image)
+    ratio = score / 100.0
     gemini_key = get_gemini_api_key()
-    
-    # Klasifikasi Zona Score:
-    is_ratio_fail = (not is_plant and "Rasio daun bawang pada foto hanya" in reason)
-    is_borderline_delegated = (is_ratio_fail and ratio >= borderline_ratio and bool(gemini_key))
-    is_too_low = (is_ratio_fail and ratio < borderline_ratio)
 
-    if is_borderline_delegated:
+    if score >= pass_thresh:
         is_plant = True
-        reason = f"Score di zona mendekati batas ({ratio*100:.1f}% vs {min_ratio*100:.0f}%). Verifikasi kelayakan objek dialihkan ke Verifikasi Klinis 2 Langkah."
-    elif is_too_low:
+        score_zone = "passed"
+        is_borderline_delegated = False
+        is_too_low = False
+        reason = f"Score kanopi daun ({score:.1f}%) memenuhi syarat lolos langsung (>= {pass_thresh:.0f}%)."
+    elif score >= tolerance_thresh:
+        score_zone = "borderline"
+        is_too_low = False
+        if bool(gemini_key):
+            is_plant = True
+            is_borderline_delegated = True
+            reason = f"Score kanopi daun ({score:.1f}%) di zona toleransi ({tolerance_thresh:.0f}%–{pass_thresh-0.1:.0f}%). Verifikasi kelayakan dialihkan ke Verifikasi Klinis 2 Langkah."
+        else:
+            is_plant = True
+            is_borderline_delegated = False
+            reason = f"Score kanopi daun ({score:.1f}%) di zona toleransi ({tolerance_thresh:.0f}%–{pass_thresh-0.1:.0f}%)."
+    else:
         is_plant = False
-        reason = f"Score kanopi daun hanya {ratio*100:.1f}% (di bawah batas toleransi kelayakan {borderline_ratio*100:.1f}%). Foto belum memenuhi syarat untuk didiagnosa."
-
-    score_zone = "passed" if ratio >= min_ratio else ("borderline" if is_borderline_delegated else "too_low")
+        score_zone = "too_low"
+        is_borderline_delegated = False
+        is_too_low = True
+        reason = f"Score kanopi daun hanya {score:.1f}% (di bawah batas minimal toleransi {tolerance_thresh:.0f}%). Foto bukan daun bawang atau tidak memenuhi syarat kelayakan."
 
     info = {
         "plant_ratio": ratio,
-        "min_ratio": min_ratio,
-        "borderline_ratio": borderline_ratio,
+        "score_pct": score,
+        "min_ratio": base_thresh / 100.0,
+        "pass_thresh_pct": pass_thresh,
+        "tolerance_thresh_pct": tolerance_thresh,
         "score_zone": score_zone,
-        "is_ratio_rejection": (not is_plant and (is_ratio_fail or is_too_low)),
+        "is_ratio_rejection": is_too_low,
         "delegated_to_gemini": is_borderline_delegated,
         "reason": reason,
-        "recommended_leaf_pct": rec_leaf_pct
+        "is_valid": is_plant
     }
     if not is_plant:
         return False, f"INVALID: {reason}", info
-    return True, f"VALID (Rasio Kanopi Daun: {ratio*100:.1f}%)", info
+    return True, f"VALID (Score Daun Bawang: {score:.1f}%)", info
 
 # Alias untuk kompatibilitas
 validate_with_groq_vision = validate_onion_image
@@ -3910,9 +3986,9 @@ with st.sidebar:
 
         <strong style="color: #166534; font-size: 0.82rem;">🍃 2. Sensitivitas Daun Bawang:</strong>
         <ul style="margin: 3px 0 2px 16px; padding: 0;">
-            <li><strong style="color: #b45309;">3% – 6% (Toleran):</strong> Daun tunggal / bibit muda / dipegang tangan.</li>
-            <li><strong style="color: #15803d;">8% – 15% (Standar Sawah):</strong> Rumpun bawang normal umur 3–8 minggu.</li>
-            <li><strong style="color: #b91c1c;">18% – 35% (Makro Penuh):</strong> Daun harus mendominasi layar foto.</li>
+            <li><strong style="color: #15803d;">&ge; 60% (Lolos Langsung):</strong> Daun bawang jelas langsung diproses tanpa verifikasi 2 langkah.</li>
+            <li><strong style="color: #b45309;">47% – 59% (Zona Toleransi):</strong> Bibit muda / daun kecil diizinkan verifikasi klinis 2 langkah.</li>
+            <li><strong style="color: #b91c1c;">&lt; 47% (Ditolak Langsung):</strong> Foto bukan daun bawang atau di bawah standar (wajib foto ulang).</li>
         </ul>
 
         </div>
@@ -3951,47 +4027,47 @@ with st.sidebar:
     st.caption("Pilih preset cepat atau geser slider sesuai kondisi foto lapangan:")
 
     current_conf = st.session_state.get("conf_slider", default_conf_pct)
-    current_leaf = st.session_state.get("leaf_slider", 8)
+    current_leaf = st.session_state.get("leaf_slider", 50)
 
     # Tombol Preset Cepat Langsung Sinkron ke Web (Vertikal Lebar Penuh: 100% Bebas Terpotong di Semua HP & Layar)
     if st.button(
         "🌾 Standar",
-        help="Preset Standar Sawah (Keyakinan 65% | Daun 8%)",
-        type="primary" if (current_conf == 65 and current_leaf == 8) else "secondary",
+        help="Preset Standar Sawah (Keyakinan 65% | Validasi 50% | Lolos >=60%, Toleransi 47%-59%, Tolak <47%)",
+        type="primary" if (current_conf == 65 and current_leaf == 50) else "secondary",
         use_container_width=True,
         key="btn_preset_standar"
     ):
         st.session_state["pending_conf_slider"] = 65
-        st.session_state["pending_leaf_slider"] = 8
+        st.session_state["pending_leaf_slider"] = 50
         st.rerun()
 
     if st.button(
-        "☁️ Redup",
-        help="Preset Cuaca Redup / Gejala Dini (Keyakinan 50% | Daun 5%)",
-        type="primary" if (current_conf == 50 and current_leaf == 5) else "secondary",
+        "☁️ Toleran Sawah",
+        help="Preset Toleran Sawah / Redup (Keyakinan 50% | Validasi 45% | Lolos >=55%, Toleransi 42%-54%, Tolak <42%)",
+        type="primary" if (current_conf == 50 and current_leaf == 45) else "secondary",
         use_container_width=True,
         key="btn_preset_redup"
     ):
         st.session_state["pending_conf_slider"] = 50
-        st.session_state["pending_leaf_slider"] = 5
+        st.session_state["pending_leaf_slider"] = 45
         st.rerun()
 
     if st.button(
-        "🔬 Ketat",
-        help="Preset Super Ketat Lab (Keyakinan 80% | Daun 20%)",
-        type="primary" if (current_conf == 80 and current_leaf == 20) else "secondary",
+        "🔬 Ketat Lab",
+        help="Preset Super Ketat Lab (Keyakinan 80% | Validasi 55% | Lolos >=65%, Toleransi 52%-64%, Tolak <52%)",
+        type="primary" if (current_conf == 80 and current_leaf == 55) else "secondary",
         use_container_width=True,
         key="btn_preset_ketat"
     ):
         st.session_state["pending_conf_slider"] = 80
-        st.session_state["pending_leaf_slider"] = 20
+        st.session_state["pending_leaf_slider"] = 55
         st.rerun()
 
     # Inisialisasi default jika belum ada di session_state
     if "conf_slider" not in st.session_state:
         st.session_state["conf_slider"] = default_conf_pct
     if "leaf_slider" not in st.session_state:
-        st.session_state["leaf_slider"] = 8
+        st.session_state["leaf_slider"] = 50
 
     conf_threshold_pct = st.slider(
         "Batas Keyakinan / Confidence Threshold (%)",
@@ -4028,36 +4104,26 @@ with st.sidebar:
     )
 
     min_leaf_ratio_pct = st.slider(
-        "Sensitivitas Daun Bawang (%)",
-        min_value=3,
-        max_value=35,
-        value=8,
+        "Sensitivitas Validasi Daun Bawang (%)",
+        min_value=30,
+        max_value=70,
+        value=50,
         step=1,
         key="leaf_slider",
-        help="Persentase minimal kanopi daun bawang merah yang harus ada pada foto. Naikkan jika ingin validasi lebih ketat menolak foto selain bawang."
+        help="Batas standar validasi daun bawang merah (Default 50%). Lolos langsung >= (Sensitivitas + 10)%, toleransi verifikasi 2 langkah [(Sensitivitas - 3)% s/d (Sensitivitas + 9)%], dan ditolak langsung < (Sensitivitas - 3)%."
     )
     min_leaf_ratio = min_leaf_ratio_pct / 100.0
 
     # Kriteria dinamis real-time untuk Sensitivitas Daun
-    if min_leaf_ratio_pct < 7:
-        l_badge_bg = "#fefce8"
-        l_badge_border = "#eab308"
-        l_badge_color = "#713f12"
-        l_badge_txt = f"🟡 <strong>Toleransi Tinggi ({min_leaf_ratio_pct}%):</strong> Menerima satu helai daun kecil / bibit muda / foto agak jauh."
-    elif min_leaf_ratio_pct <= 16:
-        l_badge_bg = "#f0fdf4"
-        l_badge_border = "#22c55e"
-        l_badge_color = "#14532d"
-        l_badge_txt = f"🟢 <strong>Standar Rumpun Sawah ({min_leaf_ratio_pct}%):</strong> Ideal untuk tanaman bawang merah umur 3–8 minggu."
-    else:
-        l_badge_bg = "#fef2f2"
-        l_badge_border = "#ef4444"
-        l_badge_color = "#7f1d1d"
-        l_badge_txt = f"🔴 <strong>Filter Makro Ketat ({min_leaf_ratio_pct}%):</strong> Wajib helai daun mendominasi foto, tolak latar tanah luas."
+    s_base = float(min_leaf_ratio_pct)
+    s_pass = s_base + 10.0
+    s_tol = s_base - 3.0
 
     st.markdown(
-        f"<div style='background: {l_badge_bg}; border-left: 4px solid {l_badge_border}; color: {l_badge_color}; padding: 6px 10px; border-radius: 6px; font-size: 0.77rem; margin-top: -6px; margin-bottom: 8px; line-height: 1.4;'>"
-        f"{l_badge_txt}"
+        f"<div style='background: #f0fdf4; border-left: 4px solid #16a34a; color: #14532d; padding: 6px 10px; border-radius: 6px; font-size: 0.77rem; margin-top: -6px; margin-bottom: 8px; line-height: 1.45;'>"
+        f"🟢 <strong>Lolos Langsung:</strong> &ge; {s_pass:.0f}%<br>"
+        f"🟡 <strong>Verifikasi 2 Langkah:</strong> {s_tol:.0f}% s/d {s_pass-0.1:.0f}%<br>"
+        f"🔴 <strong>Ditolak Langsung:</strong> &lt; {s_tol:.0f}% (Wajib Foto Ulang)"
         f"</div>",
         unsafe_allow_html=True
     )
@@ -4380,32 +4446,35 @@ if selected_image is not None and not file_error:
 
 
     # Monitor Real-Time Kanopi Daun (Live Responsif terhadap Slider Sensitivitas Daun di Sidebar)
-    is_plant_live, reason_live, plant_ratio_live = check_shallot_leaf_mask(selected_image, min_ratio=min_leaf_ratio)
-    ratio_pct_live = plant_ratio_live * 100.0
-    borderline_ratio_live = max(0.045, min_leaf_ratio * 0.65)
-    borderline_pct_live = borderline_ratio_live * 100.0
+    score_live = compute_shallot_leaf_score(selected_image)
+    plant_ratio_live = score_live / 100.0
+    ratio_pct_live = score_live
+    
+    base_thresh_pct = float(min_leaf_ratio_pct)
+    pass_thresh_pct = base_thresh_pct + 10.0
+    tolerance_thresh_pct = base_thresh_pct - 3.0
 
-    if plant_ratio_live >= min_leaf_ratio:
+    if ratio_pct_live >= pass_thresh_pct:
         m_color = "#16a34a"
         m_bg = "#f0fdf4"
         m_border = "#86efac"
         m_icon = "🟢"
-        m_status_title = f"MEMENUHI SYARAT VALIDASI ({ratio_pct_live:.1f}% >= {min_leaf_ratio_pct}%)"
-        m_status_desc = "Score kanopi daun memenuhi standar minimal untuk langsung didiagnosa."
-    elif plant_ratio_live >= borderline_ratio_live:
+        m_status_title = f"MEMENUHI SYARAT VALIDASI ({ratio_pct_live:.1f}% >= {pass_thresh_pct:.0f}%)"
+        m_status_desc = "Score kanopi daun memenuhi standar kelayakan tinggi untuk langsung didiagnosa tanpa verifikasi 2 langkah."
+    elif ratio_pct_live >= tolerance_thresh_pct:
         m_color = "#d97706"
         m_bg = "#fffbeb"
         m_border = "#fcd34d"
         m_icon = "🟡"
-        m_status_title = f"MENDEKATI BATAS: VERIFIKASI 2 LANGKAH AKTIF ({ratio_pct_live:.1f}%)"
-        m_status_desc = f"Score kanopi daun di tengah-tengah / mendekati batas ({min_leaf_ratio_pct}%). Sistem verifikasi 2 langkah akan memvalidasi kelayakan objek tanaman sebelum diagnosa."
+        m_status_title = f"ZONA TOLERANSI: VERIFIKASI 2 LANGKAH ({ratio_pct_live:.1f}%)"
+        m_status_desc = f"Score kanopi daun ({ratio_pct_live:.1f}%) berada di zona toleransi ({tolerance_thresh_pct:.0f}%–{pass_thresh_pct-0.1:.0f}%). Sistem verifikasi klinis 2 langkah aktif untuk memvalidasi kelayakan objek tanaman."
     else:
         m_color = "#dc2626"
         m_bg = "#fef2f2"
         m_border = "#fca5a5"
         m_icon = "🔴"
-        m_status_title = f"DI BAWAH SYARAT KELAYAKAN ({ratio_pct_live:.1f}% < {borderline_pct_live:.1f}%)"
-        m_status_desc = f"Score kanopi daun di bawah batas toleransi kelayakan ({borderline_pct_live:.1f}%). Foto belum memenuhi syarat validasi daun untuk melanjutkan diagnosa."
+        m_status_title = f"DI BAWAH SYARAT KELAYAKAN ({ratio_pct_live:.1f}% < {tolerance_thresh_pct:.0f}%)"
+        m_status_desc = f"Score kanopi daun ({ratio_pct_live:.1f}%) di bawah batas minimal toleransi ({tolerance_thresh_pct:.0f}%). Foto bukan daun bawang atau belum memenuhi standar. Silakan ambil foto ulang yang benar."
 
     st.markdown(f"""
         <div style="background: {m_bg}; border: 1.5px solid {m_border}; border-radius: 12px; padding: 10px 14px; margin: 6px 0 14px 0;">
@@ -4419,9 +4488,9 @@ if selected_image is not None and not file_error:
             <div style="display: flex; align-items: center; gap: 8px 12px; font-size: 0.82rem; color: #64748b; flex-wrap: wrap;">
                 <span>Score Terdeteksi: <strong style="color: #0f172a;">{ratio_pct_live:.1f}%</strong></span>
                 <span>•</span>
-                <span>Batas Minimal: <strong style="color: #0f172a;">{min_leaf_ratio_pct}%</strong></span>
+                <span>Lolos Langsung: <strong style="color: #16a34a;">&ge; {pass_thresh_pct:.0f}%</strong></span>
                 <span>•</span>
-                <span>Batas Toleransi: <strong style="color: #d97706;">{borderline_pct_live:.1f}%</strong></span>
+                <span>Batas Toleransi: <strong style="color: #d97706;">{tolerance_thresh_pct:.0f}%</strong></span>
             </div>
             <div style="background: #e2e8f0; border-radius: 999px; height: 8px; width: 100%; margin-top: 8px; overflow: hidden;">
                 <div style="background: {m_color}; width: {min(max(ratio_pct_live, 0.0), 100.0):.1f}%; height: 100%; border-radius: 999px;"></div>
@@ -4458,45 +4527,31 @@ if selected_image is not None and not file_error:
         else:
             is_valid_vision = True
             vision_verdict = "VALID (Dikonfirmasi Pengguna)"
-            val_info = {"plant_ratio": max(min_leaf_ratio, 0.05), "is_ratio_rejection": False}
+            val_info = {"plant_ratio": max(min_leaf_ratio, 0.50), "is_ratio_rejection": False}
 
         if not is_valid_vision:
-            detected_ratio = val_info.get("plant_ratio", 0.0) * 100.0
-            curr_min_pct = min_leaf_ratio * 100.0
-            rec_leaf_pct = max(3, int(np.floor(detected_ratio)))
+            detected_ratio = val_info.get("score_pct", val_info.get("plant_ratio", 0.0) * 100.0)
+            curr_pass_pct = val_info.get("pass_thresh_pct", min_leaf_ratio_pct + 10.0)
+            curr_tolerance_pct = val_info.get("tolerance_thresh_pct", min_leaf_ratio_pct - 3.0)
 
-            if val_info.get("is_ratio_rejection", False):
-                curr_borderline_pct = val_info.get("borderline_ratio", min_leaf_ratio * 0.65) * 100.0
-                st.markdown(f"""
-                    <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #F59E0B; background: #FFFBEB; margin: 0.8rem 0;">
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                            <span style="background-color: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">⚠️ SCORE DAUN BELUM MEMENUHI SYARAT</span>
-                            <span style="font-weight: 700; color: #92400E; font-size: 0.92rem;">Score Daun: {detected_ratio:.1f}% (Batas Minimal: {curr_min_pct:.0f}%, Batas Toleransi: {curr_borderline_pct:.1f}%)</span>
-                        </div>
-                        <div style="font-size: 0.9rem; color: #78350F; line-height: 1.55;">
-                            Score kanopi daun pada foto tercatat <strong>{detected_ratio:.1f}%</strong>, berada di bawah batas toleransi kelayakan minimal <strong>{curr_borderline_pct:.1f}%</strong>.<br>
-                            Sistem membatasi toleransi agar tidak sembarang objek non-daun atau foto terlalu jauh terdeteksi sebagai penyakit.<br>
-                            Jika ini benar helai daun bawang merah kecil/bibit, Anda dapat menyelaraskan sensitivitas dengan tombol cepat di bawah untuk melanjutkan diagnosa:
-                        </div>
+            st.error(f"❌ Foto Ditolak: Score Terdeteksi {detected_ratio:.1f}% (Di Bawah Batas Minimal Toleransi {curr_tolerance_pct:.0f}%)")
+            st.markdown(f"""
+                <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                        <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ FOTO DI BAWAH SYARAT KELAYAKAN</span>
+                        <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Score Daun: {detected_ratio:.1f}% (Batas Minimal: {curr_tolerance_pct:.0f}%)</span>
                     </div>
-                """, unsafe_allow_html=True)
-
-                if st.button(f"⚡ Sesuaikan Batas Sensitivitas ({rec_leaf_pct}%) & Lanjutkan Diagnosa", type="primary", use_container_width=True, key=f"btn_apply_rec_{current_img_sig}"):
-                    st.session_state["pending_leaf_slider"] = rec_leaf_pct
-                    st.session_state[force_pass_key] = True
-                    st.session_state["has_inspected_current"] = current_img_sig
-                    st.rerun()
-            else:
-                st.error("❌ Foto Ditolak: Objek yang diunggah terdeteksi bukan daun/tanaman bawang merah.")
-                st.markdown(f"""
-                    <div class="card-rejection" style="padding: 1rem 1.25rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
-                        <div style="font-weight: 800; color: #B91C1C; font-size: 0.95rem; margin-bottom: 4px;">⚠️ FOTO BUKAN DAUN BAWANG</div>
-                        <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.5;">
-                            {vision_verdict}<br><br>
-                            <strong>💡 Petunjuk:</strong> Pastikan foto menampilkan helai daun tanaman bawang merah asli dari dekat (10–20 cm) dengan pencahayaan cukup.
-                        </div>
+                    <div style="font-size: 0.90rem; color: #7F1D1D; line-height: 1.6;">
+                        Score kanopi daun bawang merah pada foto hanya tercatat <strong>{detected_ratio:.1f}%</strong>, berada di bawah batas toleransi kelayakan minimal <strong>{curr_tolerance_pct:.0f}%</strong>.<br>
+                        Sistem langsung menolak foto ini demi menjaga akurasi diagnosa karena foto bukan daun tanaman bawang merah atau kualitas foto belum memenuhi standar (misal: foto wajah/tubuh manusia, perabotan kamar, pakaian, latar tanah kosong tanpa tanaman, atau foto buram/terlalu jauh).<br><br>
+                        <strong>📸 Petunjuk Pengambilan Foto yang Benar:</strong><br>
+                        • <strong>Fokus Daun:</strong> Arahkan kamera tepat ke helai daun tanaman bawang merah asli di pot atau sawah.<br>
+                        • <strong>Jarak Ideal:</strong> Ambil foto dari jarak dekat (10–20 cm) dengan pencahayaan terang merata.<br>
+                        • <strong>Ketajaman:</strong> Pastikan helai daun terlihat tajam, fokus, dan tidak goyang atau buram.<br>
+                        • <strong>Hindari Objek Lain:</strong> Hindari memotret wajah manusia, tangan polos mendominasi, ruangan, kasur/bantal, atau objek selain tanaman bawang.
                     </div>
-                """, unsafe_allow_html=True)
+                </div>
+            """, unsafe_allow_html=True)
             st.stop()
 
         # ==============================================================================
