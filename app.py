@@ -2147,16 +2147,30 @@ def get_groq_recommendation(
             f"- WAJIB: Di bagian TINDAKAN dan REKOMENDASI OBAT SEMPROT, tegaskan obat apa yang TEPAT dan beri peringatan keras obat apa yang SALAH/DILARANG agar petani tidak salah belanja pestisida.\n\n"
         )
 
+    if angle_idx is None or angle_idx < 0 or angle_idx >= len(FOCUS_ANGLES):
+        angle_idx = 0
+    angle_title, angle_desc = FOCUS_ANGLES[angle_idx]
+
+    alt_note = ""
+    if angle_idx > 0:
+        alt_note = (
+            f"\nCATATAN KHUSUS ALTERNATIF / ROTASI OBAT LAIN:\n"
+            f"- Petani sedang meminta rekomendasi alternatif atau rotasi obat lain.\n"
+            f"- WAJIB berikan variasi pilihan bahan aktif, takaran dosis, dan pendekatan agronomi yang BERBEDA dari rekomendasi standar sebelumnya (utamakan rotasi FRAC code berbeda, penekanan kontak vs sistemik vs bioprotektan hayati, atau pembenahan dinding sel) sesuai sudut fokus [{angle_title}].\n"
+        )
+
     if is_three_way and second_disease_name and third_disease_name:
-        angle_title = "Rekomendasi Terpadu 3 Spektrum Penyakit Bersaing (Riset Balitsa & BPTP Kementan)"
+        full_angle_title = f"{angle_title} - Terpadu 3 Spektrum Penyakit"
         user_prompt = diff_alert_str + (
             f"VONIS DIAGNOSIS PENYAKIT (3 KEMUNGKINAN BERSAING): {disease_name}{latin_str} ({confidence:.1f}%), {second_disease_name} ({second_confidence:.1f}%), dan {third_disease_name} ({third_confidence:.1f}%).\n"
             f"{sev_str}"
             f"{ev_str}\n"
+            f"Fokus Sudut Solusi: [{angle_title}] - {angle_desc}.\n\n"
             "Anda bertindak sebagai Ahli Agronomi dan Konsultan Proteksi Tanaman Hortikultura Bawang Merah (merujuk pada riset resmi Balitsa Lembang, BPTP Kementan RI, dan Jurnal Fitopatologi Indonesia).\n"
             "Bantu petani merangkum solusi penanganan terpadu langsung dari sumber-sumber terjamin ketika tanaman menunjukkan potensi 3 penyakit bersaing sekaligus:\n"
             f"1. Ciri fisik pembeda langsung di bedengan sawah antara {disease_name}, {second_disease_name}, dan {third_disease_name} (tekstur helai daun, pola bercak, bau langu bakteri vs serbuk spora jamur vs klorosis virus/vektor thrips).\n"
             "2. Rekomendasi obat semprot terpadu spektrum luas yang aman mencakup ketiga patogen secara berimbang tanpa merusak tanaman.\n\n"
+            + alt_note +
             "WAJIB susun jawaban ke dalam 3 bagian persis dengan judul pemisah berikut:\n\n"
             "=== TINDAKAN LANGSUNG DI KEBUN ===\n"
             "- Berikan langkah taktis darurat dalam 24 jam pertama di bedengan sawah.\n"
@@ -2175,15 +2189,17 @@ def get_groq_recommendation(
             "4. Perawatan Tanah & Agens Hayati: Tabur kapur dolomit jika tanah masam (pH < 6), dan inokulasi agens hayati Trichoderma harzianum / Bacillus subtilis.\n"
         )
     elif is_differential and second_disease_name:
-        angle_title = "Diferensial Diagnosis & Perlindungan Spektrum Ganda"
+        full_angle_title = f"{angle_title} - Perlindungan Spektrum Ganda"
         user_prompt = diff_alert_str + (
             f"VONIS DIAGNOSIS PENYAKIT (KEMUNGKINAN GANDA): {disease_name}{latin_str} ({confidence:.1f}%) dan {second_disease_name} ({second_confidence:.1f}%).\n"
             f"{sev_str}"
             f"{ev_str}\n"
+            f"Fokus Sudut Solusi: [{angle_title}] - {angle_desc}.\n\n"
             "Anda bertindak sebagai Ahli Agronomi dan Konsultan Proteksi Tanaman Hortikultura Bawang Merah (merujuk pada riset Balitsa Lembang, BPTP Kementan, dan Jurnal Fitopatologi Indonesia).\n"
             "Bantu petani membedakan kedua penyakit ini di lapangan dan berikan penanganan terpadu:\n"
             "1. Ciri khas fisik pembeda yang paling mudah dilihat mata petani di lapangan (warna bercak, tekstur basah/kering, ada tidaknya tepung spora atau lendir).\n"
             "2. Tindakan pengobatan yang aman mencakup kedua spektrum (kombinasi fungisida + bakterisida tembaga atau sanitasi umum).\n\n"
+            + alt_note +
             "WAJIB susun jawaban ke dalam 3 bagian persis dengan judul pemisah berikut:\n\n"
             "=== TINDAKAN LANGSUNG DI KEBUN ===\n"
             "- Berikan langkah taktis darurat dalam 24 jam pertama di bedengan.\n"
@@ -2202,11 +2218,7 @@ def get_groq_recommendation(
             "4. Perawatan Tanah & Agens Hayati: Tabur dolomit jika tanah masam (pH < 6), aplikasikan Trichoderma atau Bacillus subtilis pada pupuk kandang matang.\n"
         )
     else:
-        if angle_idx is None or angle_idx < 0 or angle_idx >= len(FOCUS_ANGLES):
-            angle_title, angle_desc = random.choice(FOCUS_ANGLES)
-        else:
-            angle_title, angle_desc = FOCUS_ANGLES[angle_idx]
-
+        full_angle_title = angle_title
         user_prompt = diff_alert_str + (
             f"VONIS DIAGNOSIS RESMI: {disease_name}{latin_str}.\n"
             f"Tingkat Keyakinan Prediksi: {confidence:.1f}%.\n"
@@ -2219,6 +2231,7 @@ def get_groq_recommendation(
             f"2. JANGAN PERNAH menyarankan obat untuk penyakit lain (misalnya jika terdiagnosis Karat Daun, Anda WAJIB memberikan fungisida khusus Karat seperti Tebukonazol, Heksakonazol, Difenokonazol, atau Mankozeb, DILARANG memberikan bakterisida Xanthomonas).\n"
             "3. Rujukan ilmiah wajib berasal dari pedoman resmi Balai Penelitian Tanaman Sayuran (Balitsa Lembang), BPTP Kementan RI, dan Pedoman Pengendalian OPT Hortikultura.\n"
             "4. Sajikan dalam Bahasa Indonesia yang lugas, ramah, dan sangat praktis untuk petani di sawah.\n\n"
+            + alt_note +
             "WAJIB susun jawaban ke dalam 3 bagian persis dengan judul pemisah berikut:\n\n"
             "=== TINDAKAN LANGSUNG DI KEBUN ===\n"
             "- Berikan langkah taktis darurat dalam 24-48 jam pertama di bedengan.\n"
@@ -2248,7 +2261,7 @@ def get_groq_recommendation(
         payload = {
             "model": model_name,
             "temperature": 0.72,
-            "max_tokens": 1000,
+            "max_tokens": 1800,
             "messages": [
                 {
                     "role": "system",
@@ -2265,14 +2278,15 @@ def get_groq_recommendation(
             ]
         }
         try:
-            resp = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=14)
+            resp = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=16)
             if resp.status_code == 200:
                 content = resp.json()["choices"][0]["message"]["content"]
-                return content, angle_title
+                return content, full_angle_title
         except (requests.RequestException, KeyError, IndexError, ValueError):
             continue
 
-    return None, angle_title
+    return None, full_angle_title
+
 
 def get_disease_physical_checks(primary_name, second_name=None, is_differential=False):
     """
@@ -2833,7 +2847,8 @@ def get_system_agronomy_recommendation(
     Sistem Database Agronomi Mandiri (Built-in Agro-Engine):
     Menyusun rekomendasi lengkap, terstruktur, dan kaya agronomi resmi Balitsa/BPTP Kementan
     sebagai fallback otomatis jika kuota token Groq AI habis, terkena limit (429), atau offline.
-    Mendukung vonis tunggal, 2 spektrum bersaing, maupun 3 spektrum bersaing terpadu.
+    Mendukung rotasi sudut pandang fokus (Kuratif, Nutrisi/Dinding Sel, Agens Hayati/Air, PHT/Sanitasi),
+    vonis tunggal, 2 spektrum bersaing, maupun 3 spektrum bersaing terpadu.
     Menghasilkan 3 kartu:
     1. Tindakan Langsung di Kebun (24 Jam Pertama)
     2. Rekomendasi Obat Semprot (Bahan Aktif Resmi Balitsa & Takaran Dosis Tangki)
@@ -2841,6 +2856,12 @@ def get_system_agronomy_recommendation(
     """
     nama_1 = info.get("nama_id", "Penyakit Bawang")
     is_healthy = info.get("is_healthy", False) or info.get("status") == "healthy"
+
+    # Deteksi sudut fokus yang diminta
+    angle_str = str(angle_title or "").lower()
+    is_nutrisi = "nutrisi" in angle_str or "dinding sel" in angle_str
+    is_hayati = "agens hayati" in angle_str or "pengelolaan air" in angle_str
+    is_pht = "pengendalian terpadu" in angle_str or "sanitasi" in angle_str
 
     if is_healthy and not (is_three_way or is_differential):
         c1 = (
@@ -2861,59 +2882,109 @@ def get_system_agronomy_recommendation(
         )
         return c1, c2, c3
 
+    # Format multi-disease prefix
+    prefix_c1 = ""
+    prefix_c2 = ""
     if is_three_way and second_info and third_info:
         nama_2 = second_info.get("nama_id", "Penyakit Kedua")
         nama_3 = third_info.get("nama_id", "Penyakit Ketiga")
-        c1 = (
-            f"• Waspada 3 Spektrum Gejala Bersaing di Lapangan: Periksa helai daun dengan cermat antara {nama_1}, {nama_2}, dan {nama_3} (Riset Balitsa Lembang & BPTP Kementan).\n"
-            f"• Karakteristik 1 ({nama_1}): {info.get('ciri_lapangan', '-')}\n"
-            f"• Karakteristik 2 ({nama_2}): {second_info.get('ciri_lapangan', '-')}\n"
-            f"• Karakteristik 3 ({nama_3}): {third_info.get('ciri_lapangan', '-')}\n"
-            "• Tindakan Taktis 24 Jam Pertama: Segera pangkas seluruh helai daun yang bergejala parah menggunakan gunting/pisau steril (usap alkohol 70% atau air sabun). Masukkan sisa potongan ke kantong tertutup dan bakar/kubur jauh dari saluran air irigasi."
+        prefix_c1 = (
+            f"• Waspada 3 Spektrum Bersaing di Lapangan ({nama_1}, {nama_2}, dan {nama_3}): Periksa ciri visual khas masing-masing penyakit di helai daun.\n"
+            f"  - Ciri 1 ({nama_1}): {info.get('ciri_lapangan', '-')}\n"
+            f"  - Ciri 2 ({nama_2}): {second_info.get('ciri_lapangan', '-')}\n"
+            f"  - Ciri 3 ({nama_3}): {third_info.get('ciri_lapangan', '-')}\n"
         )
-        c2 = (
-            f"• Solusi Penanganan Spektrum 1 ({nama_1}): {info.get('solusi', '-')}\n"
-            f"• Solusi Penanganan Spektrum 2 ({nama_2}): {second_info.get('solusi', '-')}\n"
-            f"• Solusi Penanganan Spektrum 3 ({nama_3}): {third_info.get('solusi', '-')}\n"
-            "• Takaran Dosis Tangki: Campurkan 1,5 hingga 2 sendok makan (20–25 gram/ml) per tangki semprot standar 16 Liter air.\n"
-            "• Waktu Semprot Terbaik: Pagi hari (pukul 06.00 – 08.30 WIB) saat embun mulai mengering, atau sore hari (pukul 16.00 WIB) saat cuaca teduh dan angin tenang.\n"
-            "• Wajib Tambahkan Perekat & Perata (Surfactant non-ionik) 1 tutup per tangki semprot agar lapisan lilin daun bawang terlapisi obat secara merata dan tidak mudah tercuci air hujan."
+        prefix_c2 = (
+            f"• Solusi Penanganan Spektrum Terpadu:\n"
+            f"  - Penanganan {nama_1}: {info.get('solusi', '-')}\n"
+            f"  - Penanganan {nama_2}: {second_info.get('solusi', '-')}\n"
+            f"  - Penanganan {nama_3}: {third_info.get('solusi', '-')}\n"
         )
     elif is_differential and second_info:
-        nama_2 = second_info.get("nama_id", "Penyakit Serupa")
-        c1 = (
-            f"• Waspada Gejala Serupa di Kebun: Bedakan segera antara {nama_1} vs {nama_2} langsung di bedengan (Riset Balitsa & BPTP Kementan).\n"
-            f"• Ciri Lapangan {nama_1}: {info.get('ciri_lapangan', '-')}\n"
-            f"• Ciri Lapangan {nama_2}: {second_info.get('ciri_lapangan', '-')}\n"
-            "• Tindakan Darurat 24 Jam: Pangkas seluruh helai daun yang bergejala menggunakan gunting bersih. Masukkan sisa pangkasan ke wadah tertutup dan musnahkan di luar areal sawah agar patogen tidak menyebar."
+        nama_2 = second_info.get("nama_id", "Penyakit Kedua")
+        prefix_c1 = (
+            f"• Waspada Gejala Serupa ({nama_1} vs {nama_2}): Cocokkan tanda fisik langsung di sawah untuk memastikan sasaran patogen.\n"
+            f"  - Ciri Lapangan {nama_1}: {info.get('ciri_lapangan', '-')}\n"
+            f"  - Ciri Lapangan {nama_2}: {second_info.get('ciri_lapangan', '-')}\n"
         )
-        c2 = (
-            f"• Rekomendasi Solusi Penanganan {nama_1}: {info.get('solusi', '-')}\n"
-            f"• Alternatif Spektrum {nama_2}: {second_info.get('solusi', '-')}\n"
-            "• Takaran Dosis Tangki: Gunakan 1,5 hingga 2 sendok makan (sekitar 20–25 gram/ml) per tangki semprot 16 Liter air.\n"
-            "• Waktu Semprot Terbaik: Pagi hari (pukul 06.00 – 08.30 WIB) saat embun mulai kering, atau sore hari (pukul 16.00 WIB) saat angin tenang.\n"
-            "• Wajib tambahkan perekat/perata (surfactant) 1 tutup per tangki semprot agar larutan obat menempel merata dan tidak mudah tercuci hujan."
+        prefix_c2 = (
+            f"• Rekomendasi Perlindungan Spektrum Ganda:\n"
+            f"  - Rekomendasi {nama_1}: {info.get('solusi', '-')}\n"
+            f"  - Rekomendasi {nama_2}: {second_info.get('solusi', '-')}\n"
         )
-    else:
-        c1 = (
-            f"• Langkah Segera 24 Jam Pertama: {info.get('gejala', 'Pangkas helai daun yang bergejala.')}\n"
+
+    if is_nutrisi:
+        c1 = prefix_c1 + (
+            f"• Tindakan Penyelamatan Jaringan ({nama_1}): Segera STOP/HENTIKAN total pupuk Nitrogen tunggal (Urea/ZA) yang membuat sel daun lunak sukulen dan sangat rentan ditembus patogen.\n"
+            f"• Sanitasi Daun Sakit: Pangkas helai daun bergejala parah sekitar 2 cm di bawah batas lesi menggunakan pisau/gunting steril.\n"
+            "• Pemulihan Kekebalan: Segera persiapkan aplikasi unsur penguat dinding sel dan kalium agar tanaman tidak rebah atau mati layu."
+        )
+        c2 = prefix_c2 + (
+            "• Rekomendasi Nutrisi & Obat Pelindung: Semprotkan pupuk Kalium (KNO3 Putih atau MKP) takaran 2 sendok makan per tangki 16L, dikombinasikan dengan pupuk Kalsium-Boron (2-3 ml/L air) dan Silika cair untuk mempertebal lapisan kutikula lilin daun.\n"
+            f"• Obat Pendamping Spesifik: Tetap sertakan fungisida/bakterisida protektif dosis aman ({info.get('solusi', 'Fungisida Mankozeb / Tembaga')}) agar infeksi tidak meluas saat pemupukan daun.\n"
+            "• Waktu Semprot: Pagi hari pukul 06.30 - 08.30 WIB saat stomata daun membuka sempurna."
+        )
+        c3 = (
+            "1. Manajemen Pupuk Khusus Masalah: Wajib STOP pupuk Nitrogen tunggal (Urea/ZA). Gantikan dengan pupuk Kalium (KNO3 Putih / MKP 2–3 sendok/tangki) untuk memperkokoh umbi dan helai daun.\n"
+            "2. Penguat Dinding Sel: Semprotkan pupuk Kalsium-Boron dan Silika cair berkala tiap 5-7 hari agar dinding sel tanaman kokoh dan kebal tembusan hifa jamur.\n"
+            "3. Pemulihan Pasca Stres: Berikan asam amino atau ekstrak rumput laut konsentrasi ringan untuk meregenerasi sel daun yang rusak akibat patogen.\n"
+            "4. Pengaturan Parit: Jaga kelembaban stabil, kuras parit jika air hujan tergenang agar perakaran tidak tercekik anaerob."
+        )
+    elif is_hayati:
+        c1 = prefix_c1 + (
+            f"• Tindakan Pengendalian Hayati & Fisik ({nama_1}): Lakukan pemangkasan selektif daun terinfeksi, lalu sterilkan lahan dengan perbaikan drainase parit.\n"
+            "• Pengaturan Drainase Bedengan: Kuras genangan air parit hingga kedalaman muka air 20-25 cm di bawah bedengan (sistem macak-macak) untuk menekan kelembaban mikro yang memicu perkecambahan spora.\n"
+            "• Karantina Area Infeksi: Batasi lalu lintas pekerja dari bedengan yang terinfeksi ke bedengan yang masih sehat."
+        )
+        c2 = prefix_c2 + (
+            "• Aplikasi Agens Hayati & Bioprotektan: Aplikasikan jamur antagonis Trichoderma harzianum atau suspensi bakteri Bacillus subtilis (100–150 ml per tangki 16L) yang dikocorkan pada pangkal batang dan bedengan tanaman.\n"
+            "• PERINGATAN PENTING APLIKASI HAYATI: Jangan mencampur agens hayati Trichoderma/Bacillus dengan fungisida tembaga atau bakterisida kimia sintetis dalam tangki yang sama (beri jeda waktu minimal 4 hari).\n"
+            "• Waktu Aplikasi Hayati: Sore hari (setelah pukul 16.00 WIB) saat sinar matahari tidak terik agar spora agens hayati bertahan hidup dan berkembang biak optimal di tanah."
+        )
+        c3 = (
+            "1. Pengaturan Parit & Tata Air: Atur muka air parit 20-25 cm di bawah bedengan (sistem macak-macak), cegah tumpukan air hujan yang menjadi media penularan patogen.\n"
+            "2. Pengapuran Tanah Masam: Taburkan kapur dolomit 1-2 genggam per meter bedengan untuk menetralkan pH tanah masam (< 6.0) menjadi netral (6.2 - 6.8), kondisi pH netral sangat menekan jamur patogen tular tanah.\n"
+            "3. Inokulasi Mikrob Bermanfaat: Campurkan agens hayati Trichoderma dengan pupuk kandang matang/kompos saat pendangiran tepi bedengan.\n"
+            "4. Drainase Pembuangan: Buat saluran pembuangan air di ujung bedengan agar air hujan langsung mengalir lancar keluar dari areal persawahan."
+        )
+    elif is_pht:
+        c1 = prefix_c1 + (
+            f"• Tindakan Sanitasi PHT Total ({nama_1}): Pangkas habis seluruh helai daun yang bergejala penyakit, masukkan ke wadah tertutup, dan musnahkan (bakar/kubur) jauh dari areal kebun.\n"
+            "• Pembersihan Gulma Pematang: Babat habis seluruh gulma, rumput teki, dan tanaman liar di pematang atau saluran irigasi yang kerap menjadi tanaman inang perantara patogen dan serangga pembawa virus.\n"
+            "• Pemeriksaan Alat Pertanian: Rendam atau bilas alat gunting/pisau potong menggunakan larutan deterjen/alkohol 70% sebelum berpindah bedengan."
+        )
+        c2 = prefix_c2 + (
+            "• Pengendalian Hama Vektor & Obat Kontak: Pasang perangkap lekat kuning (yellow sticky traps) sebanyak 40 buah per hektar di atas tajuk daun untuk menangkap kutu trips (vektor virus) dan serangga pengerek daun.\n"
+            f"• Rekomendasi Semprotan Kontak: Gunakan pestisida kontak berbahan aktif {info.get('solusi', 'Mankozeb atau Propineb')} dengan dosis 2 sendok makan per tangki 16L air.\n"
+            "• Wajib Tambah Perekat (Surfactant): Campurkan perekat/perata non-ionik 1 tutup botol agar lapisan obat melekat kuat pada permukaan daun berlilin dan tidak mudah hilang tersapu hujan."
+        )
+        c3 = (
+            "1. Rekayasa Fisik Mulsa: Gunakan mulsa plastik hitam perak (MPHP) untuk memantulkan sinar matahari menghalau serangga hama dan mencegah cipratan spora patogen tanah ke helai daun.\n"
+            "2. Pengendalian Siklus OPT: Lakukan rotasi tanaman non-inang (seperti jagung, kedelai, atau palawija) setelah panen bawang merah untuk memutus siklus hidup patogen tanah.\n"
+            "3. Pengamatan Ambang Batas: Lakukan pemantauan rutin 2 kali seminggu untuk mendeteksi serangan baru sebelum mencapai ambang ekonomi kerusakan (5% daun bergejala).\n"
+            "4. Sanitasi Pasca Panen: Bersihkan seluruh sisa umbi dan daun busuk setelah panen, jangan biarkan tertinggal membusuk di lahan."
+        )
+    else: # Default: Kuratif Kilat & Rotasi Bahan Aktif
+        c1 = prefix_c1 + (
+            f"• Langkah Segera 24 Jam Pertama ({nama_1}): {info.get('gejala', 'Pangkas helai daun yang bergejala.')}\n"
             f"• Karakteristik Fisik di Sawah: {info.get('ciri_lapangan', '-')}\n"
             "• Teknik Pemangkasan Presisi: Potong helai daun sekitar 2 cm di bawah batas lesi menggunakan gunting/pisau yang dicelup alkohol 70% atau air sabun. Masukkan potongan ke dalam kantong kresek/wadah tertutup agar spora atau bakteri tidak berhamburan tertiup angin.\n"
             "• Sanitasi Lahan: Dilarang keras membuang potongan daun sakit ke saluran parit irigasi; kumpulkan dan bakar atau kubur jauh dari areal pertanaman."
         )
-        c2 = (
+        c2 = prefix_c2 + (
             f"• Rekomendasi Bahan Aktif Resmi (Balitsa/Kementan): {info.get('solusi', 'Gunakan fungisida/bakterisida yang sesuai.')}\n"
+            "• Pilihan Kontak & Sistemik: Gunakan fungisida kontak (Mankozeb 80% WP atau Propineb 70% WP) selang-seling dengan fungisida sistemik (Difenokonazol 250 EC atau Tebukonazol 430 SC) tiap 4-5 hari sekali untuk mencegah resistensi patogen.\n"
             "• Takaran Dosis Aplikasi: 1,5 – 2 sendok makan (20 – 25 gram/ml) per tangki semprot standar 16 Liter air.\n"
             "• Waktu Penyemprotan: Pagi hari pukul 06.00 – 08.30 WIB saat stomata daun terbuka, atau sore hari pukul 16.00 WIB saat cuaca teduh tidak terik.\n"
             "• Penambahan Perekat & Perata: Selalu campurkan perekat/perata (surfactant) non-ionik agar lapisan lilin daun bawang terbasahi secara merata."
         )
+        c3 = (
+            "1. Pengaturan Parit & Tata Air: Atur muka air parit 20–25 cm di bawah permukaan bedengan (sistem macak-macak). Pastikan pembuangan drainase lancar dan jangan biarkan air hujan menggenang di parit sela bedengan.\n"
+            "2. Manajemen Pupuk Khusus Masalah: Wajib STOP atau kurangi pupuk Nitrogen tunggal (Urea/ZA) karena menyebabkan dinding sel daun sukulen (terlalu empuk berair) yang sangat rentan ditembus patogen. Gantikan dengan pupuk Kalium (KNO3 Putih / MKP 2–3 sendok/tangki) untuk memperkokoh umbi dan helai daun.\n"
+            "3. Penguat Dinding Sel: Semprotkan pupuk Kalsium-Boron dan pupuk Silika cair secara berkala untuk mempertebal lapisan kutikula (lilin pelindung) helai daun sehingga spora dan bakteri tidak mudah menembus jaringan tanaman.\n"
+            "4. Perawatan Tanah & Agens Hayati: Jika tanah bedengan masam (pH < 6.0), taburkan kapur dolomit 1–2 genggam per meter bedengan untuk menetralkan keasaman. Campurkan agens hayati Trichoderma harzianum atau bakteri Bacillus subtilis bersama pupuk kandang matang untuk menekan populasi jamur patogen tular tanah."
+        )
 
-    c3 = (
-        "1. Pengaturan Parit & Tata Air: Atur muka air parit 20–25 cm di bawah permukaan bedengan (sistem macak-macak). Pastikan pembuangan drainase lancar dan jangan biarkan air hujan menggenang di parit sela bedengan.\n"
-        "2. Manajemen Pupuk Khusus Masalah: Wajib STOP atau kurangi pupuk Nitrogen tunggal (Urea/ZA) karena menyebabkan dinding sel daun sukulen (terlalu empuk berair) yang sangat rentan ditembus patogen. Gantikan dengan pupuk Kalium (KNO3 Putih / MKP 2–3 sendok/tangki) untuk memperkokoh umbi dan helai daun.\n"
-        "3. Penguat Dinding Sel: Semprotkan pupuk Kalsium-Boron dan pupuk Silika cair secara berkala untuk mempertebal lapisan kutikula (lilin pelindung) helai daun sehingga spora dan bakteri tidak mudah menembus jaringan tanaman.\n"
-        "4. Perawatan Tanah & Agens Hayati: Jika tanah bedengan masam (pH < 6.0), taburkan kapur dolomit 1–2 genggam per meter bedengan untuk menetralkan keasaman. Campurkan agens hayati Trichoderma harzianum atau bakteri Bacillus subtilis bersama pupuk kandang matang untuk menekan populasi jamur patogen tular tanah."
-    )
     return c1, c2, c3
 
 def parse_groq_to_cards(
@@ -2928,7 +2999,7 @@ def parse_groq_to_cards(
     """
     Memecah teks balasan Groq menjadi 3 kartu panduan terstruktur.
     Jika ai_text kosong (kuota Groq habis / error / offline),
-    sistem secara otomatis mengalirkan jawaban lengkap dari Database Mandiri Sistem.
+    sistem secara otomatis mengalirkan jawaban lengkap dari Database Mandiri Sistem sesuai sudut pandang fokus.
     """
     sys_c1, sys_c2, sys_c3 = get_system_agronomy_recommendation(
         info=info,
@@ -2942,25 +3013,35 @@ def parse_groq_to_cards(
     if not ai_text:
         return sys_c1, sys_c2, sys_c3
 
-    p1 = re.search(r'=== TINDAKAN LANGSUNG DI KEBUN ===(.*?)(?==== REKOMENDASI OBAT SEMPROT ===|$)', ai_text, re.DOTALL | re.IGNORECASE)
-    p2 = re.search(r'=== REKOMENDASI OBAT SEMPROT ===(.*?)(?==== PERAWATAN LAHAN & PUPUK ===|$)', ai_text, re.DOTALL | re.IGNORECASE)
-    p3 = re.search(r'=== PERAWATAN LAHAN & PUPUK ===(.*?)$', ai_text, re.DOTALL | re.IGNORECASE)
+    pat_1 = r'(?:[*#\s=]*TINDAKAN LANGSUNG DI KEBUN[*#\s=]*)(.*?)(?=(?:[*#\s=]*(?:[0-9]+\.\s*)?REKOMENDASI OBAT SEMPROT)|$)'
+    pat_2 = r'(?:[*#\s=]*(?:[0-9]+\.\s*)?REKOMENDASI OBAT SEMPROT[*#\s=]*)(.*?)(?=(?:[*#\s=]*(?:[0-9]+\.\s*)?PERAWATAN LAHAN)|$)'
+    pat_3 = r'(?:[*#\s=]*(?:[0-9]+\.\s*)?PERAWATAN LAHAN(?:.*?PUPUK)?[*#\s=]*)(.*?)$'
 
-    c1 = p1.group(1).strip() if p1 else None
-    c2 = p2.group(1).strip() if p2 else None
-    c3 = p3.group(1).strip() if p3 else None
+    m1 = re.search(pat_1, ai_text, re.DOTALL | re.IGNORECASE)
+    m2 = re.search(pat_2, ai_text, re.DOTALL | re.IGNORECASE)
+    m3 = re.search(pat_3, ai_text, re.DOTALL | re.IGNORECASE)
 
-    # Fallback ke pola pemisah markdown jika AI menggunakan tanda pagar (###)
+    def clean_extracted(t):
+        if not t:
+            return None
+        t = re.sub(r'^[*\s=-]+', '', t)
+        t = re.sub(r'[*\s=-]+$', '', t)
+        return t.strip() or None
+
+    c1 = clean_extracted(m1.group(1)) if m1 else None
+    c2 = clean_extracted(m2.group(1)) if m2 else None
+    c3 = clean_extracted(m3.group(1)) if m3 else None
+
+    # Fallback ke pemisah markdown pagar (###) jika regex utama belum lengkap
     if not c1 or not c2:
         parts = re.split(r'###\s*.*', ai_text)
         if len(parts) >= 4:
-            c1 = parts[1].strip()
-            c2 = parts[2].strip()
-            c3 = parts[3].strip()
+            c1 = c1 or clean_extracted(parts[1])
+            c2 = c2 or clean_extracted(parts[2])
+            c3 = c3 or clean_extracted(parts[3])
         elif len(parts) >= 3:
-            c1 = parts[1].strip()
-            c2 = parts[2].strip()
-            c3 = sys_c3
+            c1 = c1 or clean_extracted(parts[1])
+            c2 = c2 or clean_extracted(parts[2])
 
     return c1 or sys_c1, c2 or sys_c2, c3 or sys_c3
 
@@ -4130,6 +4211,7 @@ if selected_image is not None and not file_error:
                         disease_name=info["nama_id"],
                         confidence=top_confidence,
                         is_healthy=is_healthy,
+                        angle_idx=0,
                         second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
                         second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
                         is_differential=(diag_mode == "two_way"),
@@ -4142,8 +4224,9 @@ if selected_image is not None and not file_error:
                         diff_data=diff_data
                     )
                     st.session_state["ai_text_saved"] = ai_text
-                    st.session_state["ai_angle_saved"] = ai_angle or "Pendekatan Terpadu Lapangan (Database Mandiri Sistem)"
+                    st.session_state["ai_angle_saved"] = ai_angle or f"{FOCUS_ANGLES[0][0]} (Database Mandiri Sistem)"
                     st.session_state["ai_token_saved"] = ai_token_now
+                    st.session_state["ai_angle_idx"] = 0
 
             # Parsing Resep Menjadi 3 Kartu Jelas & Format HTML Terstruktur (Otomatis Fallback ke Database Mandiri Sistem jika Kuota Groq Habis)
             kartu_tindakan, kartu_obat, kartu_lahan = parse_groq_to_cards(
@@ -4159,9 +4242,14 @@ if selected_image is not None and not file_error:
             html_obat = format_card_text_to_html(kartu_obat)
             html_lahan = format_card_text_to_html(kartu_lahan)
 
+            current_angle_display = st.session_state.get('ai_angle_saved', FOCUS_ANGLES[0][0])
+            current_angle_idx = st.session_state.get('ai_angle_idx', 0)
+            angle_badge_html = f"<span style='background: #E0F2FE; color: #0369A1; padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 800; border: 1px solid #BAE6FD;'>Sudut #{current_angle_idx + 1} dari 4</span>"
+
             st.markdown(f"""
-                <div style="background-color: #F1F5F9; border-left: 6px solid #0284C7; padding: 0.8rem 1.1rem; border-radius: 12px; margin-bottom: 1.2rem; font-size: 1rem; color: #0F172A; font-weight: 700; border: 1px solid #CBD5E1; border-left-width: 6px;">
-                    🎯 <strong>Fokus Rekomendasi Saat Ini:</strong> {st.session_state.get('ai_angle_saved', 'Pendekatan Terpadu Lapangan')}
+                <div style="background-color: #F1F5F9; border-left: 6px solid #0284C7; padding: 0.85rem 1.15rem; border-radius: 12px; margin-bottom: 1.2rem; font-size: 0.98rem; color: #0F172A; font-weight: 700; border: 1px solid #CBD5E1; border-left-width: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                    <div>🎯 <strong>Fokus Rekomendasi Saat Ini:</strong> {current_angle_display}</div>
+                    <div>{angle_badge_html}</div>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -4202,16 +4290,15 @@ if selected_image is not None and not file_error:
             st.markdown("<div class='btn-alt-obat'>", unsafe_allow_html=True)
             if st.button("🔄 Minta Petunjuk / Alternatif Obat Lain", key="btn_minta_alternatif", use_container_width=True):
                 with st.spinner("🔄 Sedang meracik alternatif kombinasi obat dan panduan lain dari Balitsa/Kementan..."):
-                    curr_angle = st.session_state.get("ai_angle_saved")
-                    avail_idx = [i for i, (title, _) in enumerate(FOCUS_ANGLES) if title not in str(curr_angle)]
-                    chosen_idx = random.choice(avail_idx) if avail_idx else random.randint(0, len(FOCUS_ANGLES) - 1)
-                    alt_title = FOCUS_ANGLES[chosen_idx][0]
+                    curr_idx = st.session_state.get("ai_angle_idx", 0)
+                    next_idx = (curr_idx + 1) % len(FOCUS_ANGLES)
+                    alt_title, _ = FOCUS_ANGLES[next_idx]
 
                     new_text, new_angle = get_groq_recommendation(
                         disease_name=info["nama_id"],
                         confidence=top_confidence,
                         is_healthy=is_healthy,
-                        angle_idx=chosen_idx,
+                        angle_idx=next_idx,
                         latin_name=info.get("latin"),
                         severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
                         evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
@@ -4223,13 +4310,16 @@ if selected_image is not None and not file_error:
                         is_three_way=(diag_mode == "three_way"),
                         diff_data=diff_data
                     )
+                    st.session_state["ai_angle_idx"] = next_idx
+                    st.session_state["ai_token_saved"] = ai_token_now
                     if new_text:
                         st.session_state["ai_text_saved"] = new_text
                         st.session_state["ai_angle_saved"] = new_angle
-                        st.toast(f"Petunjuk alternatif terpercaya berhasil dimuat ({new_angle})", icon="🌱")
+                        st.toast(f"✅ Petunjuk alternatif ke-{next_idx + 1} berhasil dimuat: {new_angle[:35]}...", icon="🌱")
                     else:
                         st.session_state["ai_text_saved"] = None
                         st.session_state["ai_angle_saved"] = f"{alt_title} (Database Mandiri Sistem)"
-                        st.toast(f"Petunjuk alternatif dimuat dari database sistem ({alt_title})", icon="🌱")
+                        st.toast(f"✅ Petunjuk alternatif ke-{next_idx + 1} dimuat dari database sistem ({alt_title[:30]}...)", icon="🌱")
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
+
