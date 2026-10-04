@@ -4494,7 +4494,7 @@ if selected_image is not None and not file_error:
         """, unsafe_allow_html=True)
 
         # Bar Perbandingan Keyakinan vs Ambang Batas Slider (Transparan & Responsif)
-        if top_confidence >= 60.0 and diag_mode == "single":
+        if top_confidence >= 60.0 and diag_mode == "single" and not needs_leaf_verification:
             badge_conf_html = f'<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">🟢 Lolos Langsung (Kepastian: {top_confidence:.1f}%)</span>'
         elif is_from_gemini:
             badge_conf_html = f'<span style="background: #ecfdf5; color: #065f46; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #a7f3d0; font-size: 0.78rem;">🛡️ Terverifikasi Valid oleh Sistem Pakar ({top_confidence:.1f}%)</span>'
@@ -4770,7 +4770,7 @@ if selected_image is not None and not file_error:
         # Jika EfficientNet mantap (score >= 60% dan single mode), verifikasi tambahan TIDAK DIMUNCULKAN
         # karena pembacaan skor tunggal EfficientNet sudah mencukupi secara definitif.
         # ==============================================================================
-        show_verification_card = (top_confidence < 60.0 or diag_mode in ("two_way", "three_way"))
+        show_verification_card = (top_confidence < 60.0 or diag_mode in ("two_way", "three_way") or needs_leaf_verification)
         if show_verification_card and opinion_cache_key in st.session_state:
             is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
 
