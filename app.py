@@ -3831,7 +3831,6 @@ if selected_image is not None and not file_error:
 
                 if st.button(f"⚡ Sesuaikan Sensitivitas ({rec_leaf_pct}%) & Lanjutkan Diagnosa", type="primary", use_container_width=True, key=f"btn_apply_rec_{current_img_sig}"):
                     st.session_state["pending_leaf_slider"] = rec_leaf_pct
-                    st.session_state["leaf_slider"] = rec_leaf_pct
                     st.session_state[force_pass_key] = True
                     st.session_state["has_inspected_current"] = current_img_sig
                     st.rerun()
@@ -3851,7 +3850,6 @@ if selected_image is not None and not file_error:
                     tol_pct = max(3, int(np.floor(detected_ratio)))
                     if st.button(f"🌱 Sesuaikan Sensitivitas ({tol_pct}%) & Diagnosa Ulang", type="primary", use_container_width=True, key=f"btn_retry_tolerant_{current_img_sig}"):
                         st.session_state["pending_leaf_slider"] = tol_pct
-                        st.session_state["leaf_slider"] = tol_pct
                         st.session_state[force_pass_key] = True
                         st.session_state["has_inspected_current"] = current_img_sig
                         st.rerun()
@@ -3924,7 +3922,6 @@ if selected_image is not None and not file_error:
 
             if st.button(f"⚡ Sesuaikan Batas Keyakinan ({rec_conf_pct}%) & Lanjutkan Prediksi", type="primary", use_container_width=True, key=f"btn_apply_conf_rec_{current_img_sig}"):
                 st.session_state["pending_conf_slider"] = rec_conf_pct
-                st.session_state["conf_slider"] = rec_conf_pct
                 st.session_state[allow_conf_key] = True
                 st.rerun()
             st.stop()  # Hentikan eksekusi sampai tombol penyesuaian ditekan
