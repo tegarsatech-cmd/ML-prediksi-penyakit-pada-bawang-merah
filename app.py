@@ -3518,14 +3518,21 @@ def get_groq_lesion_map_evaluation(
         "User-Agent": "AgroScan-Validator/1.0"
     }
 
+    latin_name = CLASS_METADATA.get(primary_name, {}).get("latin", "")
+    latin_str = f" ({latin_name})" if latin_name else ""
     comp_text = f" dan '{second_name}' ({second_confidence:.1f}%)" if (second_name and diag_mode in ('two_way', 'three_way')) else ""
     prompt = (
         f"Anda adalah Dokter Spesialis Proteksi Tanaman Bawang Merah (merujuk Balitsa Lembang & BPTP Kementan).\n"
         f"Sistem scanner citra digital (OpenCV + AI Vision) baru saja menandai {num_spots} titik retikel kerusakan pada foto daun bawang merah.\n"
-        f"Penyakit Terdeteksi: '{primary_name}' ({confidence:.1f}%){comp_text}.\n"
+        f"Penyakit Terdeteksi: '{primary_name}'{latin_str} ({confidence:.1f}%){comp_text}.\n"
         f"Tingkat Kerusakan Jaringan: {severity_pct:.1f}% ({severity_level}).\n"
         + (f"Gejala Fisik Lapangan: {evidence_desc}\n" if evidence_desc else "")
-        + "\nTuliskan 'Catatan Evaluasi Klinis Titik Kerusakan' untuk petani dalam 3 poin ringkas dan padat berformat bullet point (- / •):\n"
+        + "PEDOMAN BIOLOGI RESMI (DILARANG SALAH PATOGEN):\n"
+        "- Karat Daun disebabkan jamur Puccinia allii (pustula serbuk oranye karat, BUKAN bakteri Xanthomonas, gunakan fungisida triazol seperti Tebukonazol/Difenokonazol).\n"
+        "- Bercak Ungu/Trotol disebabkan jamur Alternaria porri (lesi melekuk cekung bertepi cincin ungu).\n"
+        "- Hawar Daun disebabkan jamur Stemphylium vesicarium / Colletotrichum (selaput kertas kering tipis memutih dari pucuk).\n"
+        "- Layu Moler disebabkan jamur tular tanah Fusarium oxysporum (daun inul melintir spiral, akar membusuk).\n"
+        "\nTuliskan 'Catatan Evaluasi Klinis Titik Kerusakan' untuk petani dalam 3 poin ringkas dan padat berformat bullet point (- / •):\n"
         "1. 🎯 Validasi Titik Scanner (Konfirmasi apakah sebaran retikel di helai daun sesuai karakter biologis penyakit ini)\n"
         "2. 🚨 Prioritas Risiko Titik (Titik retikel mana yang paling berbahaya memicu spora menular atau daun patah)\n"
         "3. ✂️ Instruksi Taktis di Sawah (Panduan pemangkasan presisi 2 cm di bawah retikel atau arah bidik semprotan)\n"
