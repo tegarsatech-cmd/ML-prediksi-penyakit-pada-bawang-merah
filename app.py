@@ -1660,51 +1660,62 @@ def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.08) -> tupl
         if np.mean(is_white_gray) > 0.88 and plant_ratio < 0.02:
             return False, "Terdeteksi objek kertas atau dinding putih polos, bukan daun bawang.", plant_ratio
 
-        # Hanya tolak jika BENAR-BENAR murni kulit/tangan manusia tanpa helai daun (< 1.2% tanaman)
-        if skin_ratio > 0.35 and plant_ratio < 0.012:
-            return False, "Terdeteksi hanya menampilkan kulit/tangan manusia tanpa helai daun bawang.", plant_ratio
+        # Deteksi kulit/wajah manusia mendominasi
+        # Menolak foto wajah/selfie manusia atau tangan yang mendominasi tanpa helai daun yang cukup
+        if (skin_ratio > 0.30 and plant_ratio < 0.05) or (skin_ratio > 0.22 and skin_ratio > plant_ratio * 1.3):
+            return False, "Terdeteksi wajah atau kulit manusia mendominasi, bukan helai daun bawang merah.", plant_ratio
         
         if plant_ratio < min_ratio:
             return False, f"Rasio daun bawang pada foto hanya {plant_ratio*100:.1f}% (minimal {min_ratio*100:.0f}%).", plant_ratio
 
-        # 3. Analisis Geometri Morfologi Daun Bawang Merah (Bentuk Ramping Memanjang vs Bidang Lebar Padat)
+        # 3. Analisis Bidang Hijau Padat Raksasa (kain hijau/kertas/dinding artifisial)
         if cv2 is not None:
             clean_mask = cv2.morphologyEx(plant_mask.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
             contours, _ = cv2.findContours(clean_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if contours:
-                sig_contours = [c for c in contours if cv2.contourArea(c) >= 35]
-                if sig_contours:
-                    has_shallot_structure = False
-                    is_massive_solid_block = False
-
-                    for c in sig_contours:
-                        c_area = cv2.contourArea(c)
+                for c in contours:
+                    c_area = cv2.contourArea(c)
+                    if c_area > (224 * 224 * 0.40):
                         rect = cv2.minAreaRect(c)
                         l = max(rect[1])
                         w = min(rect[1])
                         aspect = l / max(w, 1.0)
-
                         hull = cv2.convexHull(c)
                         hull_area = cv2.contourArea(hull)
                         solidity = c_area / max(hull_area, 1.0)
-
-                        # Karakteristik helai daun bawang: ramping memanjang (aspect >= 1.45) ATAU rumpun bercabang berongga (solidity <= 0.65)
-                        if aspect >= 1.45 or (c_area > 300 and solidity <= 0.65):
-                            has_shallot_structure = True
-
-                        # Blok hijau padat raksasa (kain hijau/kertas/dinding)
-                        if c_area > (224 * 224 * 0.40) and aspect < 1.35 and solidity > 0.85:
-                            is_massive_solid_block = True
-
-                    if is_massive_solid_block:
-                        return False, "Terdeteksi bidang hijau padat/lebar (seperti kain atau dinding), bukan helai daun bawang.", plant_ratio
-
-                    if not has_shallot_structure:
-                        return False, "Bentuk objek terdeteksi melebar padat (daun lebar/bukan bawang), bukan helai daun bawang merah.", plant_ratio
+                        if aspect < 1.35 and solidity > 0.85:
+                            return False, "Terdeteksi bidang hijau padat/lebar (seperti kain atau dinding), bukan helai daun bawang.", plant_ratio
             
         return True, "Valid", plant_ratio
     except Exception as e:
         return True, f"Bypass: {e}", 1.0
+
+def detect_skin_ratio(image: Image.Image) -> float:
+    """Menghitung rasio warna kulit manusia pada citra untuk deteksi wajah/anggota tubuh."""
+    try:
+        img_rgb = image.copy().convert("RGB")
+        img_rgb.thumbnail((224, 224), Image.Resampling.BILINEAR)
+        arr = np.array(img_rgb, dtype=np.uint8)
+        if cv2 is not None:
+            hsv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV)
+            h = hsv[..., 0]
+            s = hsv[..., 1] / 255.0
+            v = hsv[..., 2] / 255.0
+        else:
+            return 0.0
+        r = arr[..., 0].astype(np.float32)
+        g = arr[..., 1].astype(np.float32)
+        b = arr[..., 2].astype(np.float32)
+        is_skin = (
+            (h >= 5.0) & (h <= 28.0) &
+            (s >= 0.15) & (s <= 0.60) &
+            (v >= 0.30) & (v <= 0.95) &
+            (r > g * 1.08) & (g > b * 1.02) &
+            (np.abs(r - g) < 95)
+        )
+        return float(np.mean(is_skin))
+    except Exception:
+        return 0.0
 
 def get_groq_api_key() -> str:
     """
@@ -3083,44 +3094,39 @@ def consult_gemini_visual_assistant(
     third_confidence: float | None = None,
     is_pure_healthy: bool = False,
     visual_evidence: dict | None = None,
-    conf_threshold: float = 70.0
-) -> tuple[str, bool, str]:
+    conf_threshold: float = 65.0
+) -> tuple[bool, str, bool, str]:
     """
-    Asisten Visual Gemini AI (Opini Kedua Foto Daun saat Ragu / 2-3 Kemungkinan Penyakit):
-    - Fokus: Membantu verifikasi visual saat ada keraguan atau kemungkinan 2-3 penyakit
-      (two_way, three_way, atau confidence di bawah ambang batas keyakinan).
-    - Konservasi Token Kuota: Jika diagnosa dominan, pasti (single & confidence >= threshold),
-      atau daun sehat prima, Gemini TIDAK dipanggil (menghemat 100% token quota).
-    - Multimodal Visual: Mengamati langsung bercak/lesi foto daun (bentuk cincin konsentris,
-      cekungan, warna, luka berair) untuk membedakan penyakit yang bersaing.
-    - Fallback Handal: Jika Gemini offline, kuota limit (429), atau lambat (>4.0s),
-      otomatis fallback mandiri ke aturan fitopatologi Balitsa.
+    Asisten Visual Gemini AI (Verifikasi 2 Langkah: Keaslian Tanaman Bawang & Ciri Lesi Daun):
+    Langkah 1: Verifikasi Keaslian Tanaman Bawang (Validasi Botani Allium cepa vs Wajah/Daun Non-Bawang/Benda).
+    Langkah 2: Verifikasi Lesi Visual & Validasi Gejala Penyakit Nyata.
 
-    Mengembalikan: (teks_opini, is_from_gemini, label_sumber)
+    Returns:
+        is_shallot_valid (bool): True jika foto terverifikasi daun bawang merah, False jika wajah/benda/daun lain.
+        clean_text (str): Teks penjelasan analisis visual.
+        is_from_gemini (bool): True jika berhasil dianalisis dengan Gemini Vision.
+        badge_src_label (str): Label sumber verifikasi.
     """
+    conf_th_pct = conf_threshold * 100.0 if conf_threshold <= 1.0 else conf_threshold
+
+    # Fallback default berbasis standar fitopatologi Balitsa
     if is_pure_healthy:
         fallback = "✅ Verifikasi Diagnosa: Karakteristik helai daun hijau segar merata dan berlilin alami mengonfirmasi tanaman berada dalam kondisi sehat prima bebas infeksi patogen aktif."
-        return fallback, False, "🌱 Verifikasi Mandiri Balitsa"
+        return True, fallback, False, "🌱 Verifikasi Mandiri Balitsa"
 
-    is_doubtful = (diag_mode in ("two_way", "three_way")) or (confidence < conf_threshold)
-
-    # Menyiapkan teks fallback lokal fitopatologi Balitsa
     if diag_mode == "three_way" and second_name and third_name:
         fallback = f"💡 Verifikasi Lapangan: Terdeteksi sebaran probabilitas antara {primary_name} ({confidence:.1f}%), {second_name} ({second_confidence or 0:.1f}%), dan {third_name} ({third_confidence or 0:.1f}%). Disarankan mengamati 3 titik fokus gejala fisik di kebun sebelum menentukan tindakan semprot."
     elif diag_mode == "two_way" and second_name:
         fallback = f"💡 Verifikasi Lapangan: Model mendeteksi kemiripan gejala antara {primary_name} ({confidence:.1f}%) dan {second_name} ({second_confidence or 0:.1f}%). Lakukan uji fisik pembeda (usap jari / bau) pada helai daun di bedengan untuk memastikan."
-    elif confidence < conf_threshold:
+    elif confidence < conf_th_pct:
         fallback = f"🔍 Verifikasi Lapangan: Tingkat keyakinan diagnosis ({confidence:.1f}%) berada di rentang waspada. Cermati penampakan bercak dan lakukan uji raba di kebun."
     else:
         sev_info = visual_evidence.get('severity_level', 'gejala aktif') if visual_evidence else 'gejala aktif'
         fallback = f"🔍 Verifikasi Diagnosa: Karakteristik kerusakan helai daun ({sev_info}) dengan tingkat kepastian tinggi ({confidence:.1f}%) selaras dengan profil fitopatologi Balitsa untuk {primary_name}. Silakan cocokkan dengan ciri fisik di sawah."
-        # Kasus pasti dominan: HEMAT 100% token Gemini!
-        return fallback, False, "🌱 Verifikasi Mandiri Balitsa"
 
-    # Jika ragu / 2-3 kemungkinan penyakit, panggil Asisten Visual Gemini
     api_key = get_gemini_api_key()
     if not api_key or image is None:
-        return fallback, False, "🌱 Verifikasi Mandiri Balitsa"
+        return True, fallback, False, "🌱 Verifikasi Mandiri Balitsa"
 
     try:
         # Resize dan kompres gambar hemat token (~384x384, ~30KB)
@@ -3137,14 +3143,22 @@ def consult_gemini_visual_assistant(
             candidates_text += f"- Pilihan 3: {third_name} ({third_confidence or 0:.1f}%)\n"
 
         prompt_text = (
-            "Anda adalah Asisten Dokter Tanaman Spesialis Citra Daun Bawang Merah.\n"
-            "Model pendeteksi menemukan kemungkinan gejala yang bersaing pada daun bawang ini:\n"
-            f"{candidates_text}\n"
-            "Tugas Anda: Amati foto daun ini secara visual dengan cermat.\n"
-            "1. Jika foto ini ternyata bukan daun tanaman bawang merah (misal daun mangga, cabai, rumput, atau benda non-bawang), sebutkan secara tegas bahwa objek ini bukan daun bawang merah.\n"
-            "2. Jika benar daun bawang merah, berikan analisis pembeda visual singkat 1-2 kalimat dalam Bahasa Indonesia: "
-            "ciri lesi visual apa yang paling tampak pada daun (bentuk cincin konsentris, cekungan melekuk, warna, atau pola bercak), "
-            "dan penyakit mana yang paling sesuai berdasarkan penampakan foto tersebut."
+            "Anda adalah Ahli Fitopatologi dan Asisten Dokter Tanaman Spesialis Citra Daun Bawang Merah.\n"
+            "Lakukan verifikasi 2 langkah dengan cermat pada foto yang diunggah:\n\n"
+            "LANGKAH 1 (Verifikasi Keaslian Tanaman Bawang Merah):\n"
+            "Periksa apakah objek pada foto adalah tanaman keluarga bawang (daun bawang merah / Allium cepa / scallion / daun bawang).\n"
+            "- Jika foto menampilkan wajah manusia, kulit orang, hewan, perabotan, pakaian, lantai/dinding, atau daun tanaman lebar (seperti daun mangga, cabai, pepaya, pisang, gulma):\n"
+            "Ketik baris pertama:\n"
+            "STATUS: BUKAN_BAWANG\n"
+            "PENJELASAN: [Jelaskan secara tegas objek apa yang tampak pada foto dan mengapa bukan daun tanaman bawang merah]\n\n"
+            "- Jika foto BENAR menampilkan tanaman atau helai daun bawang merah (segar, bibit dalam pot, rumpun di bedengan, maupun bergejala penyakit):\n"
+            "Ketik baris pertama:\n"
+            "STATUS: VALID_BAWANG\n"
+            f"PENJELASAN: [Berdasarkan kemungkinan penyakit:\n{candidates_text}\n"
+            "Berikan analisis pembeda visual singkat 1-2 kalimat dalam Bahasa Indonesia mengenai ciri lesi/gejala nyata yang tampak pada helai daun dan penyakit yang paling sesuai]\n\n"
+            "PENTING: Selalu awali jawaban Anda dengan format persis:\n"
+            "STATUS: VALID_BAWANG atau STATUS: BUKAN_BAWANG\n"
+            "diikuti oleh PENJELASAN:"
         )
 
         models_to_try = ["gemini-3.5-flash-lite", "gemini-2.5-flash"]
@@ -3160,30 +3174,48 @@ def consult_gemini_visual_assistant(
                     }
                 ],
                 "generationConfig": {
-                    "temperature": 0.2,
-                    "maxOutputTokens": 600
+                    "temperature": 0.1,
+                    "maxOutputTokens": 300
                 }
             }
             try:
-                r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4.5)
+                r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=5.0)
                 if r.status_code == 200:
                     data = r.json()
                     candidates = data.get("candidates", [])
                     if candidates:
                         raw_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                        if len(raw_text) > 15:
-                            return raw_text, True, "✨ Google Gemini Vision"
+                        if len(raw_text) > 10:
+                            is_shallot_valid = True
+                            clean_text = raw_text
+
+                            upper_text = raw_text.upper()
+                            if "STATUS: BUKAN_BAWANG" in upper_text or "STATUS: BUKAN" in upper_text:
+                                is_shallot_valid = False
+                            elif "STATUS: VALID_BAWANG" in upper_text or "STATUS: VALID" in upper_text:
+                                is_shallot_valid = True
+                            elif "BUKAN DAUN BAWANG" in upper_text or "WAJAH MANUSIA" in upper_text or "BUKAN MERUPAKAN TANAMAN" in upper_text:
+                                is_shallot_valid = False
+
+                            if "PENJELASAN:" in raw_text:
+                                clean_text = raw_text.split("PENJELASAN:", 1)[1].strip()
+                            elif "STATUS:" in raw_text:
+                                lines_no_status = [l for l in raw_text.splitlines() if not l.strip().upper().startswith("STATUS:")]
+                                clean_text = "\n".join(lines_no_status).strip()
+
+                            return is_shallot_valid, clean_text, True, "✨ Google Gemini Vision (2 Langkah)"
             except Exception:
                 continue
     except Exception:
         pass
 
-    return fallback, False, "🌱 Verifikasi Mandiri Balitsa"
+    return True, fallback, False, "🌱 Verifikasi Mandiri Balitsa"
 
 
 def get_groq_auxiliary_second_opinion(*args, **kwargs):
     """Alias kompatibilitas: Mengarahkan opini kedua ke consult_gemini_visual_assistant."""
-    return consult_gemini_visual_assistant(*args, **kwargs)
+    res = consult_gemini_visual_assistant(*args, **kwargs)
+    return res[1], res[2], res[3]
 
 
 
@@ -4301,56 +4333,93 @@ if selected_image is not None and not file_error:
             has_three_diseases = diag_info.get("has_three_diseases", False)
 
         # ==============================================================================
-        # TAHAP 3: EVALUASI KEPUTUSAN MODEL / THRESHOLD
-        # Jika confidence < conf_threshold, tampilkan "Tidak yakin" alih-alih menebak
+        # TAHAP 3: EVALUASI KEPUTUSAN MODEL & VERIFIKASI 2 LANGKAH (AI GATEKEEPER)
+        # Memvalidasi keraguan diagnosa & mendeteksi objek non-bawang / wajah dengan Gemini
         # ==============================================================================
-        # ==============================================================================
-        # TAHAP 3: EVALUASI KEPUTUSAN MODEL / THRESHOLD
-        # Jika kepastian < conf_threshold, tolak diagnosa demi mencegah salah penanganan
-        # ==============================================================================
-        is_uncertain = api_output.get("uncertain", False) or (top_confidence < (conf_threshold * 100.0))
-        if is_uncertain:
-            current_conf_pct = conf_threshold * 100.0
+        conf_th_pct = conf_threshold * 100.0 if conf_threshold <= 1.0 else conf_threshold
+        is_uncertain = api_output.get("uncertain", False) or (top_confidence < conf_th_pct)
+        detected_skin_ratio = detect_skin_ratio(selected_image)
+        is_face_suspicious = (detected_skin_ratio > 0.15)
+        needs_2step_verification = is_uncertain or is_face_suspicious or (diag_mode in ("two_way", "three_way"))
 
-            st.markdown(f"""
-                <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                        <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ HASIL TIDAK MEYAKINKAN</span>
-                        <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Kepastian: {top_confidence:.1f}% (Batas Slider: {current_conf_pct:.0f}%)</span>
+        # Jalankan Verifikasi 2 Langkah Gemini jika ada keraguan atau kecurigaan non-bawang
+        opinion_cache_key = f"second_opinion_{current_img_sig}"
+        if needs_2step_verification:
+            if opinion_cache_key not in st.session_state:
+                with st.spinner("🤖 Melakukan Verifikasi 2 Langkah AI (Google Gemini Vision)..."):
+                    st.session_state[opinion_cache_key] = consult_gemini_visual_assistant(
+                        image=selected_image,
+                        primary_name=info['nama_id'],
+                        confidence=top_confidence,
+                        diag_mode=diag_mode,
+                        second_name=second_info['nama_id'] if (second_info) else None,
+                        second_confidence=second_confidence if (second_info) else None,
+                        third_name=third_info.get('nama_id', third_class_raw) if (third_info) else None,
+                        third_confidence=third_confidence if (third_info) else None,
+                        is_pure_healthy=is_pure_healthy,
+                        visual_evidence=visual_evidence,
+                        conf_threshold=conf_threshold
+                    )
+            is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
+
+            # 1. JIKA TERBUKTI BUKAN DAUN BAWANG (Wajah manusia, pakaian, perabot, daun non-bawang):
+            if not is_shallot_valid:
+                st.markdown(f"""
+                    <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                            <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ FOTO BUKAN DAUN BAWANG MERAH</span>
+                            <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Verifikasi AI 2 Langkah</span>
+                        </div>
+                        <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.55;">
+                            {second_opinion_text}<br><br>
+                            Sistem mendeteksi bahwa objek pada foto bukan merupakan tanaman daun bawang merah (Allium cepa). Diagnosa penyakit otomatis dan anjuran obat dihentikan demi menjaga akurasi.<br><br>
+                            <strong>💡 Petunjuk Pengambilan Foto:</strong><br>
+                            • Pastikan objek yang difoto adalah tanaman daun bawang merah asli di pot atau bedengan sawah.<br>
+                            • Ambil foto dari jarak dekat (10–20 cm) dengan pencahayaan terang tepat pada helai daun yang bergejala.<br>
+                            • Hindari mengarahkan kamera ke wajah manusia, pakaian, atau jenis tanaman lain.
+                        </div>
                     </div>
-                    <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.55;">
-                        Tingkat keyakinan model hanya <strong>{top_confidence:.1f}%</strong> (di bawah batas aman slider <strong>{current_conf_pct:.0f}%</strong>).<br><br>
-                        Foto terdeteksi bukan daun bawang merah yang valid, atau gejala penyakit terlalu buram/tidak cocok. Sistem menolak diagnosa otomatis demi mencegah kesalahan penanganan di kebun.<br><br>
-                        <strong>💡 Petunjuk Pengambilan Foto:</strong><br>
-                        • Pastikan objek yang difoto adalah tanaman daun bawang merah asli.<br>
-                        • Ambil foto dari jarak dekat (10–20 cm) dengan pencahayaan terang tepat pada helai daun yang bergejala.<br>
-                        • Jika ini benar daun bawang di kebun dengan gejala awal yang masih sangat tipis, Anda dapat menyelaraskan slider batas keyakinan di menu sidebar.
+                """, unsafe_allow_html=True)
+                st.stop()
+
+            # 2. JIKA MODEL RAGU (is_uncertain) DAN GEMINI OFFLINE (is_from_gemini = False):
+            if is_uncertain and not is_from_gemini:
+                st.markdown(f"""
+                    <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                            <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ HASIL TIDAK MEYAKINKAN</span>
+                            <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Kepastian: {top_confidence:.1f}% (Batas Slider: {conf_th_pct:.0f}%)</span>
+                        </div>
+                        <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.55;">
+                            Tingkat keyakinan model hanya <strong>{top_confidence:.1f}%</strong> (di bawah batas aman slider <strong>{conf_th_pct:.0f}%</strong>).<br><br>
+                            Gejala penyakit terlalu buram atau belum cocok dengan kategori yang tersedia. Sistem menolak diagnosa otomatis demi mencegah kesalahan penanganan di kebun.<br><br>
+                            <strong>💡 Petunjuk Pengambilan Foto:</strong><br>
+                            • Pastikan objek yang difoto adalah tanaman daun bawang merah asli.<br>
+                            • Ambil foto dari jarak dekat (10–20 cm) dengan pencahayaan terang tepat pada helai daun yang bergejala.<br>
+                            • Jika ini benar daun bawang di kebun dengan gejala awal yang masih sangat tipis, Anda dapat menyelaraskan slider batas keyakinan di menu sidebar.
+                        </div>
                     </div>
-                </div>
-            """, unsafe_allow_html=True)
-            st.stop()
+                """, unsafe_allow_html=True)
+                st.stop()
 
         # ==============================================================================
-        # KASUS 2: FOTO VALID & KEYAKINAN TINGGI (LOLOS THRESHOLD)
+        # KASUS: FOTO VALID (TERVERIFIKASI DAUN BAWANG ASLI OLEH GEMINI / LOLOS THRESHOLD)
         # ==============================================================================
+        # 8. LANGKAH 2: HASIL PEMERIKSAAN (NAMA PENYAKIT & KEPASTIAN)
+        # ==============================================================================
+        st.markdown("""
+            <div class="step-header">
+                <div class="step-num">2</div>
+                <div class="step-title">Hasil Pemeriksaan Daun</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Bar Perbandingan Keyakinan AI vs Ambang Batas Slider (Transparan & Responsif)
+        diff_conf = top_confidence - conf_threshold_pct
+        if diff_conf >= 0:
+            badge_conf_html = f'<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">🟢 Memenuhi Batas Keyakinan (+{diff_conf:.1f}%)</span>'
         else:
-
-            # ==============================================================================
-            # 8. LANGKAH 2: HASIL PEMERIKSAAN (NAMA PENYAKIT & KEPASTIAN)
-            # ==============================================================================
-            st.markdown("""
-                <div class="step-header">
-                    <div class="step-num">2</div>
-                    <div class="step-title">Hasil Pemeriksaan Daun</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-            # Bar Perbandingan Keyakinan AI vs Ambang Batas Slider (Transparan & Responsif)
-            diff_conf = top_confidence - conf_threshold_pct
-            if diff_conf >= 0:
-                badge_conf_html = f'<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">🟢 Memenuhi Batas Keyakinan (+{diff_conf:.1f}%)</span>'
-            else:
-                badge_conf_html = f'<span style="background: #fefce8; color: #854d0e; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #fef08a; font-size: 0.78rem;">🟡 Mode Toleran Gejala Awal ({top_confidence:.1f}%)</span>'
+            badge_conf_html = f'<span style="background: #ecfdf5; color: #065f46; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #a7f3d0; font-size: 0.78rem;">🛡️ Terverifikasi Daun Bawang Asli oleh Gemini ({top_confidence:.1f}%)</span>'
 
             st.markdown(f"""
                 <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 10px 14px; margin: 4px 0 14px 0; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -4632,7 +4701,7 @@ if selected_image is not None and not file_error:
                     visual_evidence=visual_evidence,
                     conf_threshold=conf_threshold
                 )
-            second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
+            is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
 
             if is_from_gemini:
                 card_bg = "#FAF5FF"
@@ -4644,7 +4713,7 @@ if selected_image is not None and not file_error:
                 badge_color = "#5B21B6"
                 badge_border = "#C4B5FD"
                 title_icon = "🩺✨"
-                title_label = "Opini Kedua Asisten AI (Analisis Visual Lesi Daun)"
+                title_label = "Verifikasi 2 Langkah AI (Validasi Botani & Ciri Lesi Daun)"
             else:
                 card_bg = "#F8FAFC"
                 card_border = "#E2E8F0"
