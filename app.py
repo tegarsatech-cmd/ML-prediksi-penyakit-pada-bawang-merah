@@ -3016,6 +3016,82 @@ def get_groq_physical_verification(
     return fallback_content
 
 
+def get_groq_auxiliary_second_opinion(
+    primary_name: str,
+    confidence: float,
+    diag_mode: str = "single",
+    second_name: str | None = None,
+    second_confidence: float | None = None,
+    third_name: str | None = None,
+    third_confidence: float | None = None,
+    is_pure_healthy: bool = False,
+    visual_evidence: dict | None = None
+) -> tuple[str, bool]:
+    """
+    Asisten Verifikasi Langkah 2 (Kolaborasi Dual-Engine Pembantu Biasa):
+    Groq memberikan konfirmasi / pendapat kedua (second opinion) singkat 1-2 kalimat
+    terhadap hasil prediksi model EfficientNet-B0 dan bukti fisik piksel daun.
+    Jika kuota Groq limit / offline / lambat (>3.5 detik), otomatis fallback
+    ke catatan verifikasi mandiri berbasis aturan fitopatologi Balitsa tanpa mengganggu sistem.
+    Mengembalikan: (teks_opini, is_from_groq).
+    """
+    if is_pure_healthy:
+        fallback = "✅ Verifikasi Diagnosa: Karakteristik helai daun hijau segar merata dan berlilin alami mengonfirmasi tanaman berada dalam kondisi sehat prima bebas infeksi patogen aktif."
+    elif diag_mode == "three_way" and second_name and third_name:
+        fallback = f"💡 Verifikasi Lapangan: Terdeteksi sebaran probabilitas antara {primary_name}, {second_name}, dan {third_name}. Disarankan mengamati 3 titik fokus gejala fisik di kebun sebelum menentukan tindakan semprot."
+    elif diag_mode == "two_way" and second_name:
+        fallback = f"💡 Verifikasi Lapangan: Model mendeteksi kemiripan gejala antara {primary_name} ({confidence:.1f}%) dan {second_name} ({second_confidence or 0:.1f}%). Lakukan uji fisik pembeda (usap jari / bau) pada helai daun di bedengan untuk memastikan."
+    else:
+        sev_info = visual_evidence.get('severity_level', 'gejala aktif') if visual_evidence else 'gejala aktif'
+        fallback = f"🔍 Verifikasi Diagnosa: Karakteristik kerusakan helai daun ({sev_info}) selaras dengan profil fitopatologi Balitsa untuk {primary_name}. Silakan cocokkan dengan ciri fisik di sawah."
+
+    api_key = get_groq_api_key()
+    if not api_key:
+        return fallback, False
+
+    user_prompt = f"Model EfficientNet memprediksi: {primary_name} (Kepastian: {confidence:.1f}%).\nMode: {diag_mode}.\n"
+    if second_name:
+        user_prompt += f"Pesaing 2: {second_name} ({second_confidence or 0:.1f}%).\n"
+    if third_name:
+        user_prompt += f"Pesaing 3: {third_name} ({third_confidence or 0:.1f}%).\n"
+    if visual_evidence:
+        sev = visual_evidence.get("severity_pct", 0)
+        desc = visual_evidence.get("evidence_desc", "")
+        user_prompt += f"Bukti fisik piksel daun: Kerusakan {sev:.1f}%. {desc}\n"
+    user_prompt += "Berikan konfirmasi ringkas 1-2 kalimat padat apakah gejala ini selaras dan apa yang perlu dipastikan petani di sawah."
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "AgroScan-Assistant/1.0"
+    }
+    payload = {
+        "model": "qwen/qwen3.8-27b",
+        "temperature": 0.5,
+        "max_tokens": 140,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Anda adalah Dokter Tanaman Konsultan Balitsa & BPTP Kementan. Berikan 1-2 kalimat padat konfirmasi/pendapat kedua atas hasil deteksi model AI dan kondisi daun bawang merah."
+            },
+            {
+                "role": "user",
+                "content": user_prompt
+            }
+        ]
+    }
+    try:
+        r = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=3.5)
+        if r.status_code == 200:
+            res_content = r.json()["choices"][0]["message"]["content"].strip()
+            if len(res_content) > 15:
+                return res_content, True
+    except Exception:
+        pass
+
+    return fallback, False
+
+
 def build_complete_practical_summary(info, second_info=None, is_differential=False, third_info=None, is_three_way=False):
     """
     Menyusun checklist ringkasan praktis aksi lapangan yang 100% tuntas dan tidak terpotong.
@@ -4013,6 +4089,8 @@ if selected_image is not None and not file_error:
                 <span>Batas Slider Anda: <strong style="color: #0f172a;">{min_leaf_ratio_pct}%</strong></span>
                 <span>•</span>
                 <span>Standar Sawah: <strong style="color: #166534;">8%</strong></span>
+                <span>•</span>
+                <span>Sistem: <strong style="color: #0284c7;">Dual-Engine AI (Vision + Groq)</strong></span>
             </div>
             <div style="background: #e2e8f0; border-radius: 999px; height: 8px; width: 100%; margin-top: 8px; overflow: hidden;">
                 <div style="background: {m_color}; width: {min(max(ratio_pct_live, 0.0), 100.0):.1f}%; height: 100%; border-radius: 999px;"></div>
@@ -4449,6 +4527,45 @@ if selected_image is not None and not file_error:
                         st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
+            # ==============================================================================
+            # ASISTEN DOKTER AI: KONFIRMASI & PENDAPAT KEDUA (DUAL-ENGINE COOPERATION)
+            # Berperan sebagai pembantu biasa; jika Groq limit/offline, otomatis fallback mandiri
+            # ==============================================================================
+            opinion_cache_key = f"second_opinion_{current_img_sig}"
+            if opinion_cache_key not in st.session_state:
+                st.session_state[opinion_cache_key] = get_groq_auxiliary_second_opinion(
+                    primary_name=info['nama_id'],
+                    confidence=top_confidence,
+                    diag_mode=diag_mode,
+                    second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way') and second_info) else None,
+                    second_confidence=second_confidence if (diag_mode in ('two_way', 'three_way') and second_info) else None,
+                    third_name=third_info.get('nama_id', third_class_raw) if (diag_mode == 'three_way' and third_info) else None,
+                    third_confidence=third_confidence if (diag_mode == 'three_way' and third_info) else None,
+                    is_pure_healthy=is_pure_healthy,
+                    visual_evidence=visual_evidence
+                )
+            second_opinion_text, is_from_groq = st.session_state[opinion_cache_key]
+
+            badge_src_label = "🤖 Groq AI Intelligence" if is_from_groq else "🌱 Verifikasi Mandiri Balitsa"
+            badge_bg = "#DCFCE7" if is_from_groq else "#F1F5F9"
+            badge_color = "#166534" if is_from_groq else "#475569"
+            badge_border = "#86EFAC" if is_from_groq else "#CBD5E1"
+
+            st.markdown(f"""
+                <div style="background: #F0FDF4; border-left: 5px solid #16A34A; border-radius: 12px; padding: 12px 16px; margin: 12px 0 16px 0; border: 1px solid #BBF7D0; border-left-width: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+                        <span style="font-weight: 800; font-size: 0.90rem; color: #166534; display: flex; align-items: center; gap: 6px;">
+                            🩺 <span>Konfirmasi & Pendapat Kedua (Asisten Dokter AI)</span>
+                        </span>
+                        <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.74rem; font-weight: 800; padding: 2px 10px; border-radius: 999px; border: 1px solid {badge_border};">
+                            {badge_src_label}
+                        </span>
+                    </div>
+                    <div style="font-size: 0.88rem; color: #14532D; line-height: 1.6;">
+                        {second_opinion_text}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
             # ==============================================================================
             # MODUL BUKTI ANALISIS VISUAL NYATA DARI FOTO (REAL VISUAL LESION AUDIT)
