@@ -1744,27 +1744,43 @@ def get_gemini_api_key() -> str:
 def validate_onion_image(image: Image.Image, api_key: str | None = None, min_ratio: float = 0.08):
     """
     Sistem Validasi Guardrail Gatekeeper Citra Tanaman Bawang Merah:
-    Memverifikasi keaslian foto daun bawang merah sebelum proses diagnosa.
-    Menolak foto manusia murni, hewan, kendaraan, dinding kosong, dan objek non-tanaman.
-    Untuk foto daun bawang yang dipegang tangan petani atau berlatar tanah/pot/bedengan sawah,
-    validasi botani dialihkan ke Gemini Vision pada Tahap 3.
+    Memverifikasi kelayakan foto daun bawang merah sebelum proses diagnosa.
+    - Zona 1 (Score Memenuhi Syarat, ratio >= min_ratio): Lolos langsung ke diagnosa.
+    - Zona 2 (Score di Tengah-tengah / Mendekati Batas, borderline <= ratio < min_ratio): 
+      Dialihkan ke Verifikasi AI 2 Langkah Gemini untuk mendeteksi apakah layak didiagnosa atau tidak.
+    - Zona 3 (Score di Bawah Batas Toleransi, ratio < borderline): 
+      Ditolak agar tidak semua score/foto sembarangan dapat dideteksi.
     """
     is_plant, reason, ratio = check_shallot_leaf_mask(image, min_ratio=min_ratio)
     rec_leaf_pct = max(3, min(35, int(np.floor(ratio * 100.0)))) if ratio >= 0.03 else 5
     
+    # Batas toleransi kelayakan (score di tengah-tengah / mendekati batas minimal):
+    # Standar toleransi proporsional: 65% dari batas minimal, dengan lantai dasar 4.5% (toleransi tidak terlalu tinggi)
+    borderline_ratio = max(0.045, min_ratio * 0.65)
+    
     gemini_key = get_gemini_api_key()
-    # Jika rasio di bawah batas slider tetapi memiliki jaringan vegetasi daun (ratio >= 0.02)
-    # dan Gemini aktif, izinkan lolos Tahap 1 untuk divalidasi langsung oleh Gemini di Tahap 3:
-    is_field_delegated = (not is_plant and "Rasio daun bawang pada foto hanya" in reason and ratio >= 0.02 and bool(gemini_key))
-    if is_field_delegated:
+    
+    # Klasifikasi Zona Score:
+    is_ratio_fail = (not is_plant and "Rasio daun bawang pada foto hanya" in reason)
+    is_borderline_delegated = (is_ratio_fail and ratio >= borderline_ratio and bool(gemini_key))
+    is_too_low = (is_ratio_fail and ratio < borderline_ratio)
+
+    if is_borderline_delegated:
         is_plant = True
-        reason = f"Diteruskan ke Verifikasi AI Gemini (Rasio Daun: {ratio*100:.1f}%)"
+        reason = f"Score di zona mendekati batas ({ratio*100:.1f}% vs {min_ratio*100:.0f}%). Verifikasi kelayakan diagnosa dialihkan ke Verifikasi AI 2 Langkah Gemini."
+    elif is_too_low:
+        is_plant = False
+        reason = f"Score kanopi daun hanya {ratio*100:.1f}% (di bawah batas toleransi kelayakan {borderline_ratio*100:.1f}%). Foto belum memenuhi syarat untuk didiagnosa."
+
+    score_zone = "passed" if ratio >= min_ratio else ("borderline" if is_borderline_delegated else "too_low")
 
     info = {
         "plant_ratio": ratio,
         "min_ratio": min_ratio,
-        "is_ratio_rejection": (not is_plant and "Rasio daun bawang pada foto hanya" in reason),
-        "delegated_to_gemini": is_field_delegated,
+        "borderline_ratio": borderline_ratio,
+        "score_zone": score_zone,
+        "is_ratio_rejection": (not is_plant and (is_ratio_fail or is_too_low)),
+        "delegated_to_gemini": is_borderline_delegated,
         "reason": reason,
         "recommended_leaf_pct": rec_leaf_pct
     }
@@ -3137,21 +3153,25 @@ def consult_gemini_visual_assistant(
 
         prompt_text = (
             "Anda adalah Ahli Fitopatologi dan Asisten Dokter Tanaman Spesialis Citra Daun Bawang Merah.\n"
-            "Lakukan verifikasi 2 langkah dengan cermat pada foto yang diunggah:\n\n"
-            "LANGKAH 1 (Verifikasi Keaslian Tanaman Bawang Merah):\n"
-            "Periksa apakah objek pada foto adalah tanaman keluarga bawang (daun bawang merah / Allium cepa / scallion / daun bawang).\n\n"
+            "Lakukan verifikasi 2 langkah dengan cermat untuk menentukan KELAYAKAN DIAGNOSA pada foto yang diunggah:\n\n"
+            "LANGKAH 1 (Verifikasi Keaslian Tanaman Bawang Merah & Kelayakan Diagnosa):\n"
+            "Periksa apakah objek utama pada foto adalah tanaman keluarga bawang (daun bawang merah / Allium cepa / scallion / daun bawang).\n"
+            "Evaluasi apakah kondisi helai daun cukup jelas dan memenuhi syarat kelayakan untuk didiagnosa penyakitnya (LAYAK DIAGNOSA).\n\n"
             "CATATAN PENTING KONDISI LAPANGAN (TANGAN PETANI & TANAH SAWAH):\n"
-            "Foto di kebun atau sawah SANGAT SERING menampilkan:\n"
+            "Foto di kebun atau sawah sering menampilkan:\n"
             "1. Tangan atau jari petani yang sedang memegang helai daun agar fokus kamera stabil dan jelas.\n"
             "2. Latar belakang tanah kebun, bedengan sawah, polybag, pot tanaman, atau mulsa plastik.\n"
-            "Jika foto menampilkan helai daun bawang merah (meskipun sedang dipegang tangan petani atau berlatar tanah/pot/bedengan), ini adalah foto tanaman asli yang valid dan STATUS WAJIB:\n"
+            "Jika foto menampilkan helai daun bawang merah asli dan helai daunnya tampak cukup jelas untuk didiagnosa (meskipun sedang dipegang tangan petani atau berlatar tanah/pot/bedengan), maka tanaman LAYAK DIAGNOSA dan STATUS WAJIB:\n"
             "STATUS: VALID_BAWANG\n\n"
-            "HANYA jawab BUKAN_BAWANG jika foto BENAR-BENAR bukan tanaman daun bawang merah, seperti: wajah manusia/selfie tanpa tanaman, tubuh manusia, perabotan, pakaian, kendaraan, hewan, lantai/dinding polos, atau daun tanaman lebar jenis lain (seperti daun mangga, cabai, pisang, pepaya, gulma lebar).\n"
-            "Ketik baris pertama:\n"
+            "TOLAK DAN NYATAKAN BUKAN_BAWANG (TIDAK LAYAK DIAGNOSA) JIKA:\n"
+            "- Foto menampilkan wajah/tubuh manusia, perabotan, pakaian, kendaraan, hewan, lantai/dinding polos tanpa daun bawang.\n"
+            "- Foto menampilkan daun tanaman jenis lain (seperti daun mangga, cabai, pisang, pepaya, gulma daun lebar).\n"
+            "- Foto terlalu buram/gelap/hancur atau hanya berupa tanah/tangan kosong tanpa helai daun bawang yang layak didiagnosa.\n"
+            "Ketik baris pertama persis:\n"
             "STATUS: BUKAN_BAWANG\n"
-            "PENJELASAN: [Jelaskan secara tegas objek apa yang tampak pada foto dan mengapa bukan daun tanaman bawang merah]\n\n"
-            "- Jika foto BENAR menampilkan tanaman atau helai daun bawang merah (segar, bibit dalam pot, rumpun di bedengan, maupun bergejala penyakit):\n"
-            "Ketik baris pertama:\n"
+            "PENJELASAN: [Jelaskan secara tegas objek apa yang tampak pada foto dan mengapa tidak layak didiagnosa sebagai daun bawang merah]\n\n"
+            "- Jika foto BENAR menampilkan helai daun bawang merah dan LAYAK DIAGNOSA:\n"
+            "Ketik baris pertama persis:\n"
             "STATUS: VALID_BAWANG\n"
             f"PENJELASAN: [Berdasarkan kemungkinan penyakit:\n{candidates_text}\n"
             "Berikan analisis pembeda visual singkat 1-2 kalimat dalam Bahasa Indonesia mengenai ciri lesi/gejala nyata yang tampak pada helai daun dan penyakit yang paling sesuai]\n\n"
@@ -4201,26 +4221,46 @@ if selected_image is not None and not file_error:
     # Monitor Real-Time Kanopi Daun (Live Responsif terhadap Slider Sensitivitas Daun di Sidebar)
     is_plant_live, reason_live, plant_ratio_live = check_shallot_leaf_mask(selected_image, min_ratio=min_leaf_ratio)
     ratio_pct_live = plant_ratio_live * 100.0
-    is_passed_live = (plant_ratio_live >= min_leaf_ratio)
+    borderline_ratio_live = max(0.045, min_leaf_ratio * 0.65)
+    borderline_pct_live = borderline_ratio_live * 100.0
 
-    m_color = "#16a34a" if is_passed_live else "#dc2626"
-    m_bg = "#f0fdf4" if is_passed_live else "#fef2f2"
-    m_border = "#86efac" if is_passed_live else "#fca5a5"
-    m_icon = "🟢" if is_passed_live else "🔴"
-    m_status_title = "MEMENUHI SYARAT VALIDASI" if is_passed_live else f"DI BAWAH BATAS VALIDASI ({ratio_pct_live:.1f}% < {min_leaf_ratio_pct}%)"
+    if plant_ratio_live >= min_leaf_ratio:
+        m_color = "#16a34a"
+        m_bg = "#f0fdf4"
+        m_border = "#86efac"
+        m_icon = "🟢"
+        m_status_title = f"MEMENUHI SYARAT VALIDASI ({ratio_pct_live:.1f}% >= {min_leaf_ratio_pct}%)"
+        m_status_desc = "Score kanopi daun memenuhi standar minimal untuk langsung didiagnosa."
+    elif plant_ratio_live >= borderline_ratio_live:
+        m_color = "#d97706"
+        m_bg = "#fffbeb"
+        m_border = "#fcd34d"
+        m_icon = "🟡"
+        m_status_title = f"MENDEKATI BATAS: VERIFIKASI 2 LANGKAH GEMINI AKTIF ({ratio_pct_live:.1f}%)"
+        m_status_desc = f"Score kanopi daun di tengah-tengah / mendekati batas ({min_leaf_ratio_pct}%). Google Gemini Vision akan memverifikasi 2 langkah untuk mendeteksi kelayakan diagnosa."
+    else:
+        m_color = "#dc2626"
+        m_bg = "#fef2f2"
+        m_border = "#fca5a5"
+        m_icon = "🔴"
+        m_status_title = f"DI BAWAH SYARAT KELAYAKAN ({ratio_pct_live:.1f}% < {borderline_pct_live:.1f}%)"
+        m_status_desc = f"Score kanopi daun di bawah batas toleransi kelayakan ({borderline_pct_live:.1f}%). Foto belum memenuhi syarat validasi daun untuk melanjutkan diagnosa."
 
     st.markdown(f"""
         <div style="background: {m_bg}; border: 1.5px solid {m_border}; border-radius: 12px; padding: 10px 14px; margin: 6px 0 14px 0;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 6px;">
                 <span style="font-weight: 700; color: #1e293b; font-size: 0.90rem;">🍃 Validasi Kanopi Daun:</span>
                 <span style="font-weight: 800; color: {m_color}; font-size: 0.85rem;">{m_icon} {m_status_title}</span>
             </div>
-            <div style="display: flex; align-items: center; gap: 8px 12px; font-size: 0.85rem; color: #475569; flex-wrap: wrap;">
-                <span>Helai Daun Terdeteksi: <strong style="color: #0f172a;">{ratio_pct_live:.1f}%</strong></span>
+            <div style="font-size: 0.82rem; color: #475569; margin-bottom: 6px; line-height: 1.45;">
+                {m_status_desc}
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px 12px; font-size: 0.82rem; color: #64748b; flex-wrap: wrap;">
+                <span>Score Terdeteksi: <strong style="color: #0f172a;">{ratio_pct_live:.1f}%</strong></span>
                 <span>•</span>
                 <span>Batas Minimal: <strong style="color: #0f172a;">{min_leaf_ratio_pct}%</strong></span>
                 <span>•</span>
-                <span>Standar Sawah: <strong style="color: #166534;">8%</strong></span>
+                <span>Batas Toleransi: <strong style="color: #d97706;">{borderline_pct_live:.1f}%</strong></span>
             </div>
             <div style="background: #e2e8f0; border-radius: 999px; height: 8px; width: 100%; margin-top: 8px; overflow: hidden;">
                 <div style="background: {m_color}; width: {min(max(ratio_pct_live, 0.0), 100.0):.1f}%; height: 100%; border-radius: 999px;"></div>
@@ -4265,20 +4305,22 @@ if selected_image is not None and not file_error:
             rec_leaf_pct = max(3, int(np.floor(detected_ratio)))
 
             if val_info.get("is_ratio_rejection", False):
+                curr_borderline_pct = val_info.get("borderline_ratio", min_leaf_ratio * 0.65) * 100.0
                 st.markdown(f"""
-                    <div class="card-rejection" style="padding: 1rem 1.25rem; border-radius: 14px; border: 1.5px solid #F59E0B; background: #FFFBEB; margin: 0.8rem 0;">
+                    <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #F59E0B; background: #FFFBEB; margin: 0.8rem 0;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                            <span style="background-color: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">⚠️ VALIDASI TERLALU KETAT</span>
-                            <span style="font-weight: 700; color: #92400E; font-size: 0.92rem;">Rasio Daun: {detected_ratio:.1f}% (Batas Slider: {curr_min_pct:.0f}%)</span>
+                            <span style="background-color: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">⚠️ SCORE DAUN BELUM MEMENUHI SYARAT</span>
+                            <span style="font-weight: 700; color: #92400E; font-size: 0.92rem;">Score Daun: {detected_ratio:.1f}% (Batas Minimal: {curr_min_pct:.0f}%, Batas Toleransi: {curr_borderline_pct:.1f}%)</span>
                         </div>
                         <div style="font-size: 0.9rem; color: #78350F; line-height: 1.55;">
-                            Foto terdeteksi daun bawang ({detected_ratio:.1f}%), namun tertahan karena slider Sensitivitas disetel pada <strong>{curr_min_pct:.0f}%</strong>.
-                            Klik tombol di bawah untuk menyelaraskan sensitivitas dan langsung memproses diagnosa:
+                            Score kanopi daun pada foto tercatat <strong>{detected_ratio:.1f}%</strong>, berada di bawah batas toleransi kelayakan minimal <strong>{curr_borderline_pct:.1f}%</strong>.<br>
+                            Sistem membatasi toleransi agar tidak sembarang objek non-daun atau foto terlalu jauh terdeteksi sebagai penyakit.<br>
+                            Jika ini benar helai daun bawang merah kecil/bibit, Anda dapat menyelaraskan sensitivitas dengan tombol cepat di bawah untuk melanjutkan diagnosa:
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
 
-                if st.button(f"⚡ Sesuaikan Sensitivitas ({rec_leaf_pct}%) & Lanjutkan Diagnosa", type="primary", use_container_width=True, key=f"btn_apply_rec_{current_img_sig}"):
+                if st.button(f"⚡ Sesuaikan Batas Sensitivitas ({rec_leaf_pct}%) & Lanjutkan Diagnosa", type="primary", use_container_width=True, key=f"btn_apply_rec_{current_img_sig}"):
                     st.session_state["pending_leaf_slider"] = rec_leaf_pct
                     st.session_state[force_pass_key] = True
                     st.session_state["has_inspected_current"] = current_img_sig
@@ -4362,21 +4404,21 @@ if selected_image is not None and not file_error:
                     )
             is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
 
-            # 1. JIKA TERBUKTI BUKAN DAUN BAWANG (Wajah manusia, pakaian, perabot, daun non-bawang):
+            # 1. JIKA TERBUKTI BUKAN DAUN BAWANG / TIDAK LAYAK DIAGNOSA:
             if not is_shallot_valid:
                 st.markdown(f"""
                     <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                            <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ FOTO BUKAN DAUN BAWANG MERAH</span>
-                            <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Verifikasi AI 2 Langkah</span>
+                            <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ FOTO TIDAK MEMENUHI KELAYAKAN DIAGNOSA</span>
+                            <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Verifikasi AI 2 Langkah Gemini</span>
                         </div>
                         <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.55;">
                             {second_opinion_text}<br><br>
-                            Sistem mendeteksi bahwa objek pada foto bukan merupakan tanaman daun bawang merah (Allium cepa). Diagnosa penyakit otomatis dan anjuran obat dihentikan demi menjaga akurasi.<br><br>
-                            <strong>💡 Petunjuk Pengambilan Foto:</strong><br>
+                            Sistem mendeteksi bahwa foto tidak memenuhi syarat kelayakan diagnosa tanaman daun bawang merah (Allium cepa). Diagnosa penyakit otomatis dan anjuran obat dihentikan demi menjaga akurasi.<br><br>
+                            <strong>💡 Petunjuk Pengambilan Foto Layak Diagnosa:</strong><br>
                             • Pastikan objek yang difoto adalah tanaman daun bawang merah asli di pot atau bedengan sawah.<br>
                             • Ambil foto dari jarak dekat (10–20 cm) dengan pencahayaan terang tepat pada helai daun yang bergejala.<br>
-                            • Hindari mengarahkan kamera ke wajah manusia, pakaian, atau jenis tanaman lain.
+                            • Hindari mengarahkan kamera ke wajah manusia murni, pakaian, perabotan, atau jenis tanaman lain.
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
@@ -4419,7 +4461,7 @@ if selected_image is not None and not file_error:
         if diff_conf >= 0:
             badge_conf_html = f'<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">🟢 Memenuhi Batas Keyakinan (+{diff_conf:.1f}%)</span>'
         else:
-            badge_conf_html = f'<span style="background: #ecfdf5; color: #065f46; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #a7f3d0; font-size: 0.78rem;">🛡️ Terverifikasi Daun Bawang Asli oleh Gemini ({top_confidence:.1f}%)</span>'
+            badge_conf_html = f'<span style="background: #ecfdf5; color: #065f46; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #a7f3d0; font-size: 0.78rem;">🛡️ Terverifikasi Layak Diagnosa oleh Gemini ({top_confidence:.1f}%)</span>'
 
         st.markdown(f"""
             <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 10px 14px; margin: 4px 0 14px 0; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
