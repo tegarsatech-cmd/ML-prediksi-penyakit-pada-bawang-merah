@@ -1,7 +1,7 @@
 """
 AgroScan Bawang Merah - Aplikasi Deteksi Penyakit Daun Bawang Merah
 Desain UI/UX Mobile-First Ramah Petani (Usia 30-50 Tahun di Lapangan/Sawah)
-Berbasis Deep Learning EfficientNet-B0 PyTorch (TorchScript) & Groq AI.
+Berbasis Deep Learning EfficientNet-B0 PyTorch (TorchScript) & Sistem Pakar Agronomi Terpadu.
 """
 
 import base64
@@ -1767,7 +1767,7 @@ def validate_onion_image(image: Image.Image, api_key: str | None = None, min_rat
 
     if is_borderline_delegated:
         is_plant = True
-        reason = f"Score di zona mendekati batas ({ratio*100:.1f}% vs {min_ratio*100:.0f}%). Verifikasi kelayakan diagnosa dialihkan ke Verifikasi AI 2 Langkah Gemini."
+        reason = f"Score di zona mendekati batas ({ratio*100:.1f}% vs {min_ratio*100:.0f}%). Verifikasi kelayakan objek dialihkan ke Verifikasi Klinis 2 Langkah."
     elif is_too_low:
         is_plant = False
         reason = f"Score kanopi daun hanya {ratio*100:.1f}% (di bawah batas toleransi kelayakan {borderline_ratio*100:.1f}%). Foto belum memenuhi syarat untuk didiagnosa."
@@ -3222,13 +3222,13 @@ def consult_gemini_visual_assistant(
                                 lines_no_status = [l for l in raw_text.splitlines() if not l.strip().upper().startswith("STATUS:")]
                                 clean_text = "\n".join(lines_no_status).strip()
 
-                            return is_shallot_valid, clean_text, True, "✨ Google Gemini Vision (2 Langkah)"
+                            return is_shallot_valid, clean_text, True, "🩺 Verifikasi Klinis Terpadu"
             except Exception:
                 continue
     except Exception:
         pass
 
-    return True, fallback, False, "🌱 Verifikasi Mandiri Balitsa"
+    return True, fallback, False, "🌱 Verifikasi Standar Balitsa"
 
 
 def get_groq_auxiliary_second_opinion(*args, **kwargs):
@@ -3683,15 +3683,15 @@ with st.sidebar:
     st.markdown(f"""
         <div style="background: #F8FAFC; border-radius: 10px; padding: 8px 10px; margin: 0.3rem 0 0.8rem 0; border: 1px solid #E2E8F0; font-size: 0.80rem;">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="font-weight: 700; color: #334155;">✨ Gemini Vision:</span>
+                <span style="font-weight: 700; color: #334155;">🔬 Engine Validasi Visual:</span>
                 <span style="color: {'#16A34A' if gemini_ok else '#DC2626'}; font-weight: 800;">
-                    {'🟢 Siap (Langkah 2)' if gemini_ok else '🟡 Standby'}
+                    {'🟢 Aktif (Verifikasi)' if gemini_ok else '🟡 Standby'}
                 </span>
             </div>
             <div style="display: flex; align-items: center; justify-content: space-between;">
-                <span style="font-weight: 700; color: #334155;">🤖 Groq Apoteker:</span>
+                <span style="font-weight: 700; color: #334155;">📋 Engine Resep Agronomi:</span>
                 <span style="color: {'#16A34A' if groq_ok else '#DC2626'}; font-weight: 800;">
-                    {'🟢 Siap (Langkah 3)' if groq_ok else '🟡 Mode Mandiri'}
+                    {'🟢 Aktif (Rekomendasi)' if groq_ok else '🟡 Mode Standar'}
                 </span>
             </div>
         </div>
@@ -4236,8 +4236,8 @@ if selected_image is not None and not file_error:
         m_bg = "#fffbeb"
         m_border = "#fcd34d"
         m_icon = "🟡"
-        m_status_title = f"MENDEKATI BATAS: VERIFIKASI 2 LANGKAH GEMINI AKTIF ({ratio_pct_live:.1f}%)"
-        m_status_desc = f"Score kanopi daun di tengah-tengah / mendekati batas ({min_leaf_ratio_pct}%). Google Gemini Vision akan memverifikasi 2 langkah untuk mendeteksi kelayakan diagnosa."
+        m_status_title = f"MENDEKATI BATAS: VERIFIKASI 2 LANGKAH AKTIF ({ratio_pct_live:.1f}%)"
+        m_status_desc = f"Score kanopi daun di tengah-tengah / mendekati batas ({min_leaf_ratio_pct}%). Sistem verifikasi 2 langkah akan memvalidasi kelayakan objek tanaman sebelum diagnosa."
     else:
         m_color = "#dc2626"
         m_bg = "#fef2f2"
@@ -4399,17 +4399,17 @@ if selected_image is not None and not file_error:
             """, unsafe_allow_html=True)
             st.stop()
 
-        # Inisialisasi status verifikasi Gemini
+        # Inisialisasi status verifikasi
         is_from_gemini = False
         second_opinion_text = ""
         badge_src_label = ""
         is_shallot_valid = True
 
-        # 2. ATURAN VERIFIKASI 2 LANGKAH AI (GEMINI VISION):
-        # - Score >= 60.0% (single mode): Lolos langsung tanpa Gemini
-        # - Score 40.0% s/d 59.9% (di sekitar 50% toleransi 5% ke bawah & ke atas): Wajib Verifikasi Gemini
-        # - Kasus 2-3 kemungkinan bersaing (two_way / three_way): Wajib Verifikasi Gemini
-        # - Kasus kanopi daun di zona toleransi (delegated_to_gemini): Wajib Verifikasi Gemini
+        # 2. ATURAN VERIFIKASI 2 LANGKAH:
+        # - Score >= 60.0% (single mode): Lolos langsung tanpa verifikasi tambahan (cukup baca 1 skor tinggi)
+        # - Score 40.0% s/d 59.9% (di sekitar 50% toleransi 5% ke bawah & ke atas): Wajib Verifikasi
+        # - Kasus 2-3 kemungkinan bersaing (two_way / three_way): Wajib Verifikasi
+        # - Kasus kanopi daun di zona toleransi (delegated_to_gemini) atau kecurigaan wajah: Wajib Verifikasi kelayakan daun
         conf_th_pct = conf_threshold * 100.0 if conf_threshold <= 1.0 else conf_threshold
         is_ragu_ragu = (top_confidence < 60.0)
         is_competing = (diag_mode in ("two_way", "three_way"))
@@ -4417,13 +4417,15 @@ if selected_image is not None and not file_error:
         detected_skin_ratio = detect_skin_ratio(selected_image)
         is_face_suspicious = (detected_skin_ratio > 0.12)
         
-        needs_2step_verification = is_ragu_ragu or is_competing or has_field_borderline or is_face_suspicious
+        needs_leaf_verification = has_field_borderline or is_face_suspicious
+        needs_disease_verification = is_ragu_ragu or is_competing
+        needs_2step_verification = needs_leaf_verification or needs_disease_verification
 
-        # Jalankan Verifikasi 2 Langkah Gemini jika ada keraguan atau kecurigaan non-bawang
+        # Jalankan Verifikasi 2 Langkah jika ada keraguan atau kecurigaan non-bawang
         opinion_cache_key = f"second_opinion_{current_img_sig}"
         if needs_2step_verification:
             if opinion_cache_key not in st.session_state:
-                with st.spinner("🤖 Melakukan Verifikasi 2 Langkah AI (Google Gemini Vision)..."):
+                with st.spinner("🔍 Memverifikasi karakteristik botani & keabsahan gejala daun..."):
                     st.session_state[opinion_cache_key] = consult_gemini_visual_assistant(
                         image=selected_image,
                         primary_name=info['nama_id'],
@@ -4445,7 +4447,7 @@ if selected_image is not None and not file_error:
                     <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                             <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ FOTO TIDAK MEMENUHI KELAYAKAN DIAGNOSA</span>
-                            <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Verifikasi AI 2 Langkah Gemini</span>
+                            <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Verifikasi Klinis 2 Langkah</span>
                         </div>
                         <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.55;">
                             {second_opinion_text}<br><br>
@@ -4459,7 +4461,7 @@ if selected_image is not None and not file_error:
                 """, unsafe_allow_html=True)
                 st.stop()
 
-            # JIKA MODEL RAGU DAN GEMINI OFFLINE (is_from_gemini = False):
+            # JIKA MODEL RAGU DAN VERIFIKASI OFFLINE (is_from_gemini = False):
             if is_ragu_ragu and not is_from_gemini and top_confidence < conf_th_pct:
                 rec_conf_pct = max(35, int(np.floor(top_confidence)))
                 st.markdown(f"""
@@ -4480,7 +4482,7 @@ if selected_image is not None and not file_error:
                 st.stop()
 
         # ==============================================================================
-        # KASUS: FOTO VALID (LOLOS LANGSUNG / TERVERIFIKASI OLEH GEMINI)
+        # KASUS: FOTO VALID (LOLOS LANGSUNG / TERVERIFIKASI SISTEM PAKAR)
         # ==============================================================================
         # 8. LANGKAH 2: HASIL PEMERIKSAAN (NAMA PENYAKIT & KEPASTIAN)
         # ==============================================================================
@@ -4491,11 +4493,11 @@ if selected_image is not None and not file_error:
             </div>
         """, unsafe_allow_html=True)
 
-        # Bar Perbandingan Keyakinan AI vs Ambang Batas Slider (Transparan & Responsif)
-        if top_confidence >= 60.0 and diag_mode == "single" and not val_info.get("delegated_to_gemini", False):
+        # Bar Perbandingan Keyakinan vs Ambang Batas Slider (Transparan & Responsif)
+        if top_confidence >= 60.0 and diag_mode == "single":
             badge_conf_html = f'<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">🟢 Lolos Langsung (Kepastian: {top_confidence:.1f}%)</span>'
         elif is_from_gemini:
-            badge_conf_html = f'<span style="background: #ecfdf5; color: #065f46; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #a7f3d0; font-size: 0.78rem;">🛡️ Terverifikasi Layak Diagnosa oleh Gemini ({top_confidence:.1f}%)</span>'
+            badge_conf_html = f'<span style="background: #ecfdf5; color: #065f46; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #a7f3d0; font-size: 0.78rem;">🛡️ Terverifikasi Valid oleh Sistem Pakar ({top_confidence:.1f}%)</span>'
         else:
             diff_conf = top_confidence - conf_threshold_pct
             diff_text = f"+{diff_conf:.1f}%" if diff_conf >= 0 else f"{diff_conf:.1f}%"
@@ -4504,7 +4506,7 @@ if selected_image is not None and not file_error:
         st.markdown(f"""
             <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 10px 14px; margin: 4px 0 14px 0; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                 <div>
-                    🎯 <strong>Tingkat Keyakinan AI:</strong> <span style="color: #15803d; font-weight: 800; font-size: 1rem;">{top_confidence:.1f}%</span> 
+                    🎯 <strong>Tingkat Keyakinan Diagnosa:</strong> <span style="color: #15803d; font-weight: 800; font-size: 1rem;">{top_confidence:.1f}%</span> 
                     <span style="color: #64748b; font-size: 0.82rem;">(Batas Keyakinan Slider Anda: <strong>{conf_threshold_pct}%</strong>)</span>
                 </div>
                 <div>
@@ -4762,11 +4764,14 @@ if selected_image is not None and not file_error:
             st.markdown("</div>", unsafe_allow_html=True)
 
         # ==============================================================================
-        # ASISTEN DOKTER AI: VERIFIKASI 2 LANGKAH (GEMINI VISION)
-        # HANYA ditampilkan jika jawaban EfficientNet ragu-ragu (40%-60%), 2-3 kemungkinan,
-        # atau foto kanopi daun di zona toleransi yang didelegasikan ke Gemini.
+        # VERIFIKASI 2 LANGKAH: VALIDASI KARAKTERISTIK LESI & GEJALA KLINIS
+        # HANYA ditampilkan jika prediksi EfficientNet ragu-ragu (<60%) atau
+        # menjawab 2-3 kemungkinan bersaing (two_way / three_way).
+        # Jika EfficientNet mantap (score >= 60% dan single mode), verifikasi tambahan TIDAK DIMUNCULKAN
+        # karena pembacaan skor tunggal EfficientNet sudah mencukupi secara definitif.
         # ==============================================================================
-        if needs_2step_verification and opinion_cache_key in st.session_state:
+        show_verification_card = (top_confidence < 60.0 or diag_mode in ("two_way", "three_way"))
+        if show_verification_card and opinion_cache_key in st.session_state:
             is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
 
             if is_from_gemini:
@@ -4779,7 +4784,7 @@ if selected_image is not None and not file_error:
                 badge_color = "#5B21B6"
                 badge_border = "#C4B5FD"
                 title_icon = "🩺✨"
-                title_label = "Verifikasi 2 Langkah AI (Validasi Botani & Ciri Lesi Daun)"
+                title_label = "Verifikasi Klinis 2 Langkah (Validasi Botani & Ciri Lesi Daun)"
             else:
                 card_bg = "#F8FAFC"
                 card_border = "#E2E8F0"
@@ -5011,7 +5016,7 @@ if selected_image is not None and not file_error:
             # Logika Pengambilan Saran Groq AI
             ai_token_now = f"{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}_{round(top_confidence, 1)}"
             if st.session_state.get("ai_token_saved") != ai_token_now or "ai_text_saved" not in st.session_state:
-                with st.spinner("🤖 Dokter Tanaman AI sedang meracik resep obat dan panduan perawatan..."):
+                with st.spinner("📋 Menyusun resep obat semprot dan rekomendasi penanganan lahan..."):
                     ai_text, ai_angle = get_groq_recommendation(
                         disease_name=info["nama_id"],
                         confidence=top_confidence,
