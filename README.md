@@ -92,3 +92,28 @@ streamlit run app.py
 3. Buka peramban di alamat: `http://localhost:8501`.
 
 > ⚠️ **Catatan**: Hasil prediksi hanya alat bantu, bukan diagnosis final.
+
+---
+
+## 🔑 Konfigurasi API Key (Hosting & Lokal)
+
+Aplikasi menggunakan arsitektur **Trio-Engine** yang memanfaatkan dua layanan AI eksternal:
+1. **Google Gemini Vision** (`GEMINI_API_KEY`) — Asisten verifikasi visual helai daun saat model mendeteksi 2–3 kemungkinan penyakit bersaing.
+2. **Groq Cloud AI** (`GROQ_API_KEY`) — Dokter Tanaman / Apoteker untuk resep obat semprot, takaran tangki 16L, dan perawatan lahan di Langkah 3.
+
+### 💻 1. Penggunaan di Lokal
+Buat atau edit berkas `.streamlit/secrets.toml` di folder proyek:
+```toml
+GROQ_API_KEY = "gsk_..."
+GEMINI_API_KEY = "AQ...."
+```
+
+### ☁️ 2. Penggunaan di Streamlit Cloud (Hosting)
+1. Buka dashboard aplikasi Anda di [share.streamlit.io](https://share.streamlit.io).
+2. Klik tombol menu (**⋮**) di samping nama aplikasi $\to$ pilih **Settings**.
+3. Buka tab **Secrets**, lalu tempel konfigurasi berikut:
+```toml
+GROQ_API_KEY = "masukkan_kunci_groq_anda_di_sini"
+GEMINI_API_KEY = "masukkan_kunci_gemini_anda_di_sini"
+```
+4. Klik **Save**. Aplikasi di hostingan akan otomatis terhubung ke Gemini Vision dan Groq AI.
