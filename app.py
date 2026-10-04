@@ -1631,19 +1631,23 @@ def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: 
 
 def compute_shallot_leaf_score(image: Image.Image) -> float:
     """
-    Kalkulator Skor Keaslian, Kepadatan, Morfologi Silinder, dan Ketajaman Daun Bawang Merah (Allium cepa):
-    1. Deteksi Wajah/Kulit Manusia (YCrCb + RGB): Foto wajah/tubuh/selfie ditekan ke skor sangat rendah (2% - 15%).
-    2. Deteksi Benda Non-Tanaman (Bantal, kasur, pakaian, perabotan, dinding, tanah kosong): Skor ditekan (1% - 18%).
+    Kalkulator Skor Keaslian, Kepadatan, Morfologi Silinder Tubular, dan Ketajaman Daun Bawang Merah (Allium cepa):
+    1. Deteksi Orang / Baju Berwarna / Wajah (YCrCb + Geometri Pakaian):
+       - Foto orang memakai baju berwarna (kaos hijau, batik, jaket, pakaian kuning) langsung didiskualifikasi (skor 2% - 14%).
+       - Foto wajah/tubuh/selfie murni ditekan ke skor sangat rendah (2% - 14%).
+       - Baju/kain/perabotan yang mendominasi gambar tanpa helai daun ditekan ke skor 2% - 15%.
+       - Menghasilkan skor < 47% sehingga DITOLAK LANGSUNG tanpa membuang token verifikasi 2 langkah Gemini (0 token).
+    2. Deteksi Benda Non-Tanaman (Bantal, kasur, perabotan, dinding, tanah kosong): Skor ditekan (1% - 16%).
     3. Deteksi Daun Bawang Asli:
-       - Daun bawang jelas/sehat/bergejala: Skor terjamin >= 60.0% (62% - 98%) tergantung kerapatan kanopi, morfologi tabung, dan ketajaman fokus.
-       - Daun bawang samar-samar / satu helai kecil di tanah / bibit muda: Skor berada di zona toleransi (47% - 58.5%) untuk verifikasi 2 langkah.
+       - Daun bawang jelas/sehat/bergejala: Skor terjamin >= 60.0% (62% - 98.5%) tergantung kerapatan kanopi, morfologi tabung silindris, dan ketajaman fokus (Lolos Langsung).
+       - Daun bawang samar-samar / satu helai kecil di tanah / bibit muda: Skor berada di zona toleransi (47% - 58.5%) untuk verifikasi 2 langkah Gemini.
     """
     try:
         thumb = image.convert("RGB").resize((224, 224))
         arr = np.array(thumb, dtype=np.float32)
         r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
-        
-        # 1. Deteksi kulit/wajah manusia murni (YCrCb + RGB)
+
+        # 1. Deteksi kulit/wajah/tangan manusia (YCrCb + RGB)
         ycrcb = cv2.cvtColor(arr.astype(np.uint8), cv2.COLOR_RGB2YCrCb) if cv2 is not None else None
         if ycrcb is not None:
             y = ycrcb[..., 0].astype(np.float32)
@@ -1660,7 +1664,7 @@ def compute_shallot_leaf_score(image: Image.Image) -> float:
             skin_ratio = float(np.mean(is_skin))
         else:
             skin_ratio = 0.0
-        
+
         # 2. Excess Green & HSV untuk Daun Bawang Merah Asli
         exg = 2.0 * g - r - b
         cmax = np.maximum(np.maximum(r, g), b)
@@ -1700,69 +1704,126 @@ def compute_shallot_leaf_score(image: Image.Image) -> float:
         leaf_mask = (is_green_leaf | is_yellowing).astype(np.uint8)
         leaf_ratio = float(np.mean(leaf_mask))
 
-        # A. DISKUALIFIKASI CEPAT OBJEK BUKAN TANAMAN (0 Token, Tolak Langsung < 47%):
-        # 1. Wajah / kulit manusia dominan tanpa daun signifikan
-        if skin_ratio > 0.08 and leaf_ratio < 0.04:
-            score = max(2.0, (1.0 - skin_ratio) * 12.0)
+        # A. DISKUALIFIKASI CEPAT OBJEK TANPA DAUN (Bantal, kasur, tembok, kertas):
+        if leaf_ratio < 0.012:
+            score = max(1.5, min(16.0, leaf_ratio * 120.0))
             return round(score, 1)
 
-        # 2. Foto tanpa daun sama sekali (kamar tidur, bantal ungu, kasur, perabotan, tembok, kertas):
-        if leaf_ratio < 0.015:
-            score = max(1.5, leaf_ratio * 120.0)
-            return round(score, 1)
+        # B. ANALISIS GEOMETRI DAUN BAWANG VS KAIN/BAJU BERWARNA
+        # Daun bawang merah: Silindris tubular, penampang tipis (distance transform radius kecil)
+        # Pakaian/Baju orang: Bidang kain masif 2D kontinu, penampang lebar & tebal
+        shallot_tubes_px = 0
+        clothing_blob_px = 0
+        shallot_tube_count = 0
+        clothing_blob_count = 0
 
-        # 3. Analisis Morfologi Silinder Kontur Helai Daun Bawang (Tubular Geometry)
-        tube_coverage = 0.0
-        num_tubes = 0
         if cv2 is not None:
             clean_mask = cv2.morphologyEx(leaf_mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2)))
+            dist_map = cv2.distanceTransform(clean_mask, cv2.DIST_L2, 5)
             contours, _ = cv2.findContours(clean_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            elongated_leaf_px = 0
+
             for c in contours:
                 area = cv2.contourArea(c)
-                if area >= 20:
-                    rect = cv2.minAreaRect(c)
-                    w_box, h_box = rect[1]
-                    if w_box > 0 and h_box > 0:
-                        aspect = max(w_box, h_box) / min(w_box, h_box)
-                        # Daun bawang merah memiliki kontur silinder memanjang (aspect ratio >= 1.6)
-                        if aspect >= 1.6:
-                            elongated_leaf_px += area
-                            num_tubes += 1
-            tube_coverage = float(elongated_leaf_px) / (224.0 * 224.0)
+                if area < 15:
+                    continue
 
-        # B. JIKA TIDAK ADA STRUKTUR HELAI MEMANJANG SAMA SEKALI (Bercak bulat baju, wallpaper, benda acak):
-        if num_tubes == 0 or tube_coverage < 0.005:
-            score = max(2.0, min(24.0, leaf_ratio * 150.0))
+                rect = cv2.minAreaRect(c)
+                w_box, h_box = rect[1]
+                if w_box <= 0 or h_box <= 0:
+                    continue
+
+                dim_min = min(w_box, h_box)
+                dim_max = max(w_box, h_box)
+                aspect = dim_max / max(0.1, dim_min)
+
+                perimeter = cv2.arcLength(c, True)
+                slenderness = (perimeter * perimeter) / (4.0 * np.pi * area) if area > 0 else 0.0
+
+                c_mask = np.zeros((224, 224), dtype=np.uint8)
+                cv2.drawContours(c_mask, [c], -1, 1, thickness=-1)
+                c_dist_max = float(np.max(dist_map[c_mask == 1])) if np.any(c_mask == 1) else 0.0
+
+                # Ciri helai daun bawang merah asli:
+                # - Silindris memanjang (aspect >= 1.6 atau slenderness >= 2.0)
+                # - Ketebalan penampang helai: c_dist_max <= 18px, dim_min <= 36px (atau jika sangat panjang aspect >= 3.0)
+                is_shallot_tube = (
+                    (aspect >= 1.6 or slenderness >= 2.0) and
+                    (c_dist_max <= 18.0) and
+                    (dim_min <= 36.0 or aspect >= 3.0)
+                )
+
+                # Ciri pakaian berwarna / kain / kasur / tubuh manusia:
+                # - Memiliki bidang luas masif (area >= 400 dan penampang min_dim > 32px atau c_dist_max > 16px dengan bentuk tidak ramping)
+                # - Atau sangat masif (area >= 2000 dengan aspect < 2.2 atau c_dist_max >= 20px)
+                is_clothing_blob = (
+                    (area >= 400 and (dim_min > 32.0 or c_dist_max > 16.0) and aspect < 2.5 and slenderness < 2.5) or
+                    (c_dist_max >= 20.0) or
+                    (area >= 2000 and (dim_min > 36.0 or aspect < 2.2))
+                )
+
+                if is_shallot_tube:
+                    shallot_tubes_px += area
+                    shallot_tube_count += 1
+                
+                if is_clothing_blob:
+                    clothing_blob_px += area
+                    clothing_blob_count += 1
+
+            shallot_cov = float(shallot_tubes_px) / (224.0 * 224.0)
+            clothing_cov = float(clothing_blob_px) / (224.0 * 224.0)
+        else:
+            shallot_cov = leaf_ratio
+            clothing_cov = 0.0
+            shallot_tube_count = 1 if leaf_ratio > 0.05 else 0
+
+        # C. DISKUALIFIKASI FOTO ORANG MEMAKAI BAJU BERWARNA / BENDA TEKSTIL:
+        # 1. Ada kulit manusia (skin_ratio >= 0.018) BERSAMAAN dengan pakaian berwarna (clothing_cov >= 0.06 atau leaf_ratio >= 0.12)
+        if skin_ratio >= 0.018 and (clothing_cov >= 0.06 or (leaf_ratio >= 0.12 and shallot_cov < 0.05)):
+            score = max(2.0, min(14.0, (1.0 - skin_ratio) * 10.0 + shallot_cov * 20.0))
             return round(score, 1)
 
-        # 4. Kejelasan fokus & kontras helai daun (Laplacian Variance)
+        # 2. Foto orang (wajah/kulit) murni tanpa helai daun signifikan
+        if skin_ratio >= 0.05 and shallot_cov < 0.02:
+            score = max(2.0, min(14.0, (1.0 - skin_ratio) * 12.0))
+            return round(score, 1)
+
+        # 3. Pakaian/kain berwarna tebal mendominasi gambar tanpa helai daun bawang (baju di kasur/gorden/taplak)
+        if clothing_cov >= 0.10 and shallot_cov < 0.025:
+            score = max(2.0, min(15.0, 15.0 - clothing_cov * 12.0))
+            return round(score, 1)
+
+        # 4. Jika tidak ada satu pun helai silinder daun bawang terdeteksi
+        if shallot_tube_count == 0 or shallot_cov < 0.003:
+            score = max(2.0, min(20.0, leaf_ratio * 100.0))
+            return round(score, 1)
+
+        # D. ANALISIS KETAJAMAN & FOKUS (Laplacian Variance)
         clarity_factor = 0.5
         if cv2 is not None:
             gray = cv2.cvtColor(arr.astype(np.uint8), cv2.COLOR_RGB2GRAY)
             lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
             clarity_factor = min(1.0, lap_var / 280.0)
 
-        # C. PEMETAAN ATURAN SKOR SESUAI PERMINTAAN USER:
-        # 1. Daun Bawang Samar-Samar / Sedikit / Bibit Kecil di Tanah:
-        # Terbukti ada helai silinder daun bawang, tapi areanya kecil (tube_coverage < 0.04) atau agak buram
-        if tube_coverage < 0.04 or clarity_factor < 0.28:
-            # Zona Toleransi: 47.0% s/d 58.5% -> Wajib Verifikasi 2 Langkah!
+        # E. PEMETAAN ATURAN SKOR SESUAI PERMINTAAN USER:
+        # 1. Daun Bawang Samar-Samar / Sedikit Helai di Tanah / Bibit Kecil:
+        # Terbukti ada helai silinder daun bawang, tapi areanya kecil (shallot_cov < 0.035) atau agak buram
+        if shallot_cov < 0.035 or clarity_factor < 0.28:
+            # Zona Toleransi: 47.0% s/d 58.5% -> Wajib Verifikasi 2 Langkah Gemini!
             base_tol = 47.0
-            tube_add = min(7.0, (tube_coverage / 0.04) * 7.0)
+            tube_add = min(7.0, (shallot_cov / 0.035) * 7.0)
             clarity_add = clarity_factor * 4.5
             score = base_tol + tube_add + clarity_add
             return round(min(58.5, max(47.0, score)), 1)
 
         # 2. Daun Bawang Jelas & Rumpun Terfokus (Pokoknya kalau terdeteksi bawang jelas, skor >= 60%):
         base_pass = 62.0
-        canopy_bonus = min(18.0, ((leaf_ratio - 0.04) / 0.20) * 18.0)
-        tube_bonus = min(10.0, (tube_coverage / 0.08) * 10.0)
+        canopy_bonus = min(18.0, ((leaf_ratio - 0.035) / 0.20) * 18.0)
+        tube_bonus = min(10.0, (shallot_cov / 0.08) * 10.0)
         clarity_bonus = clarity_factor * 8.5
 
         hand_penalty = 0.0
-        if skin_ratio > 0.15:
-            hand_penalty = min(6.0, (skin_ratio - 0.15) * 18.0)
+        if skin_ratio > 0.015:
+            hand_penalty = min(8.0, skin_ratio * 35.0)
 
         final_score = base_pass + canopy_bonus + tube_bonus + clarity_bonus - hand_penalty
         return round(min(98.5, max(60.0, final_score)), 1)
