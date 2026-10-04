@@ -1,7 +1,7 @@
 # 🧅 AgroScan - Pendeteksi Penyakit Daun Bawang Merah (EfficientNet-B0 TorchScript & AI Agro-Engine)
 ![Version](https://img.shields.io/badge/Version-v3.2.0-success?style=flat-square) ![Status](https://img.shields.io/badge/Status-Live%20Production-blue?style=flat-square) ![Model](https://img.shields.io/badge/Model-EfficientNet--B0%20TorchScript%207%20Classes-green?style=flat-square)
 
-Aplikasi sistem pakar diagnosis dan deteksi dini penyakit utama tanaman bawang merah (*Allium cepa*) berbasis Deep Learning **EfficientNet-B0 (TorchScript)** dengan 7 kategori kelas (6 penyakit utama + 1 sehat). Dilengkapi dengan Peta Deteksi Lesi HUD Scanner dan Rekomendasi Agronomi Resmi Balitsa / BPTP Kementerian Pertanian RI.
+Aplikasi sistem pakar diagnosis dan deteksi dini penyakit utama tanaman bawang merah (*Allium cepa*) berbasis Deep Learning **EfficientNet-B0 (TorchScript)** dengan 7 kategori kelas (6 penyakit utama + 1 sehat). Dilengkapi dengan Verifikasi Karakteristik Fisik Lapangan dan Rekomendasi Agronomi Resmi Balitsa / BPTP Kementerian Pertanian RI.
 
 ---
 
@@ -19,16 +19,15 @@ Aplikasi sistem pakar diagnosis dan deteksi dini penyakit utama tanaman bawang m
    - Jika hanya 1 penyakit yang terdeteksi secara dominan, sistem menegakkan vonis tunggal dengan keyakinan tinggi.
    - Diferensial diagnosis berdampingan aktif apabila terdapat dua penyakit yang bersaing ketat untuk membantu petani membedakan patogen di sawah.
 
-3. **Peta Titik Kerusakan pada Foto Daun (HUD Lesion Scanner Presisi Tinggi)**:
-   - **Terkunci Mutlak pada Kerusakan Fisik**: Retikel scanner HANYA menandai titik lesi fisik nyata pada helai daun (anti-melengser, anti-acak).
-   - **Akurasi Tinggi untuk Seluruh 7 Kategori**: Seluruh kelas patogen (Bercak Ungu, Hawar Daun, Karat Daun, Layu Moler, IYSV, hingga Daun Sehat) ditandai dengan fokus tunggal setara ketepatan Embun Bulu.
-   - **Segmentasi Kanopi Daun & Skin Tone Exclusion**: Membedakan warna kulit manusia dari daun, sehingga foto daun yang sedang dipegang tangan petani tetap terdeteksi presisi.
-   - **Penanda Langsung Nama Penyakit**: Retikel Merah untuk penyakit primer, Oranye untuk diferensial kedua, dan Hijau Zamrud untuk validasi daun sehat.
+3. **Verifikasi Karakteristik Fisik Langsung di Sawah**:
+   - **Karakteristik Fisik Jaringan**: Menampilkan estimasi persentase keparahan infeksi daun dan tingkat keparahan (Ringan/Sedang/Berat).
+   - **Deskripsi Gejala Lapangan**: Menyajikan panduan gejala visual yang sinkron dengan hasil diagnosis model untuk dicocokkan langsung di kebun.
+   - **Segmentasi Kanopi Daun & Skin Tone Exclusion**: Membedakan warna kulit manusia dari daun, sehingga foto daun yang sedang dipegang tangan petani tetap teranalisis dengan baik.
 
 4. **Buku Panduan Penggunaan Web di Sidebar**:
    - Panduan interaktif ringkas, padat, dan jelas mengenai cara pengambilan foto yang benar (jarak 10-20 cm, fokus helai daun).
    - Penjelasan teknis pengaturan ambang keyakinan (Confidence Threshold) dan sensitivitas kanopi daun.
-   - Tata cara membaca retikel HUD scanner dan manajemen penyimpanan riwayat per butir.
+   - Tata cara verifikasi gejala fisik dan manajemen penyimpanan riwayat per butir.
 
 5. **Petunjuk Obat & Perawatan dari Dokter Tanaman (3 Kartu Terstruktur)**:
    - **Kartu 1 - Tindakan Langsung di Kebun**: Prosedur darurat pemangkasan presisi dan sanitasi 24 jam pertama.
