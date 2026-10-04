@@ -4375,14 +4375,49 @@ if selected_image is not None and not file_error:
 
         # ==============================================================================
         # TAHAP 3: EVALUASI KEPUTUSAN MODEL & VERIFIKASI 2 LANGKAH (AI GATEKEEPER)
-        # Memvalidasi keraguan diagnosa & mendeteksi objek non-bawang / wajah dengan Gemini
         # ==============================================================================
+        
+        # 1. ATURAN SCORE < 40%: TOLAK TEGAS & MINTA MASUKKAN/AMBIL FOTO ULANG DENGAN BENAR
+        if top_confidence < 40.0:
+            st.error(f"❌ Kepastian Model Terlalu Rendah: {top_confidence:.1f}% (Batas Minimal: 40.0%)")
+            st.markdown(f"""
+                <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                        <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ SCORE DI BAWAH 40%</span>
+                        <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Kepastian AI: {top_confidence:.1f}% (Batas Minimal: 40.0%)</span>
+                    </div>
+                    <div style="font-size: 0.90rem; color: #7F1D1D; line-height: 1.6;">
+                        Tingkat kepastian model EfficientNet tercatat hanya <strong>{top_confidence:.1f}%</strong> (di bawah batas minimal <strong>40.0%</strong>).<br>
+                        Sistem menolak foto ini demi mencegah kesalahan diagnosa penyakit yang tidak akurat.<br><br>
+                        <strong>📸 Silakan ambil atau masukkan foto daun bawang merah lagi dengan benar:</strong><br>
+                        • <strong>Jarak Ideal:</strong> Ambil foto dari jarak dekat (10–20 cm) tepat pada helai daun yang bergejala.<br>
+                        • <strong>Fokus Tajam:</strong> Pastikan helai daun terlihat fokus, tajam, dan tidak goyang atau buram.<br>
+                        • <strong>Pencahayaan Terang:</strong> Gunakan pencahayaan merata tanpa bayangan gelap pekat atau silau berlebih.<br>
+                        • <strong>Arah Kamera:</strong> Arahkan kamera sejajar dengan helai daun agar bercak atau bintil penyakit terlihat jelas.
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            st.stop()
+
+        # Inisialisasi status verifikasi Gemini
+        is_from_gemini = False
+        second_opinion_text = ""
+        badge_src_label = ""
+        is_shallot_valid = True
+
+        # 2. ATURAN VERIFIKASI 2 LANGKAH AI (GEMINI VISION):
+        # - Score >= 60.0% (single mode): Lolos langsung tanpa Gemini
+        # - Score 40.0% s/d 59.9% (di sekitar 50% toleransi 5% ke bawah & ke atas): Wajib Verifikasi Gemini
+        # - Kasus 2-3 kemungkinan bersaing (two_way / three_way): Wajib Verifikasi Gemini
+        # - Kasus kanopi daun di zona toleransi (delegated_to_gemini): Wajib Verifikasi Gemini
         conf_th_pct = conf_threshold * 100.0 if conf_threshold <= 1.0 else conf_threshold
-        is_uncertain = api_output.get("uncertain", False) or (top_confidence < conf_th_pct)
+        is_ragu_ragu = (top_confidence < 60.0)
+        is_competing = (diag_mode in ("two_way", "three_way"))
+        has_field_borderline = val_info.get("delegated_to_gemini", False)
         detected_skin_ratio = detect_skin_ratio(selected_image)
         is_face_suspicious = (detected_skin_ratio > 0.12)
-        has_hand_or_soil = (detected_skin_ratio > 0.05) or val_info.get("delegated_to_gemini", False) or (val_info.get("plant_ratio", 1.0) < min_leaf_ratio)
-        needs_2step_verification = is_uncertain or is_face_suspicious or has_hand_or_soil or (diag_mode in ("two_way", "three_way"))
+        
+        needs_2step_verification = is_ragu_ragu or is_competing or has_field_borderline or is_face_suspicious
 
         # Jalankan Verifikasi 2 Langkah Gemini jika ada keraguan atau kecurigaan non-bawang
         opinion_cache_key = f"second_opinion_{current_img_sig}"
@@ -4404,7 +4439,7 @@ if selected_image is not None and not file_error:
                     )
             is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
 
-            # 1. JIKA TERBUKTI BUKAN DAUN BAWANG / TIDAK LAYAK DIAGNOSA:
+            # JIKA TERBUKTI BUKAN DAUN BAWANG / TIDAK LAYAK DIAGNOSA:
             if not is_shallot_valid:
                 st.markdown(f"""
                     <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
@@ -4424,13 +4459,13 @@ if selected_image is not None and not file_error:
                 """, unsafe_allow_html=True)
                 st.stop()
 
-            # 2. JIKA MODEL RAGU (is_uncertain) DAN GEMINI OFFLINE (is_from_gemini = False):
-            if is_uncertain and not is_from_gemini:
+            # JIKA MODEL RAGU DAN GEMINI OFFLINE (is_from_gemini = False):
+            if is_ragu_ragu and not is_from_gemini and top_confidence < conf_th_pct:
                 rec_conf_pct = max(35, int(np.floor(top_confidence)))
                 st.markdown(f"""
                     <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #F59E0B; background: #FFFBEB; margin: 0.8rem 0;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                            <span style="background-color: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">⚠️ BATAS KEYAKINAN</span>
+                            <span style="background-color: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">⚠️ KEPUTUSAN MODEL RAGU-RAGU</span>
                             <span style="font-weight: 700; color: #92400E; font-size: 0.92rem;">Kepastian: {top_confidence:.1f}% (Batas Slider: {conf_th_pct:.0f}%)</span>
                         </div>
                         <div style="font-size: 0.88rem; color: #78350F; line-height: 1.55;">
@@ -4445,7 +4480,7 @@ if selected_image is not None and not file_error:
                 st.stop()
 
         # ==============================================================================
-        # KASUS: FOTO VALID (TERVERIFIKASI DAUN BAWANG ASLI OLEH GEMINI / LOLOS THRESHOLD)
+        # KASUS: FOTO VALID (LOLOS LANGSUNG / TERVERIFIKASI OLEH GEMINI)
         # ==============================================================================
         # 8. LANGKAH 2: HASIL PEMERIKSAAN (NAMA PENYAKIT & KEPASTIAN)
         # ==============================================================================
@@ -4457,11 +4492,14 @@ if selected_image is not None and not file_error:
         """, unsafe_allow_html=True)
 
         # Bar Perbandingan Keyakinan AI vs Ambang Batas Slider (Transparan & Responsif)
-        diff_conf = top_confidence - conf_threshold_pct
-        if diff_conf >= 0:
-            badge_conf_html = f'<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">🟢 Memenuhi Batas Keyakinan (+{diff_conf:.1f}%)</span>'
-        else:
+        if top_confidence >= 60.0 and diag_mode == "single" and not val_info.get("delegated_to_gemini", False):
+            badge_conf_html = f'<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">🟢 Lolos Langsung (Kepastian: {top_confidence:.1f}%)</span>'
+        elif is_from_gemini:
             badge_conf_html = f'<span style="background: #ecfdf5; color: #065f46; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #a7f3d0; font-size: 0.78rem;">🛡️ Terverifikasi Layak Diagnosa oleh Gemini ({top_confidence:.1f}%)</span>'
+        else:
+            diff_conf = top_confidence - conf_threshold_pct
+            diff_text = f"+{diff_conf:.1f}%" if diff_conf >= 0 else f"{diff_conf:.1f}%"
+            badge_conf_html = f'<span style="background: #f1f5f9; color: #334155; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #cbd5e1; font-size: 0.78rem;">🔍 Diagnosa Sistem ({top_confidence:.1f}%, {diff_text})</span>'
 
         st.markdown(f"""
             <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 10px 14px; margin: 4px 0 14px 0; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -4724,65 +4762,51 @@ if selected_image is not None and not file_error:
             st.markdown("</div>", unsafe_allow_html=True)
 
         # ==============================================================================
-        # ASISTEN DOKTER AI: KONFIRMASI & PENDAPAT KEDUA (TRIO-ENGINE: GEMINI VISION)
-        # Fokus membantu jika ada keraguan atau kemungkinan 2-3 penyakit.
-        # Menghemat kuota token jika diagnosis pasti/sehat. Groq dikhususkan untuk Langkah 3.
+        # ASISTEN DOKTER AI: VERIFIKASI 2 LANGKAH (GEMINI VISION)
+        # HANYA ditampilkan jika jawaban EfficientNet ragu-ragu (40%-60%), 2-3 kemungkinan,
+        # atau foto kanopi daun di zona toleransi yang didelegasikan ke Gemini.
         # ==============================================================================
-        opinion_cache_key = f"second_opinion_{current_img_sig}"
-        if opinion_cache_key not in st.session_state:
-            st.session_state[opinion_cache_key] = consult_gemini_visual_assistant(
-                image=selected_image,
-                primary_name=info['nama_id'],
-                confidence=top_confidence,
-                diag_mode=diag_mode,
-                second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way') and second_info) else None,
-                second_confidence=second_confidence if (diag_mode in ('two_way', 'three_way') and second_info) else None,
-                third_name=third_info.get('nama_id', third_class_raw) if (diag_mode == 'three_way' and third_info) else None,
-                third_confidence=third_confidence if (diag_mode == 'three_way' and third_info) else None,
-                is_pure_healthy=is_pure_healthy,
-                visual_evidence=visual_evidence,
-                conf_threshold=conf_threshold
-            )
-        is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
+        if needs_2step_verification and opinion_cache_key in st.session_state:
+            is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
 
-        if is_from_gemini:
-            card_bg = "#FAF5FF"
-            card_border = "#DDD6FE"
-            accent_bar = "#8B5CF6"
-            title_color = "#6D28D9"
-            text_color = "#2E1065"
-            badge_bg = "#EDE9FE"
-            badge_color = "#5B21B6"
-            badge_border = "#C4B5FD"
-            title_icon = "🩺✨"
-            title_label = "Verifikasi 2 Langkah AI (Validasi Botani & Ciri Lesi Daun)"
-        else:
-            card_bg = "#F8FAFC"
-            card_border = "#E2E8F0"
-            accent_bar = "#16A34A"
-            title_color = "#166534"
-            text_color = "#0F172A"
-            badge_bg = "#F1F5F9"
-            badge_color = "#475569"
-            badge_border = "#CBD5E1"
-            title_icon = "🩺"
-            title_label = "Verifikasi Diagnosa Lapangan (Standar Balitsa)"
+            if is_from_gemini:
+                card_bg = "#FAF5FF"
+                card_border = "#DDD6FE"
+                accent_bar = "#8B5CF6"
+                title_color = "#6D28D9"
+                text_color = "#2E1065"
+                badge_bg = "#EDE9FE"
+                badge_color = "#5B21B6"
+                badge_border = "#C4B5FD"
+                title_icon = "🩺✨"
+                title_label = "Verifikasi 2 Langkah AI (Validasi Botani & Ciri Lesi Daun)"
+            else:
+                card_bg = "#F8FAFC"
+                card_border = "#E2E8F0"
+                accent_bar = "#16A34A"
+                title_color = "#166534"
+                text_color = "#0F172A"
+                badge_bg = "#F1F5F9"
+                badge_color = "#475569"
+                badge_border = "#CBD5E1"
+                title_icon = "🩺"
+                title_label = "Verifikasi Diagnosa Lapangan (Standar Balitsa)"
 
-        st.markdown(f"""
-            <div style="background: {card_bg}; border-left: 5px solid {accent_bar}; border-radius: 12px; padding: 13px 17px; margin: 12px 0 16px 0; border: 1px solid {card_border}; border-left-width: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
-                    <span style="font-weight: 800; font-size: 0.92rem; color: {title_color}; display: flex; align-items: center; gap: 6px;">
-                        {title_icon} <span>{title_label}</span>
-                    </span>
-                    <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.76rem; font-weight: 800; padding: 3px 11px; border-radius: 999px; border: 1px solid {badge_border};">
-                        {badge_src_label}
-                    </span>
+            st.markdown(f"""
+                <div style="background: {card_bg}; border-left: 5px solid {accent_bar}; border-radius: 12px; padding: 13px 17px; margin: 12px 0 16px 0; border: 1px solid {card_border}; border-left-width: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+                        <span style="font-weight: 800; font-size: 0.92rem; color: {title_color}; display: flex; align-items: center; gap: 6px;">
+                            {title_icon} <span>{title_label}</span>
+                        </span>
+                        <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.76rem; font-weight: 800; padding: 3px 11px; border-radius: 999px; border: 1px solid {badge_border};">
+                            {badge_src_label}
+                        </span>
+                    </div>
+                    <div style="font-size: 0.89rem; color: {text_color}; line-height: 1.6; margin-top: 4px;">
+                        {second_opinion_text}
+                    </div>
                 </div>
-                <div style="font-size: 0.89rem; color: {text_color}; line-height: 1.6; margin-top: 4px;">
-                    {second_opinion_text}
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
         # ==============================================================================
         # MODUL BUKTI ANALISIS VISUAL NYATA DARI FOTO (REAL VISUAL LESION AUDIT)
