@@ -3871,6 +3871,7 @@ with st.sidebar:
         "Sensitivitas Daun Bawang (%)",
         min_value=3,
         max_value=35,
+        value=8,
         step=1,
         key="leaf_slider",
         help="Persentase minimal kanopi daun bawang merah yang harus ada pada foto. Naikkan jika ingin validasi lebih ketat menolak foto selain bawang."
