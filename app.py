@@ -2450,12 +2450,12 @@ def get_groq_recommendation(
         "User-Agent": "AgroScan-Mobile/1.0"
     }
 
-    models_to_try = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+    models_to_try = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
     for model_name in models_to_try:
         payload = {
             "model": model_name,
-            "temperature": 0.72,
-            "max_tokens": 3200,
+            "temperature": 0.70,
+            "max_tokens": 2048,
             "messages": [
                 {
                     "role": "system",
@@ -2463,8 +2463,10 @@ def get_groq_recommendation(
                         "Anda adalah Ahli Agronomi dan Konsultan Proteksi Tanaman Hortikultura Indonesia. "
                         "Berikan penjelasan yang komprehensif, kaya akan detail praktis, takaran dosis yang realistis, "
                         "dan bersumber dari rangkuman riset Balitsa serta BPTP Kementerian Pertanian. "
-                        "PENTING: Pastikan seluruh penjelasan, rekomendasi obat, takaran dosis, dan keempat poin perawatan lahan ditulis lengkap hingga tuntas. "
-                        "Dilarang memotong kalimat di tengah jalan!"
+                        "PENTING: Pastikan seluruh penjelasan, rekomendasi obat, takaran dosis, keempat poin perawatan lahan, "
+                        "dan bagian ringkasan praktis ditulis lengkap hingga tuntas. "
+                        "DILARANG KERAS memotong kalimat di tengah jalan atau meninggalkan judul ringkasan tanpa isi! "
+                        "Setiap poin dan ringkasan wajib diakhiri tanda titik penutup yang sempurna."
                     )
                 },
                 {
@@ -2474,7 +2476,7 @@ def get_groq_recommendation(
             ]
         }
         try:
-            resp = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=16)
+            resp = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=20)
             if resp.status_code == 200:
                 content = resp.json()["choices"][0]["message"]["content"]
                 return content, full_angle_title
@@ -2980,6 +2982,65 @@ def get_groq_physical_verification(
     return fallback_content
 
 
+def build_complete_practical_summary(info, second_info=None, is_differential=False, third_info=None, is_three_way=False):
+    """
+    Menyusun checklist ringkasan praktis aksi lapangan yang 100% tuntas dan tidak terpotong.
+    """
+    nama_1 = info.get("nama_id", "Penyakit Bawang")
+    solusi_1 = info.get("solusi", "Fungisida/Bakterisida resmi")
+
+    if is_three_way and second_info and third_info:
+        nama_2 = second_info.get("nama_id", "Penyakit Kedua")
+        nama_3 = third_info.get("nama_id", "Penyakit Ketiga")
+        target_str = f"3 spektrum ({nama_1}, {nama_2}, dan {nama_3})"
+    elif is_differential and second_info:
+        nama_2 = second_info.get("nama_id", "Penyakit Kedua")
+        target_str = f"spektrum ganda ({nama_1} & {nama_2})"
+    else:
+        target_str = f"penyakit {nama_1}"
+
+    summary = (
+        "### Ringkasan Praktis Aksi Lapangan:\n"
+        f"- **Tindakan Darurat 24 Jam Pertama:** Segera pangkas helai daun yang bergejala sekitar 2 cm di bawah batas lesi menggunakan pisau/gunting yang disterilkan alkohol 70% atau air sabun. Masukkan potongan ke dalam wadah tertutup dan musnahkan (bakar/kubur) jauh dari bedengan agar spora patogen tidak tertiup angin.\n"
+        f"- **Aplikasi Obat Semprot & Dosis:** Semprotkan obat pengendali {target_str} ({solusi_1}) dengan takaran dosis 1,5–2 sendok makan (20–25 gram/ml) per tangki 16 Liter di pagi hari (pukul 06.30–08.30 WIB) saat embun mengering atau sore teduh, dan selalu sertakan perekat/perata (surfactant) non-ionik.\n"
+        "- **Manajemen Air & Pemupukan:** Wajib STOP atau kurangi pupuk Nitrogen tunggal (Urea/ZA), berikan pupuk Kalium (KNO3 Putih / MKP 2–3 sendok/tangki) serta Kalsium-Boron untuk mempertebal lapisan kutikula lilin daun, dan kuras genangan parit hingga muka air 20–25 cm di bawah bedengan (sistem macak-macak).\n"
+        "- **Perlindungan Berkelanjutan:** Taburkan kapur dolomit 1–2 genggam/meter bila tanah masam (pH < 6.0) dan kocorkan agens hayati Trichoderma harzianum atau Bacillus subtilis pada sore hari secara rutin tiap 10–14 hari untuk mencegah infeksi patogen sekunder dari tanah."
+    )
+    return summary
+
+def ensure_card_untruncated(card_text: str, default_fallback: str) -> str:
+    """
+    Menjamin teks kartu tidak pernah terpotong di tengah kalimat dan tidak meninggalkan heading gantung.
+    """
+    if not card_text or len(card_text.strip()) < 40:
+        return default_fallback
+    t = card_text.strip()
+
+    # 1. Bersihkan heading gantung di akhir teks (misal '### Ringkasan Praktis' atau '---' tanpa isi)
+    t = re.sub(r'[-*\s]*\n+(?:#{2,4}\s*)?(?:Ringkasan|Rangkuman)\s*(?:Praktis|Taktis|Lapangan)?[:\s-]*$', '', t, flags=re.IGNORECASE).strip()
+    t = re.sub(r'[-*\s]*\n+---+\s*$', '', t).strip()
+
+    # 2. Cek apakah ada baris terakhir yang terpotong di tengah kalimat
+    lines = t.split('\n')
+    while lines and lines[-1].strip() == '':
+        lines.pop()
+
+    if lines:
+        last_line = lines[-1].strip()
+        # Jika baris terakhir tidak diakhiri tanda baca penutup baku
+        if last_line and last_line[-1] not in ('.', '!', '?', ')', '"', '*', ':'):
+            dot_idx = max(last_line.rfind('.'), last_line.rfind('!'), last_line.rfind('?'))
+            if dot_idx != -1 and dot_idx > 15:
+                lines[-1] = last_line[:dot_idx + 1]
+            else:
+                if len(lines) > 1 and len(last_line) < 120:
+                    lines.pop()
+                else:
+                    lines[-1] = last_line + '.'
+
+    t = '\n'.join(lines).strip()
+    return t or default_fallback
+
 def get_system_agronomy_recommendation(
     info,
     second_info=None,
@@ -2997,7 +3058,7 @@ def get_system_agronomy_recommendation(
     Menghasilkan 3 kartu:
     1. Tindakan Langsung di Kebun (24 Jam Pertama)
     2. Rekomendasi Obat Semprot (Bahan Aktif Resmi Balitsa & Takaran Dosis Tangki)
-    3. Perawatan Lahan, Pemupukan & Agens Hayati (4 Poin Terstruktur)
+    3. Perawatan Lahan, Pemupukan & Agens Hayati (4 Poin Terstruktur + Ringkasan Praktis Tuntas)
     """
     nama_1 = info.get("nama_id", "Penyakit Bawang")
     is_healthy = info.get("is_healthy", False) or info.get("status") == "healthy"
@@ -3023,7 +3084,12 @@ def get_system_agronomy_recommendation(
             "1. Pengaturan Parit & Tata Air: Pertahankan muka air parit 20–25 cm di bawah permukaan bedengan (kondisi macak-macak). Hindari kekeringan ekstrem maupun genangan air berlebih.\n"
             "2. Manajemen Pupuk: Teruskan pemupukan berimbang NPK 16-16-16 sesuai fase pertumbuhan umbi bawang.\n"
             "3. Penguat Dinding Sel: Semprotkan pupuk Kalsium dan Silika cair secara berkala tiap 7–10 hari untuk memperkokoh lapisan lilin daun.\n"
-            "4. Perawatan Tanah: Lakukan penggemburan tepi bedengan secara hati-hati agar aerasi perakaran tetap gembur dan sehat."
+            "4. Perawatan Tanah: Lakukan penggemburan tepi bedengan secara hati-hati agar aerasi perakaran tetap gembur dan sehat.\n\n"
+            "### Ringkasan Praktis Aksi Lapangan:\n"
+            "- **Pemantauan Rutin:** Amati kondisi bedengan tanaman setiap 2-3 hari sekali di waktu pagi saat embun menempel.\n"
+            "- **Nutrisi Daun Sehat:** Semprotkan pupuk daun mikro atau asam amino dosis ringan untuk mempertahankan klorofil.\n"
+            "- **Tata Air Parit:** Jaga muka air parit 20-25 cm di bawah bedengan (sistem macak-macak) dan buang genangan air hujan.\n"
+            "- **Sanitasi Pematang:** Bersihkan gulma di sekitar bedengan untuk mencegah sarang serangga hama pembawa virus."
         )
         return c1, c2, c3
 
@@ -3130,6 +3196,15 @@ def get_system_agronomy_recommendation(
             "4. Perawatan Tanah & Agens Hayati: Jika tanah bedengan masam (pH < 6.0), taburkan kapur dolomit 1–2 genggam per meter bedengan untuk menetralkan keasaman. Campurkan agens hayati Trichoderma harzianum atau bakteri Bacillus subtilis bersama pupuk kandang matang untuk menekan populasi jamur patogen tular tanah."
         )
 
+    # Tambahkan Ringkasan Praktis Tuntas di Bagian Akhir Kartu 3
+    c3_summary = build_complete_practical_summary(
+        info=info,
+        second_info=second_info,
+        is_differential=is_differential,
+        third_info=third_info,
+        is_three_way=is_three_way
+    )
+    c3 = c3.strip() + "\n\n" + c3_summary
     return c1, c2, c3
 
 def parse_groq_to_cards(
@@ -3145,6 +3220,7 @@ def parse_groq_to_cards(
     Memecah teks balasan Groq menjadi 3 kartu panduan terstruktur.
     Jika ai_text kosong (kuota Groq habis / error / offline),
     sistem secara otomatis mengalirkan jawaban lengkap dari Database Mandiri Sistem sesuai sudut pandang fokus.
+    Selalu menjamin ringkasan praktis dan seluruh kalimat tertulis tuntas tanpa terpotong.
     """
     sys_c1, sys_c2, sys_c3 = get_system_agronomy_recommendation(
         info=info,
@@ -3196,6 +3272,30 @@ def parse_groq_to_cards(
     if not c3 or len(c3.strip()) < 80:
         c3 = sys_c3
 
+    # Bersihkan kalimat terpotong di akhir tiap kartu
+    c1 = ensure_card_untruncated(c1, sys_c1)
+    c2 = ensure_card_untruncated(c2, sys_c2)
+    c3 = ensure_card_untruncated(c3, sys_c3)
+
+    # Pastikan Card 3 selalu memiliki Ringkasan Praktis yang LENGKAP dan TUNTAS
+    practical_summary = build_complete_practical_summary(
+        info=info,
+        second_info=second_info,
+        is_differential=is_differential,
+        third_info=third_info,
+        is_three_way=is_three_way
+    )
+
+    if re.search(r'(?:#{2,4}\s*)?(?:Ringkasan|Rangkuman)\s*(?:Praktis|Taktis|Lapangan)', c3, re.IGNORECASE):
+        parts = re.split(r'(?:#{2,4}\s*)?(?:Ringkasan|Rangkuman)\s*(?:Praktis|Taktis|Lapangan)[:\s-]*', c3, flags=re.IGNORECASE)
+        if len(parts) > 1:
+            summary_content = parts[1].strip()
+            # Jika isinya kurang dari 120 karakter atau terpotong tanpa tanda titik, ganti dengan ringkasan lengkap sistem
+            if len(summary_content) < 120 or summary_content[-1] not in ('.', '!', '?', ')'):
+                c3 = parts[0].strip() + "\n\n" + practical_summary
+    else:
+        c3 = c3.strip() + "\n\n" + practical_summary
+
     return c1, c2, c3
 
 def clean_text_output(text: str) -> str:
@@ -3210,15 +3310,15 @@ def clean_text_output(text: str) -> str:
 
 def format_card_text_to_html(text: str) -> str:
     """
-    Mengubah format markdown bullet points, penomoran, dan bold ke HTML yang rapi & responsif.
+    Mengubah format markdown bullet points, penomoran, heading sub-bagian, dan bold ke HTML yang rapi & responsif.
     Membersihkan tag HTML tak diinginkan terlebih dahulu untuk mencegah kebocoran tag mentah.
     """
     if not text:
         return ""
-    
+
     # 1. Bersihkan dari tag HTML tak diinginkan
     text_clean = clean_text_output(text)
-    
+
     # 2. Ubah format bold **text** menjadi <strong>text</strong>
     formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text_clean)
     lines = formatted.split('\n')
@@ -3231,11 +3331,33 @@ def format_card_text_to_html(text: str) -> str:
                 output_lines.append('</ul>')
                 in_list = False
             continue
-        
+
+        # Cek apakah baris berupa heading markdown (### atau ##)
+        if stripped.startswith(('###', '##')):
+            if in_list:
+                output_lines.append('</ul>')
+                in_list = False
+            heading_txt = re.sub(r'^#{2,4}\s*', '', stripped)
+            heading_clean = heading_txt.replace('📋', '').strip()
+            output_lines.append(
+                f'<div style="font-weight: 800; font-size: 1.02rem; color: #166534; margin: 1.15rem 0 0.55rem 0; padding-top: 0.6rem; border-top: 1.5px dashed #86EFAC; display: flex; align-items: center; gap: 8px;">'
+                f'<span style="font-size: 1.15rem;">📋</span> <span>{heading_clean}</span>'
+                f'</div>'
+            )
+            continue
+
+        # Cek apakah baris berupa garis pembatas (---)
+        if stripped.startswith(('---', '***', '___')):
+            if in_list:
+                output_lines.append('</ul>')
+                in_list = False
+            output_lines.append('<hr style="margin: 10px 0; border: none; border-top: 1.5px dashed #CBD5E1;">')
+            continue
+
         # Cek apakah baris berupa list poin (- atau * atau 1. atau a.)
         is_bullet = stripped.startswith(('- ', '* '))
         is_numbered = bool(re.match(r'^\d+[\.\)]\s+', stripped))
-        
+
         if is_bullet or is_numbered:
             content = re.sub(r'^([-*]|\d+[\.\)])\s+', '', stripped)
             if not in_list:
@@ -3247,10 +3369,10 @@ def format_card_text_to_html(text: str) -> str:
                 output_lines.append('</ul>')
                 in_list = False
             output_lines.append(f'<p style="margin: 0.5rem 0; line-height: 1.75;">{stripped}</p>')
-            
+
     if in_list:
         output_lines.append('</ul>')
-        
+
     return '\n'.join(output_lines)
 
 # Inisialisasi Model PyTorch TorchScript & Konfigurasi dari meta.json
