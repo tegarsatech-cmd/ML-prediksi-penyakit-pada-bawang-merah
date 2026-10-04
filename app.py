@@ -565,71 +565,68 @@ st.markdown("""
         border-radius: 8px !important;
     }
 
-    /* 7. Input Kamera: Frame Bersih, Label Lega & Anti-Tumpuk */
+    /* 7. Input Kamera: Frame Bersih, Label Mandiri di Luar & Tombol Anti-Tabrakan */
     [data-testid="stCameraInput"] {
         background-color: #FFFFFF !important;
-        border: 2px solid #94A3B8 !important;
-        border-radius: 14px !important;
-        padding: 1.25rem 1.15rem !important;
+        border: 2px solid #CBD5E1 !important;
+        border-radius: 16px !important;
+        padding: 1.2rem 1.1rem !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04) !important;
+        overflow: visible !important;
+        display: block !important;
     }
     [data-testid="stCameraInput"] * {
         color: #0F172A !important;
     }
+    /* Sembunyikan label internal stCameraInput karena sudah disediakan label mandiri yang rapi di luar */
     [data-testid="stCameraInput"] label,
     [data-testid="stCameraInput"] [data-testid="stWidgetLabel"] {
-        display: block !important;
-        margin-top: 0.2rem !important;
-        margin-bottom: 1.2rem !important;
-        padding-bottom: 0.5rem !important;
-        font-weight: 800 !important;
-        font-size: 1.05rem !important;
-        color: #0F172A !important;
-        line-height: 1.6 !important;
-    }
-    [data-testid="stCameraInput"] [data-testid="stWidgetLabel"] p {
-        font-weight: 800 !important;
-        font-size: 1.05rem !important;
-        color: #0F172A !important;
-        margin-bottom: 0.9rem !important;
-        line-height: 1.6 !important;
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
 
-    /* Pemisah Lega Antara Frame Foto/Video Kamera dengan Label Atas & Tombol Take Photo Bawah (Anti-Nempel & Anti-Tumpuk) */
-    [data-testid="stCameraInput"] label + div,
-    [data-testid="stCameraInput"] [data-testid="stWidgetLabel"] + div {
-        margin-top: 1rem !important;
-        clear: both !important;
-    }
-    [data-testid="stCameraInput"] video,
-    [data-testid="stCameraInput"] img {
-        margin-top: 0.9rem !important;
-        margin-bottom: 1.3rem !important;
-        border-radius: 12px !important;
+    /* Video Viewfinder & Foto Hasil Kamera (Proporsional & Tidak Menabrak Tombol) */
+    [data-testid="stCameraInput"] video {
+        border-radius: 14px !important;
         display: block !important;
         max-width: 100% !important;
-        max-height: 380px !important;
+        max-height: 360px !important;
+        object-fit: cover !important;
+        margin: 0 auto 16px auto !important;
+        border: 1.5px solid #CBD5E1 !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+    }
+    [data-testid="stCameraInput"] img {
+        border-radius: 14px !important;
+        display: block !important;
+        max-width: 100% !important;
+        max-height: 360px !important;
         object-fit: contain !important;
+        margin: 0 auto 16px auto !important;
+        border: 1.5px solid #CBD5E1 !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
     }
-    [data-testid="stCameraInput"] [data-testid="stCameraInputWebcamComponent"],
-    [data-testid="stCameraInput"] [data-testid="stCameraInputWebcamStyledBox"] {
-        margin-top: 0.85rem !important;
-        padding-top: 0.35rem !important;
-    }
-    [data-testid="stCameraInput"] > div:has(button) {
-        margin-top: 1.25rem !important;
-        padding-top: 0.5rem !important;
-    }
-    [data-testid="stCameraInput"] button[kind="primary"],
-    [data-testid="stCameraInput"] button[data-testid="stBaseButton-primary"] {
-        margin-top: 1.3rem !important;
-        margin-bottom: 0.65rem !important;
-        min-height: 48px !important;
-        padding: 0.65rem 1.5rem !important;
-    }
-    [data-testid="stCameraInput"] button[kind="secondary"]:not([aria-label*="switch"]):not([title*="switch"]),
-    [data-testid="stCameraInput"] button[data-testid="stBaseButton-secondary"]:not([aria-label*="switch"]):not([title*="switch"]) {
-        margin-top: 1.15rem !important;
-        margin-bottom: 0.5rem !important;
+
+    /* Tombol Take Photo & Clear Photo - Jarak Lega & Bersih (100% Anti-Tabrakan) */
+    [data-testid="stCameraInput"] button {
+        margin-top: 16px !important;
+        margin-bottom: 8px !important;
+        min-height: 52px !important;
+        font-size: 1.05rem !important;
+        font-weight: 800 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08) !important;
+        position: relative !important;
+        z-index: 10 !important;
+        display: block !important;
+        width: 100% !important;
+        max-width: 440px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        clear: both !important;
     }
 
     /* 7a. Preview Foto Daun yang Dipilih: Rapi, Proporsional di Semua Perangkat (Anti-Kebesaran) */
@@ -3530,22 +3527,43 @@ with st.sidebar:
         with st.expander(f"📂 Daftar Riwayat Disimpan ({total_hist})", expanded=True):
             for idx, item in enumerate(reversed(history_list)):
                 actual_idx = total_hist - 1 - idx
-                col_h_txt, col_h_del = st.columns([4, 1])
-                with col_h_txt:
-                    badge_color = "#15803d" if "sehat" in item.get('status', '').lower() else "#b91c1c"
-                    st.markdown(
-                        f"<div style='font-size: 0.84rem; line-height: 1.35;'>"
-                        f"<strong>{item.get('penyakit', 'Diagnosa')}</strong> "
-                        f"<span style='color: {badge_color}; font-weight: 700;'>({item.get('confidence', '')})</span><br>"
-                        f"<span style='color: #64748b; font-size: 0.74rem;'>🕒 {item.get('waktu', '')} | {item.get('lokasi', 'Kebun')}</span>"
-                        f"</div>",
-                        unsafe_allow_html=True
-                    )
-                with col_h_del:
-                    if st.button("🗑️", key=f"del_h_{item.get('id', actual_idx)}_{actual_idx}", help="Hapus entri ini"):
-                        delete_history_item(actual_idx)
-                        st.toast("Entri riwayat berhasil dihapus.", icon="🗑️")
-                        st.rerun()
+                confirm_del_single_key = f"confirm_del_item_{item.get('id', actual_idx)}_{actual_idx}"
+                is_confirming_single = st.session_state.get(confirm_del_single_key, False)
+
+                if is_confirming_single:
+                    st.markdown(f"""
+                        <div style="background: #FFFBEB; border: 1.2px solid #F59E0B; border-radius: 8px; padding: 6px 10px; margin: 4px 0; font-size: 0.78rem; color: #92400E;">
+                            ⚠️ Hapus diagnosa <strong>{item.get('penyakit', 'Diagnosa')}</strong>?
+                        </div>
+                    """, unsafe_allow_html=True)
+                    col_s_yes, col_s_no = st.columns(2)
+                    with col_s_yes:
+                        if st.button("Ya, Hapus", type="primary", use_container_width=True, key=f"btn_yes_single_{actual_idx}"):
+                            del_name = item.get('penyakit', 'Diagnosa')
+                            delete_history_item(actual_idx)
+                            st.session_state[confirm_del_single_key] = False
+                            st.toast(f"Entri '{del_name}' berhasil dihapus.", icon="🗑️")
+                            st.rerun()
+                    with col_s_no:
+                        if st.button("Batal", use_container_width=True, key=f"btn_no_single_{actual_idx}"):
+                            st.session_state[confirm_del_single_key] = False
+                            st.rerun()
+                else:
+                    col_h_txt, col_h_del = st.columns([4, 1])
+                    with col_h_txt:
+                        badge_color = "#15803d" if "sehat" in item.get('status', '').lower() else "#b91c1c"
+                        st.markdown(
+                            f"<div style='font-size: 0.84rem; line-height: 1.35;'>"
+                            f"<strong>{item.get('penyakit', 'Diagnosa')}</strong> "
+                            f"<span style='color: {badge_color}; font-weight: 700;'>({item.get('confidence', '')})</span><br>"
+                            f"<span style='color: #64748b; font-size: 0.74rem;'>🕒 {item.get('waktu', '')} | {item.get('lokasi', 'Kebun')}</span>"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
+                    with col_h_del:
+                        if st.button("🗑️", key=f"del_h_{item.get('id', actual_idx)}_{actual_idx}", help="Hapus entri ini"):
+                            st.session_state[confirm_del_single_key] = True
+                            st.rerun()
                 st.markdown("<hr style='margin: 3px 0 6px 0; border: none; border-top: 1px solid #e2e8f0;'>", unsafe_allow_html=True)
 
         # Unduh Laporan Excel Lengkap (.XLSX) dengan Foto Daun & Keterangan Analisis
@@ -3558,20 +3576,68 @@ with st.sidebar:
             use_container_width=True
         )
 
-        if st.button("🗑️ Hapus Semua Riwayat", use_container_width=True):
-            reset_all_history()
-            st.toast("Semua riwayat berhasil dihapus.", icon="🗑️")
-            st.rerun()
+        is_confirming_del_all = st.session_state.get("confirm_del_all_hist", False)
+        if not is_confirming_del_all:
+            if st.button("🗑️ Hapus Semua Riwayat", use_container_width=True, key="btn_trigger_del_all"):
+                st.session_state["confirm_del_all_hist"] = True
+                st.rerun()
+        else:
+            st.markdown(f"""
+                <div style="background: #FEF2F2; border: 1.5px solid #EF4444; border-radius: 10px; padding: 10px; margin: 8px 0;">
+                    <div style="font-weight: 800; color: #991B1B; font-size: 0.84rem; margin-bottom: 4px;">
+                        ⚠️ Hapus Semua Riwayat ({total_hist} Data)?
+                    </div>
+                    <div style="color: #7F1D1D; font-size: 0.77rem; line-height: 1.4;">
+                        Semua data diagnosa dan foto daun akan dihapus permanen.
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            col_dall_yes, col_dall_no = st.columns(2)
+            with col_dall_yes:
+                if st.button("🗑️ Ya, Hapus", type="primary", use_container_width=True, key="btn_yes_del_all"):
+                    reset_all_history()
+                    st.session_state["confirm_del_all_hist"] = False
+                    st.toast("🗑️ Semua riwayat diagnosa berhasil dihapus.", icon="🗑️")
+                    st.rerun()
+            with col_dall_no:
+                if st.button("❌ Batal", use_container_width=True, key="btn_no_del_all"):
+                    st.session_state["confirm_del_all_hist"] = False
+                    st.toast("Penghapusan riwayat dibatalkan.", icon="ℹ️")
+                    st.rerun()
     else:
         st.caption("Belum ada riwayat yang disimpan. Klik tombol '💾 Simpan Hasil ke Riwayat' setelah foto diperiksa.")
 
-    if st.button("🔄 Bersihkan Cache Sesi", use_container_width=True, key="btn_clear_cache_sidebar"):
-        st.cache_resource.clear()
-        st.cache_data.clear()
-        if "has_inspected_current" in st.session_state:
-            del st.session_state["has_inspected_current"]
-        st.toast("Cache sesi berhasil dibersihkan!", icon="🔄")
-        st.rerun()
+    is_confirming_cache = st.session_state.get("confirm_clear_cache", False)
+    if not is_confirming_cache:
+        if st.button("🔄 Bersihkan Cache Sesi", use_container_width=True, key="btn_clear_cache_sidebar"):
+            st.session_state["confirm_clear_cache"] = True
+            st.rerun()
+    else:
+        st.markdown("""
+            <div style="background: #FEF3C7; border: 1.5px solid #F59E0B; border-radius: 10px; padding: 10px; margin: 8px 0;">
+                <div style="font-weight: 800; color: #92400E; font-size: 0.84rem; margin-bottom: 4px;">
+                    ⚠️ Bersihkan Cache Sesi?
+                </div>
+                <div style="color: #78350F; font-size: 0.77rem; line-height: 1.4;">
+                    Memori sementara aplikasi akan dimuat ulang.
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+        col_c_yes, col_c_no = st.columns(2)
+        with col_c_yes:
+            if st.button("🔄 Ya, Bersihkan", type="primary", use_container_width=True, key="btn_yes_clear_cache"):
+                st.cache_resource.clear()
+                st.cache_data.clear()
+                if "has_inspected_current" in st.session_state:
+                    del st.session_state["has_inspected_current"]
+                st.session_state["confirm_clear_cache"] = False
+                st.toast("🔄 Cache sesi berhasil dibersihkan!", icon="🔄")
+                st.rerun()
+        with col_c_no:
+            if st.button("❌ Batal", use_container_width=True, key="btn_no_clear_cache"):
+                st.session_state["confirm_clear_cache"] = False
+                st.toast("Pembersihan cache dibatalkan.", icon="ℹ️")
+                st.rerun()
 
     st.divider()
     st.markdown("""
@@ -3674,7 +3740,17 @@ if is_cam_mode:
     </div>
     """, unsafe_allow_javascript=True)
 
-    cam_file = st.camera_input("Arahkan kamera dekat ke bagian daun yang sakit:", key=cam_key)
+    st.markdown("""
+        <div style="font-weight: 800; font-size: 1.05rem; color: #0F172A; margin: 12px 0 10px 0; display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.25rem;">📸</span>
+            <span>Arahkan kamera dekat ke bagian daun yang sakit:</span>
+        </div>
+    """, unsafe_allow_html=True)
+    cam_file = st.camera_input(
+        "Arahkan kamera dekat ke bagian daun yang sakit:",
+        label_visibility="collapsed",
+        key=cam_key
+    )
     
     with st.expander("ℹ️ Panduan Singkat Cara Mengizinkan Akses Kamera di Browser", expanded=False):
         st.markdown("""
@@ -4089,17 +4165,41 @@ if selected_image is not None and not file_error:
 
             # Tombol Aksi Atas: 1. Simpan Riwayat, 2. Periksa / Pilih Foto Lain
             saved_key = f"saved_entry_{current_img_sig}"
+            confirm_save_key = f"confirm_save_{current_img_sig}"
+            confirm_other_key = f"confirm_other_{current_img_sig}"
             step3_key = f"show_step3_{current_img_sig}"
             is_already_saved = st.session_state.get(saved_key, False)
+            is_confirming_save = st.session_state.get(confirm_save_key, False)
+            is_confirming_other = st.session_state.get(confirm_other_key, False)
             is_step3_open = st.session_state.get(step3_key, False)
 
-            st.markdown("<div style='margin: 1.15rem 0 0.9rem 0;'>", unsafe_allow_html=True)
-            col_save, col_other = st.columns([1.0, 1.0])
-            with col_save:
-                if is_already_saved:
-                    st.button("✅ Hasil Sudah Disimpan", disabled=True, use_container_width=True)
-                else:
-                    if st.button("💾 Simpan Hasil ke Riwayat", use_container_width=True, key=f"btn_save_top_{current_img_sig}"):
+            # Notifikasi Status Tersimpan
+            if is_already_saved:
+                st.markdown("""
+                    <div style="background: #F0FDF4; border: 1.5px solid #86EFAC; border-radius: 12px; padding: 10px 14px; margin: 0.7rem 0 0.5rem 0; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.25rem;">💾</span>
+                        <div style="font-size: 0.88rem; color: #166534; line-height: 1.45;">
+                            <strong>Hasil Diagnosa Telah Tersimpan:</strong> Data pemeriksaan foto ini sudah aman di Riwayat Pemeriksaan dan dapat Anda unduh sebagai file Excel (.xlsx) di menu samping.
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            # Dialog Konfirmasi Simpan Hasil
+            if is_confirming_save:
+                diag_target_name = info.get('nama_id', 'Penyakit Daun')
+                st.markdown(f"""
+                    <div style="background: #F0FDF4; border: 2px solid #22C55E; border-radius: 14px; padding: 14px 16px; margin: 0.9rem 0; box-shadow: 0 3px 10px rgba(34, 197, 94, 0.12);">
+                        <div style="font-weight: 800; color: #14532D; font-size: 1.02rem; margin-bottom: 4px;">
+                            📋 Konfirmasi Simpan Hasil Diagnosa
+                        </div>
+                        <div style="color: #166534; font-size: 0.90rem; line-height: 1.55;">
+                            Apakah Anda yakin ingin menyimpan hasil pemeriksaan <strong>{diag_target_name} ({top_confidence:.1f}%)</strong> beserta foto dan bukti analisisnya ke daftar Riwayat?
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                col_csave_yes, col_csave_no = st.columns(2)
+                with col_csave_yes:
+                    if st.button("✅ Ya, Simpan Sekarang", type="primary", use_container_width=True, key=f"btn_act_save_yes_{current_img_sig}"):
                         if diag_mode == "three_way":
                             rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) | {second_info['nama_id']} ({second_confidence:.1f}%) | {third_info.get('nama_id', third_class_raw)} ({third_confidence:.1f}%)"
                         elif diag_mode == "two_way":
@@ -4119,15 +4219,57 @@ if selected_image is not None and not file_error:
                             visual_details=visual_evidence.get("evidence_desc", "") if visual_evidence else info.get("ciri_lapangan", "-")
                         )
                         st.session_state[saved_key] = True
+                        st.session_state[confirm_save_key] = False
                         st.toast("✅ Berhasil disimpan ke riwayat pemeriksaan!", icon="💾")
                         st.rerun()
+                with col_csave_no:
+                    if st.button("❌ Batal Simpan", use_container_width=True, key=f"btn_act_save_no_{current_img_sig}"):
+                        st.session_state[confirm_save_key] = False
+                        st.toast("Penyimpanan riwayat dibatalkan.", icon="ℹ️")
+                        st.rerun()
 
-            with col_other:
-                if st.button("🔄 Pilih Foto Lain", use_container_width=True, key=f"btn_other_photo_{current_img_sig}"):
-                    if "has_inspected_current" in st.session_state:
-                        del st.session_state["has_inspected_current"]
-                    st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
+            # Dialog Konfirmasi Ganti Foto
+            if is_confirming_other:
+                st.markdown("""
+                    <div style="background: #FEF3C7; border: 2px solid #F59E0B; border-radius: 14px; padding: 14px 16px; margin: 0.9rem 0; box-shadow: 0 3px 10px rgba(245, 158, 11, 0.12);">
+                        <div style="font-weight: 800; color: #92400E; font-size: 1.02rem; margin-bottom: 4px;">
+                            📸 Konfirmasi Ganti Foto Pemeriksaan
+                        </div>
+                        <div style="color: #78350F; font-size: 0.90rem; line-height: 1.55;">
+                            Pemeriksaan foto daun saat ini akan ditutup untuk memilih atau memotret daun baru. Pastikan hasil penting sudah disimpan jika diperlukan.
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                col_cother_yes, col_cother_no = st.columns(2)
+                with col_cother_yes:
+                    if st.button("📸 Ya, Ganti Foto", type="primary", use_container_width=True, key=f"btn_act_other_yes_{current_img_sig}"):
+                        st.session_state[confirm_other_key] = False
+                        if "has_inspected_current" in st.session_state:
+                            del st.session_state["has_inspected_current"]
+                        st.toast("Siap mengambil atau memilih foto baru.", icon="📸")
+                        st.rerun()
+                with col_cother_no:
+                    if st.button("❌ Batal (Tetap di Sini)", use_container_width=True, key=f"btn_act_other_no_{current_img_sig}"):
+                        st.session_state[confirm_other_key] = False
+                        st.rerun()
+
+            # Tombol Utama (Bila Tidak Sedang Membuka Dialog Konfirmasi)
+            if not is_confirming_save and not is_confirming_other:
+                st.markdown("<div style='margin: 1.15rem 0 0.9rem 0;'>", unsafe_allow_html=True)
+                col_save, col_other = st.columns([1.0, 1.0])
+                with col_save:
+                    if is_already_saved:
+                        st.button("✅ Hasil Sudah Disimpan", disabled=True, use_container_width=True)
+                    else:
+                        if st.button("💾 Simpan Hasil ke Riwayat", use_container_width=True, key=f"btn_save_top_{current_img_sig}"):
+                            st.session_state[confirm_save_key] = True
+                            st.rerun()
+
+                with col_other:
+                    if st.button("🔄 Pilih Foto Lain", use_container_width=True, key=f"btn_other_photo_{current_img_sig}"):
+                        st.session_state[confirm_other_key] = True
+                        st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
 
 
             # ==============================================================================
