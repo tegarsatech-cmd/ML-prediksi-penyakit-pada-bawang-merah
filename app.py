@@ -1206,10 +1206,22 @@ CLASS_METADATA["Virosis-D"] = CLASS_METADATA["Iris Yellow Spot Virus (IYSV)"]
 if "history" not in st.session_state:
     st.session_state.history = []
 
-def save_diagnosis_to_history(disease_code, display_name, confidence, recommendation, is_healthy, notes="", location=""):
-    """Menyimpan entri riwayat diagnosa baru."""
-    now_time = datetime.now(timezone.utc).astimezone().strftime("%H:%M:%S")
+def save_diagnosis_to_history(disease_code, display_name, confidence, recommendation, is_healthy, notes="", location="", image=None, visual_details=""):
+    """Menyimpan entri riwayat diagnosa baru beserta gambar dan detail analisis."""
+    now_time = datetime.now(timezone.utc).astimezone().strftime("%d/%m/%Y %H:%M:%S")
     entry_id = int(time.time() * 1000)
+
+    thumb_bytes = None
+    if image is not None:
+        try:
+            im_copy = image.copy().convert("RGB")
+            im_copy.thumbnail((160, 160), Image.Resampling.LANCZOS)
+            b_io = BytesIO()
+            im_copy.save(b_io, format="JPEG", quality=85)
+            thumb_bytes = b_io.getvalue()
+        except Exception:
+            thumb_bytes = None
+
     entry = {
         "id": entry_id,
         "waktu": now_time,
@@ -1218,16 +1230,126 @@ def save_diagnosis_to_history(disease_code, display_name, confidence, recommenda
         "confidence": f"{confidence:.1f}%",
         "keyakinan": f"{confidence:.1f}%",
         "confidence_val": round(confidence, 2),
-        "status": "Healthy / Sehat" if is_healthy else "Penyakit / Hama",
+        "status": "Healthy / Sehat Prima" if is_healthy else "Penyakit / Hama Tanaman",
         "kelas_model": disease_code,
         "lokasi": location if location.strip() else "Kebun Bawang",
         "catatan": notes if notes.strip() else "-",
-        "rekomendasi": recommendation
+        "rekomendasi": recommendation,
+        "detail_visual": visual_details if visual_details.strip() else notes,
+        "image_bytes": thumb_bytes
     }
     st.session_state['history'].append(entry)
     if len(st.session_state['history']) > 100:
         st.session_state['history'] = st.session_state['history'][-100:]
     return entry
+
+
+def generate_excel_history_report(history_list: list) -> bytes:
+    """
+    Menyusun laporan riwayat pemeriksaan daun bawang merah dalam format Excel (.xlsx)
+    lengkap dengan foto daun yang disisipkan langsung ke sel beserta keterangan hasil analisis.
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.drawing.image import Image as OpenpyxlImage
+    from io import BytesIO
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Riwayat Diagnosa Bawang"
+
+    headers = [
+        "No",
+        "Foto Daun",
+        "Waktu Pemeriksaan",
+        "Hasil Vonis Penyakit",
+        "Tingkat Kepastian",
+        "Kondisi Tanaman",
+        "Lokasi Lahan",
+        "Ciri Lapangan & Bukti Visual",
+        "Rekomendasi Penanganan / Solusi"
+    ]
+    ws.append(headers)
+
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+    thin_border = Border(
+        left=Side(style='thin', color='CBD5E1'),
+        right=Side(style='thin', color='CBD5E1'),
+        top=Side(style='thin', color='CBD5E1'),
+        bottom=Side(style='thin', color='CBD5E1')
+    )
+
+    for col_num in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = thin_border
+    ws.row_dimensions[1].height = 28
+
+    col_widths = {
+        "A": 6,
+        "B": 16,
+        "C": 20,
+        "D": 28,
+        "E": 18,
+        "F": 22,
+        "G": 18,
+        "H": 36,
+        "I": 46
+    }
+    for col_letter, width in col_widths.items():
+        ws.column_dimensions[col_letter].width = width
+
+    for row_idx, item in enumerate(history_list, start=2):
+        item_no = row_idx - 1
+        waktu = item.get("waktu", "-")
+        penyakit = item.get("penyakit", "-")
+        confidence = item.get("confidence", "-")
+        status = item.get("status", "-")
+        lokasi = item.get("lokasi", "Kebun Bawang")
+        ciri = item.get("detail_visual", "-") or item.get("catatan", "-")
+        rekomendasi = item.get("rekomendasi", "-")
+
+        ws.cell(row=row_idx, column=1, value=item_no)
+        ws.cell(row=row_idx, column=2, value="")
+        ws.cell(row=row_idx, column=3, value=waktu)
+        ws.cell(row=row_idx, column=4, value=penyakit)
+        ws.cell(row=row_idx, column=5, value=confidence)
+        ws.cell(row=row_idx, column=6, value=status)
+        ws.cell(row=row_idx, column=7, value=lokasi)
+        ws.cell(row=row_idx, column=8, value=ciri)
+        ws.cell(row=row_idx, column=9, value=rekomendasi)
+
+        for c in range(1, 10):
+            cell = ws.cell(row=row_idx, column=c)
+            cell.border = thin_border
+            cell.font = Font(name="Calibri", size=10)
+            if c in (1, 3, 5, 6, 7):
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            else:
+                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+        img_bytes = item.get("image_bytes")
+        if img_bytes:
+            try:
+                img_io = BytesIO(img_bytes)
+                xl_img = OpenpyxlImage(img_io)
+                xl_img.width = 65
+                xl_img.height = 65
+                ws.add_image(xl_img, f"B{row_idx}")
+                ws.row_dimensions[row_idx].height = 56
+            except Exception:
+                ws.row_dimensions[row_idx].height = 42
+        else:
+            ws.cell(row=row_idx, column=2, value="-")
+            ws.row_dimensions[row_idx].height = 42
+
+    out_io = BytesIO()
+    wb.save(out_io)
+    return out_io.getvalue()
+
 
 def reset_all_history():
     """Mengosongkan semua entri riwayat."""
@@ -2336,14 +2458,16 @@ def get_groq_recommendation(
         payload = {
             "model": model_name,
             "temperature": 0.72,
-            "max_tokens": 1800,
+            "max_tokens": 3200,
             "messages": [
                 {
                     "role": "system",
                     "content": (
                         "Anda adalah Ahli Agronomi dan Konsultan Proteksi Tanaman Hortikultura Indonesia. "
                         "Berikan penjelasan yang komprehensif, kaya akan detail praktis, takaran dosis yang realistis, "
-                        "dan bersumber dari rangkuman riset Balitsa serta BPTP Kementerian Pertanian."
+                        "dan bersumber dari rangkuman riset Balitsa serta BPTP Kementerian Pertanian. "
+                        "PENTING: Pastikan seluruh penjelasan, rekomendasi obat, takaran dosis, dan keempat poin perawatan lahan ditulis lengkap hingga tuntas. "
+                        "Dilarang memotong kalimat di tengah jalan!"
                     )
                 },
                 {
@@ -3067,7 +3191,15 @@ def parse_groq_to_cards(
             c1 = c1 or clean_extracted(parts[1])
             c2 = c2 or clean_extracted(parts[2])
 
-    return c1 or sys_c1, c2 or sys_c2, c3 or sys_c3
+    # Pastikan setiap bagian penjelasan tuntas dan tidak terpotong
+    if not c1 or len(c1.strip()) < 50:
+        c1 = sys_c1
+    if not c2 or len(c2.strip()) < 50:
+        c2 = sys_c2
+    if not c3 or len(c3.strip()) < 80:
+        c3 = sys_c3
+
+    return c1, c2, c3
 
 def clean_text_output(text: str) -> str:
     """
@@ -3419,23 +3551,23 @@ with st.sidebar:
         df_hist = pd.DataFrame(history_list)
         kolom_ekspor = [col for col in ["waktu", "penyakit", "confidence", "status", "lokasi", "catatan", "rekomendasi"] if col in df_hist.columns]
         
-        # Download CSV
-        csv_bytes = df_hist[kolom_ekspor].to_csv(index=False).encode('utf-8')
+        # Unduh Laporan Excel Lengkap (.XLSX) dengan Foto Daun & Keterangan Analisis
+        excel_bytes = generate_excel_history_report(history_list)
         st.download_button(
-            label="📥 Unduh Laporan (.CSV)",
-            data=csv_bytes,
-            file_name=f"riwayat_bawang_{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
+            label="📊 Unduh Laporan Excel (.XLSX)",
+            data=excel_bytes,
+            file_name=f"riwayat_analisis_bawang_{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
 
-        # Download JSON
-        json_bytes = json.dumps(history_list, indent=2).encode('utf-8')
+        # Download CSV Ringkas
+        csv_bytes = df_hist[kolom_ekspor].to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="📥 Unduh Cadangan (.JSON)",
-            data=json_bytes,
-            file_name=f"riwayat_bawang_{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d_%H%M%S')}.json",
-            mime="application/json",
+            label="📥 Unduh Data Tabel (.CSV)",
+            data=csv_bytes,
+            file_name=f"riwayat_bawang_{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
             use_container_width=True
         )
 
@@ -3664,66 +3796,64 @@ if selected_image is not None and not file_error:
         # ==============================================================================
         # TAHAP 1: VALIDASI GAMBAR (GUARDRAIL GATEKEEPER GROQ VISION & OOD GUARD)
         # ==============================================================================
-        with st.spinner("🔍 Memverifikasi keaslian foto daun bawang..."):
-            val_res = validate_onion_image(selected_image, min_ratio=min_leaf_ratio)
-            is_valid_vision = val_res[0]
-            vision_verdict = val_res[1]
-            val_info = val_res[2] if len(val_res) > 2 else {}
+        force_pass_key = f"force_pass_{current_img_sig}"
+        is_forced_pass = st.session_state.get(force_pass_key, False)
+
+        if not is_forced_pass:
+            with st.spinner("🔍 Memverifikasi keaslian foto daun bawang..."):
+                val_res = validate_onion_image(selected_image, min_ratio=min_leaf_ratio)
+                is_valid_vision = val_res[0]
+                vision_verdict = val_res[1]
+                val_info = val_res[2] if len(val_res) > 2 else {}
+        else:
+            is_valid_vision = True
+            vision_verdict = "VALID (Dikonfirmasi Pengguna)"
+            val_info = {"plant_ratio": max(min_leaf_ratio, 0.05), "is_ratio_rejection": False}
 
         if not is_valid_vision:
             detected_ratio = val_info.get("plant_ratio", 0.0) * 100.0
             curr_min_pct = min_leaf_ratio * 100.0
-            rec_leaf_pct = val_info.get("recommended_leaf_pct", max(3, int(np.floor(detected_ratio))))
+            rec_leaf_pct = max(3, int(np.floor(detected_ratio)))
 
             if val_info.get("is_ratio_rejection", False):
-                st.warning(f"⚠️ **Rasio Daun Terdeteksi ({detected_ratio:.1f}%) di Bawah Pengaturan Validasi ({curr_min_pct:.0f}%)**")
                 st.markdown(f"""
-                    <div class="card-rejection">
-                        <div class="card-rejection-badge" style="background-color: #D97706;">⚠️ PENGATURAN VALIDASI TERLALU KETAT</div>
-                        <div class="card-rejection-title">Rasio Daun {detected_ratio:.1f}% (Batas Aktif: {curr_min_pct:.0f}%)</div>
-                        <div class="card-rejection-reason">
-                            Foto Anda <strong>mengandung daun bawang merah asli ({detected_ratio:.1f}%)</strong>, namun tertahan karena slider <strong>Sensitivitas Daun Bawang</strong> diatur pada angka <strong>{curr_min_pct:.0f}%</strong>.
+                    <div class="card-rejection" style="padding: 1rem 1.25rem; border-radius: 14px; border: 1.5px solid #F59E0B; background: #FFFBEB; margin: 0.8rem 0;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                            <span style="background-color: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">⚠️ VALIDASI TERLALU KETAT</span>
+                            <span style="font-weight: 700; color: #92400E; font-size: 0.92rem;">Rasio Daun: {detected_ratio:.1f}% (Batas Slider: {curr_min_pct:.0f}%)</span>
                         </div>
-                        <div class="card-rejection-desc">
-                            <strong>📜 Rekomendasi Standar Peraturan Resmi (Balitsa/Kementan):</strong>
-                            <ul style="margin: 4px 0 8px 16px;">
-                                <li><strong>Standar Rumpun Sawah Normal:</strong> <strong>8%</strong>.</li>
-                                <li><strong>Daun Tunggal / Bibit Muda / Dipegang Tangan:</strong> <strong>5% atau 3%</strong>.</li>
-                                <li><strong>Mode Makro Ekstrem:</strong> <strong>20% – 35%</strong> (Hanya untuk daun yang memenuhi layar penuh).</li>
-                            </ul>
-                            <strong>💡 Solusi Cepat:</strong> Klik tombol rekomendasi di bawah ini: Sistem akan <strong>menyesuaikan slider sensitivitas ke {rec_leaf_pct}% agar memenuhi kriteria foto Anda dan langsung memproses diagnosa penyakit</strong>!
+                        <div style="font-size: 0.9rem; color: #78350F; line-height: 1.55;">
+                            Foto terdeteksi daun bawang ({detected_ratio:.1f}%), namun tertahan karena slider Sensitivitas disetel pada <strong>{curr_min_pct:.0f}%</strong>.
+                            Klik tombol di bawah untuk menyelaraskan sensitivitas dan langsung memproses diagnosa:
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
 
-                if st.button(f"⚡ Sesuaikan Slider ke {rec_leaf_pct}% Sesuai Foto Ini & Lanjutkan Diagnosa", type="primary", use_container_width=True, key=f"btn_apply_rec_{current_img_sig}"):
+                if st.button(f"⚡ Sesuaikan Sensitivitas ({rec_leaf_pct}%) & Lanjutkan Diagnosa", type="primary", use_container_width=True, key=f"btn_apply_rec_{current_img_sig}"):
                     st.session_state["pending_leaf_slider"] = rec_leaf_pct
+                    st.session_state["leaf_slider"] = rec_leaf_pct
+                    st.session_state[force_pass_key] = True
+                    st.session_state["has_inspected_current"] = current_img_sig
                     st.rerun()
             else:
                 st.error("❌ Foto Ditolak: Objek yang diunggah terdeteksi bukan daun/tanaman bawang merah.")
                 st.markdown(f"""
-                    <div class="card-rejection">
-                        <div class="card-rejection-badge">⚠️ FOTO BUKAN DAUN BAWANG</div>
-                        <div class="card-rejection-title">Objek Terindikasi Bukan Daun Bawang Merah!</div>
-                        <div class="card-rejection-reason">
-                            {vision_verdict}
-                        </div>
-                        <div class="card-rejection-desc">
-                            Sistem mendeteksi bahwa gambar yang Anda masukkan tidak memenuhi kriteria visual daun bawang merah (seperti foto manusia, hewan, dinding/kertas putih polos, tanah kosong tanpa tanaman, atau dokumen).
-                            <br><br>
-                            <strong>💡 Petunjuk Pengambilan Foto Lapangan:</strong>
-                            <ul style="margin: 4px 0 8px 16px;">
-                                <li>Pastikan foto menampilkan helai daun tanaman bawang merah asli di bedengan sawah atau pot.</li>
-                                <li>Jarak pemotretan 10–20 cm tegak lurus daun, fokus tajam dan tidak blur.</li>
-                                <li>Hindari menutup seluruh helai daun dengan jari tangan.</li>
-                            </ul>
+                    <div class="card-rejection" style="padding: 1rem 1.25rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
+                        <div style="font-weight: 800; color: #B91C1C; font-size: 0.95rem; margin-bottom: 4px;">⚠️ FOTO BUKAN DAUN BAWANG</div>
+                        <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.5;">
+                            {vision_verdict}<br>
+                            Pastikan foto menampilkan helai daun tanaman bawang merah dari dekat (10-20 cm) dengan pencahayaan cukup.
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
 
                 if detected_ratio >= 3.0:
-                    if st.button(f"🌱 Sesuaikan Sensitivitas ke {max(3, int(np.floor(detected_ratio)))}% & Uji Ulang", type="primary", use_container_width=True, key=f"btn_retry_tolerant_{current_img_sig}"):
-                        st.session_state["pending_leaf_slider"] = max(3, int(np.floor(detected_ratio)))
+                    tol_pct = max(3, int(np.floor(detected_ratio)))
+                    if st.button(f"🌱 Sesuaikan Sensitivitas ({tol_pct}%) & Diagnosa Ulang", type="primary", use_container_width=True, key=f"btn_retry_tolerant_{current_img_sig}"):
+                        st.session_state["pending_leaf_slider"] = tol_pct
+                        st.session_state["leaf_slider"] = tol_pct
+                        st.session_state[force_pass_key] = True
+                        st.session_state["has_inspected_current"] = current_img_sig
                         st.rerun()
             st.stop()
 
@@ -3779,31 +3909,22 @@ if selected_image is not None and not file_error:
             # Hitung rekomendasi batas keyakinan yang adaptif kelipatan 5 (rentang slider: 20% - 90%)
             rec_conf_pct = max(20, min(90, int(np.floor(top_confidence / 5.0) * 5)))
 
-            st.warning(f"⚠️ **Tingkat Keyakinan Model ({top_confidence:.1f}%) di Bawah Batas ({current_conf_pct:.0f}%)**")
             st.markdown(f"""
-                <div class="card-rejection">
-                    <div class="card-rejection-badge">⚠️ TINGKAT KEYAKINAN DI BAWAH AMBANG BATAS</div>
-                    <div class="card-rejection-title">Foto Kurang Jelas atau Gejala Bercak Masih Awal</div>
-                    <div class="card-rejection-reason">
-                        Kepastian model tercatat <strong>{top_confidence:.1f}%</strong> (ambang batas aktif: <strong>{current_conf_pct:.0f}%</strong>). Sistem menahan vonis untuk mencegah salah penanganan di kebun.
+                <div class="card-rejection" style="padding: 1rem 1.25rem; border-radius: 14px; border: 1.5px solid #F59E0B; background: #FFFBEB; margin: 0.8rem 0;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                        <span style="background-color: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">⚠️ BATAS KEYAKINAN</span>
+                        <span style="font-weight: 700; color: #92400E; font-size: 0.92rem;">Kepastian: {top_confidence:.1f}% (Batas Slider: {current_conf_pct:.0f}%)</span>
                     </div>
-                    <div class="card-rejection-desc">
-                        <strong>📜 Rekomendasi Standar Peraturan Resmi (Balitsa/Kementan):</strong>
-                        <ul style="margin: 4px 0 8px 16px;">
-                            <li><strong>Standar Sawah Siang Terang:</strong> <strong>65%</strong> (Standar harian).</li>
-                            <li><strong>Toleransi Sore / Redup / Gejala Dini:</strong> <strong>50% – 55%</strong> (Untuk cuaca mendung atau bercak yang masih tipis).</li>
-                            <li><strong>Mode Toleransi Gejala Awal:</strong> <strong>{rec_conf_pct}%</strong> (Sesuai kepastian foto Anda).</li>
-                        </ul>
-                        <strong>💡 Solusi Cepat:</strong>
-                        <p style="margin: 2px 0 8px 0;">
-                            Klik tombol di bawah ini: Sistem akan <strong>otomatis menyesuaikan batas keyakinan ke {rec_conf_pct}% dan langsung memproses prediksi penyakit</strong> untuk foto ini tanpa terhambat!
-                        </p>
+                    <div style="font-size: 0.9rem; color: #78350F; line-height: 1.55;">
+                        Kepastian model tercatat <strong>{top_confidence:.1f}%</strong> (di bawah batas slider <strong>{current_conf_pct:.0f}%</strong>).
+                        Klik tombol di bawah untuk menyelaraskan batas keyakinan dan melanjutkan prediksi:
                     </div>
                 </div>
             """, unsafe_allow_html=True)
 
-            if st.button(f"⚡ Sesuaikan Batas Keyakinan ({rec_conf_pct}%) & Lanjutkan Prediksi Sekarang", type="primary", use_container_width=True, key=f"btn_apply_conf_rec_{current_img_sig}"):
+            if st.button(f"⚡ Sesuaikan Batas Keyakinan ({rec_conf_pct}%) & Lanjutkan Prediksi", type="primary", use_container_width=True, key=f"btn_apply_conf_rec_{current_img_sig}"):
                 st.session_state["pending_conf_slider"] = rec_conf_pct
+                st.session_state["conf_slider"] = rec_conf_pct
                 st.session_state[allow_conf_key] = True
                 st.rerun()
             st.stop()  # Hentikan eksekusi sampai tombol penyesuaian ditekan
@@ -3999,25 +4120,15 @@ if selected_image is not None and not file_error:
                     </div>
                 """, unsafe_allow_html=True)
 
-            # Tombol Aksi Sejajar: 1. Detail Solusi Obat (Langkah 3), 2. Simpan Riwayat, 3. Periksa / Pilih Foto Lain
+            # Tombol Aksi Atas: 1. Simpan Riwayat, 2. Periksa / Pilih Foto Lain
             saved_key = f"saved_entry_{current_img_sig}"
             step3_key = f"show_step3_{current_img_sig}"
             is_already_saved = st.session_state.get(saved_key, False)
             is_step3_open = st.session_state.get(step3_key, False)
 
             st.markdown("<div style='margin: 1.15rem 0 0.9rem 0;'>", unsafe_allow_html=True)
-            col_act1, col_act2, col_act3 = st.columns([1.35, 1.0, 1.0])
-            with col_act1:
-                if not is_step3_open:
-                    if st.button("🩺 Kasih Detail Obat (No. 3)", type="primary", use_container_width=True, key=f"btn_open_step3_top_{current_img_sig}"):
-                        st.session_state[step3_key] = True
-                        st.rerun()
-                else:
-                    if st.button("🔽 Tutup Detail Obat (No. 3)", use_container_width=True, key=f"btn_close_step3_top_{current_img_sig}"):
-                        st.session_state[step3_key] = False
-                        st.rerun()
-
-            with col_act2:
+            col_save, col_other = st.columns([1.0, 1.0])
+            with col_save:
                 if is_already_saved:
                     st.button("✅ Hasil Sudah Disimpan", disabled=True, use_container_width=True)
                 else:
@@ -4035,14 +4146,16 @@ if selected_image is not None and not file_error:
                             confidence=top_confidence,
                             recommendation=info.get("rekomendasi_singkat", ""),
                             is_healthy=is_pure_healthy,
-                            notes="Pemeriksaan Lapangan",
-                            location="Kebun Bawang"
+                            notes=info.get("ciri_lapangan", "-"),
+                            location="Kebun Bawang",
+                            image=selected_image,
+                            visual_details=visual_evidence.get("evidence_desc", "") if visual_evidence else info.get("ciri_lapangan", "-")
                         )
                         st.session_state[saved_key] = True
                         st.toast("✅ Berhasil disimpan ke riwayat pemeriksaan!", icon="💾")
                         st.rerun()
 
-            with col_act3:
+            with col_other:
                 if st.button("🔄 Pilih Foto Lain", use_container_width=True, key=f"btn_other_photo_{current_img_sig}"):
                     if "has_inspected_current" in st.session_state:
                         del st.session_state["has_inspected_current"]
@@ -4151,7 +4264,7 @@ if selected_image is not None and not file_error:
                 else:
                     st.info(f"📋 **Karakteristik Fisik Daun pada Foto:**\n\n{v_desc}")
 
-            with st.expander("📊 Distribusi Probabilitas Model (TorchScript EfficientNet-B0 - 7 Kelas)", expanded=True):
+            with st.expander("📊 Distribusi Probabilitas Model (TorchScript EfficientNet-B0 - 7 Kelas)", expanded=False):
                 st.caption("Distribusi probabilitas softmax terkalibrasi (temperature-scaled) untuk seluruh 7 kelas:")
                 probs_dict = api_output.get("probabilities", {})
                 sorted_probs = sorted(probs_dict.items(), key=lambda x: x[1], reverse=True)
@@ -4180,7 +4293,6 @@ if selected_image is not None and not file_error:
                         st.markdown(f"<div style='text-align: right; font-weight: 800; font-size: 0.95rem; color: {val_color};'>{prob_pct:.1f}%</div>", unsafe_allow_html=True)
                     st.progress(min(max(float(prob_val), 0.0), 1.0))
 
-            # ==============================================================================
             # ==============================================================================
             # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN & INTEGRASI LOGIKA PEMBEDA
             # ==============================================================================
@@ -4214,25 +4326,15 @@ if selected_image is not None and not file_error:
                     else f"Cocokkan tanda fisik berikut langsung pada tanaman di sawah untuk memastikan gejala penyakit <strong>{info['nama_id']}</strong>:"
                 )
 
-                st.markdown(f"""
-                    <div style="background: #FFFFFF; border-radius: 16px; border: 1.5px solid #CBD5E1; padding: 1.25rem 1.35rem; margin: 1.1rem 0; box-shadow: 0 3px 8px rgba(0,0,0,0.04);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 0.65rem;">
-                            <div style="display: flex; align-items: center; gap: 0.6rem;">
-                                <span style="font-size: 1.4rem;">🔬</span>
-                                <span style="font-size: 1.15rem; font-weight: 800; color: #0F172A;">Verifikasi Karakteristik Fisik Langsung di Sawah</span>
-                            </div>
-                            <span style="background: #F0FDF4; color: #166534; font-size: 0.8rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; border: 1px solid #BBF7D0;">
-                                Protokol Standar Balitsa & BPTP
-                            </span>
-                        </div>
+                with st.expander("🔬 Verifikasi Karakteristik Fisik Langsung di Sawah (Standar Balitsa & BPTP)", expanded=False):
+                    st.markdown(f"""
                         <div style="font-size: 0.88rem; color: #475569; margin-bottom: 0.85rem; line-height: 1.55;">
                             {phys_sub_text}
                         </div>
-                        <div style="background: #F8FAFC; border-radius: 12px; padding: 1rem 1.15rem; border-left: 4px solid #0284C7; font-size: 0.92rem; color: #1E293B; line-height: 1.7; border: 1px solid #E2E8F0; border-left-width: 4px; border-left-color: #0284C7;">
+                        <div style="background: #F8FAFC; border-radius: 12px; padding: 1rem 1.15rem; font-size: 0.92rem; color: #1E293B; line-height: 1.7; border: 1px solid #E2E8F0; border-left: 4px solid #0284C7;">
                             {html_phys}
                         </div>
-                    </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
             else:
                 diff_data = None
 
@@ -4241,19 +4343,16 @@ if selected_image is not None and not file_error:
             # ==============================================================================
             if not is_step3_open:
                 st.markdown("""
-                    <div style="background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%); border-radius: 16px; border: 1.5px dashed #93C5FD; padding: 1.35rem 1.4rem; margin: 1.3rem 0; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
-                        <div style="font-size: 2rem; margin-bottom: 0.35rem;">🩺💊</div>
-                        <div style="font-size: 1.15rem; font-weight: 800; color: #1E3A8A; margin-bottom: 0.35rem;">
+                    <div style="background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%); border-radius: 16px; border: 1.5px dashed #93C5FD; padding: 1.15rem 1.4rem; margin: 1.3rem 0; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                        <div style="font-size: 1.8rem; margin-bottom: 0.35rem;">🩺💊</div>
+                        <div style="font-size: 1.15rem; font-weight: 800; color: #1E3A8A; margin-bottom: 0.2rem;">
                             Langkah 3: Butuh Resep Obat Semprot & Panduan Dokter Tanaman?
-                        </div>
-                        <div style="font-size: 0.9rem; color: #475569; max-width: 640px; margin: 0 auto 1.15rem auto; line-height: 1.6;">
-                            Untuk <strong>menghemat token Groq AI</strong>, modul rekomendasi obat fungisida/insektisida, takaran dosis tangki, dan tindakan segera 24 jam baru akan diproses saat Anda menekan tombol di bawah.
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
                 col_b1, col_b2, col_b3 = st.columns([0.5, 2.2, 0.5])
                 with col_b2:
-                    if st.button("🩺 KASIH DETAIL PENJELASAN DARI NO. 3", type="primary", use_container_width=True, key=f"btn_open_step3_bottom_{current_img_sig}"):
+                    if st.button("🩺 KASIH DETAIL OBAT (LANGKAH 3)", type="primary", use_container_width=True, key=f"btn_open_step3_bottom_{current_img_sig}"):
                         st.session_state[step3_key] = True
                         st.rerun()
             else:
@@ -4315,37 +4414,34 @@ if selected_image is not None and not file_error:
                 """, unsafe_allow_html=True)
 
                 # KARTU 1: TINDAKAN LANGSUNG DI KEBUN (MERAH)
-                st.markdown(f"""
-                    <div class="card-ai-step card-ai-red">
-                        <div class="card-ai-title" style="color: #DC2626;">
-                            🚨 Tindakan Langsung di Kebun
+                with st.expander("🚨 Tindakan Langsung di Kebun (24 Jam Pertama di Bedengan)", expanded=False):
+                    st.markdown(f"""
+                        <div class="card-ai-step card-ai-red" style="margin-top: 0.35rem;">
+                            <div class="card-ai-title" style="color: #DC2626;">🚨 Tindakan Langsung di Kebun</div>
+                            <div class="card-ai-sub">(Langkah Segera 24 Jam Pertama di Bedengan)</div>
+                            <div class="card-ai-body">{html_tindakan}</div>
                         </div>
-                        <div class="card-ai-sub">(Langkah Segera 24 Jam Pertama di Bedengan)</div>
-                        <div class="card-ai-body">{html_tindakan}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
 
                 # KARTU 2: REKOMENDASI OBAT SEMPROT (BIRU)
-                st.markdown(f"""
-                    <div class="card-ai-step card-ai-blue">
-                        <div class="card-ai-title" style="color: #1D4ED8;">
-                            🧪 Rekomendasi Obat Semprot
+                with st.expander("🧪 Rekomendasi Obat Semprot (Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)", expanded=False):
+                    st.markdown(f"""
+                        <div class="card-ai-step card-ai-blue" style="margin-top: 0.35rem;">
+                            <div class="card-ai-title" style="color: #1D4ED8;">🧪 Rekomendasi Obat Semprot</div>
+                            <div class="card-ai-sub">(Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)</div>
+                            <div class="card-ai-body">{html_obat}</div>
                         </div>
-                        <div class="card-ai-sub">(Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)</div>
-                        <div class="card-ai-body">{html_obat}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
 
                 # KARTU 3: PERAWATAN LAHAN & PUPUK (HIJAU)
-                st.markdown(f"""
-                    <div class="card-ai-step card-ai-green">
-                        <div class="card-ai-title" style="color: #15803D;">
-                            🌾 Perawatan Lahan & Pupuk (Detail Solusi)
+                with st.expander("🌾 Perawatan Lahan & Pupuk (Detail Solusi)", expanded=False):
+                    st.markdown(f"""
+                        <div class="card-ai-step card-ai-green" style="margin-top: 0.35rem;">
+                            <div class="card-ai-title" style="color: #15803D;">🌾 Perawatan Lahan & Pupuk (Detail Solusi)</div>
+                            <div class="card-ai-sub">(Rangkuman Riset Balitsa Lembang, BPTP Kementan & Jurnal Proteksi Tanaman)</div>
+                            <div class="card-ai-body">{html_lahan}</div>
                         </div>
-                        <div class="card-ai-sub">(Rangkuman Riset Balitsa Lembang, BPTP Kementan & Jurnal Proteksi Tanaman)</div>
-                        <div class="card-ai-body">{html_lahan}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
 
                 # Tombol Aksi Bawah: Minta Alternatif & Tutup Detail Langkah 3
                 st.markdown("<div style='margin-top: 1rem;'>", unsafe_allow_html=True)
