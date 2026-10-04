@@ -3947,23 +3947,6 @@ if selected_image is not None and not file_error:
                 </div>
             """, unsafe_allow_html=True)
 
-            if diag_info.get("is_auto_cropped", False):
-                st.markdown(f"""
-                    <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 10px 14px; margin: 4px 0 12px 0; display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 1.3rem;">🎯</span>
-                        <div>
-                            <strong style="color: #166534; font-size: 0.90rem;">Fokus Helai Daun Otomatis Berhasil:</strong>
-                            <div style="color: #334155; font-size: 0.82rem;">Objek luar seperti tangan atau tanah berhasil disingkirkan ({diag_info.get('leaf_coverage_pct', 0)}% area terfokus) sehingga diagnosa AI tertuju murni pada daun bawang merah.</div>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-                with st.expander("🔍 Lihat Hasil Pemotongan Otomatis Daun (Auto-Crop)", expanded=False):
-                    col_crop1, col_crop2 = st.columns([1, 1])
-                    with col_crop1:
-                        st.image(preview_crop, caption="Fokus Helai Daun (Bebas Latar Belakang)", use_container_width=True)
-                    with col_crop2:
-                        st.image(selected_image, caption="Foto Asli Sebelum Dipotong", use_container_width=True)
-
             is_healthy = is_pure_healthy
             is_pest = info.get("status") == "pest"
 
