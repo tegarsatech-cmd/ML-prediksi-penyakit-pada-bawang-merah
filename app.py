@@ -1692,6 +1692,27 @@ def get_groq_api_key() -> str:
 
     return ""
 
+def get_gemini_api_key() -> str:
+    """
+    Sistem prioritas pembacaan API Key Google Gemini Vision:
+    1. st.secrets["GEMINI_API_KEY"] (Deployment Streamlit Cloud)
+    2. os.getenv("GEMINI_API_KEY") (Environment Variable lokal / server)
+    3. Fallback default key jika disetel
+    """
+    try:
+        if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
+            sec_key = st.secrets["GEMINI_API_KEY"]
+            if sec_key and str(sec_key).strip():
+                return str(sec_key).strip().rstrip(".")
+    except Exception:
+        pass
+
+    env_key = os.getenv("GEMINI_API_KEY", "")
+    if env_key and env_key.strip():
+        return env_key.strip().rstrip(".")
+
+    return ""
+
 def validate_onion_image(image: Image.Image, api_key: str | None = None, min_ratio: float = 0.08):
     """
     Sistem Validasi Guardrail Gatekeeper Citra Tanaman Bawang Merah:
@@ -3016,7 +3037,8 @@ def get_groq_physical_verification(
     return fallback_content
 
 
-def get_groq_auxiliary_second_opinion(
+def consult_gemini_visual_assistant(
+    image: Image.Image | None,
     primary_name: str,
     confidence: float,
     diag_mode: str = "single",
@@ -3025,71 +3047,108 @@ def get_groq_auxiliary_second_opinion(
     third_name: str | None = None,
     third_confidence: float | None = None,
     is_pure_healthy: bool = False,
-    visual_evidence: dict | None = None
-) -> tuple[str, bool]:
+    visual_evidence: dict | None = None,
+    conf_threshold: float = 70.0
+) -> tuple[str, bool, str]:
     """
-    Asisten Verifikasi Langkah 2 (Kolaborasi Dual-Engine Pembantu Biasa):
-    Groq memberikan konfirmasi / pendapat kedua (second opinion) singkat 1-2 kalimat
-    terhadap hasil prediksi model EfficientNet-B0 dan bukti fisik piksel daun.
-    Jika kuota Groq limit / offline / lambat (>3.5 detik), otomatis fallback
-    ke catatan verifikasi mandiri berbasis aturan fitopatologi Balitsa tanpa mengganggu sistem.
-    Mengembalikan: (teks_opini, is_from_groq).
+    Asisten Visual Gemini AI (Opini Kedua Foto Daun saat Ragu / 2-3 Kemungkinan Penyakit):
+    - Fokus: Membantu verifikasi visual saat ada keraguan atau kemungkinan 2-3 penyakit
+      (two_way, three_way, atau confidence di bawah ambang batas keyakinan).
+    - Konservasi Token Kuota: Jika diagnosa dominan, pasti (single & confidence >= threshold),
+      atau daun sehat prima, Gemini TIDAK dipanggil (menghemat 100% token quota).
+    - Multimodal Visual: Mengamati langsung bercak/lesi foto daun (bentuk cincin konsentris,
+      cekungan, warna, luka berair) untuk membedakan penyakit yang bersaing.
+    - Fallback Handal: Jika Gemini offline, kuota limit (429), atau lambat (>4.0s),
+      otomatis fallback mandiri ke aturan fitopatologi Balitsa.
+
+    Mengembalikan: (teks_opini, is_from_gemini, label_sumber)
     """
     if is_pure_healthy:
         fallback = "✅ Verifikasi Diagnosa: Karakteristik helai daun hijau segar merata dan berlilin alami mengonfirmasi tanaman berada dalam kondisi sehat prima bebas infeksi patogen aktif."
-    elif diag_mode == "three_way" and second_name and third_name:
-        fallback = f"💡 Verifikasi Lapangan: Terdeteksi sebaran probabilitas antara {primary_name}, {second_name}, dan {third_name}. Disarankan mengamati 3 titik fokus gejala fisik di kebun sebelum menentukan tindakan semprot."
+        return fallback, False, "🌱 Verifikasi Mandiri Balitsa"
+
+    is_doubtful = (diag_mode in ("two_way", "three_way")) or (confidence < conf_threshold)
+
+    # Menyiapkan teks fallback lokal fitopatologi Balitsa
+    if diag_mode == "three_way" and second_name and third_name:
+        fallback = f"💡 Verifikasi Lapangan: Terdeteksi sebaran probabilitas antara {primary_name} ({confidence:.1f}%), {second_name} ({second_confidence or 0:.1f}%), dan {third_name} ({third_confidence or 0:.1f}%). Disarankan mengamati 3 titik fokus gejala fisik di kebun sebelum menentukan tindakan semprot."
     elif diag_mode == "two_way" and second_name:
         fallback = f"💡 Verifikasi Lapangan: Model mendeteksi kemiripan gejala antara {primary_name} ({confidence:.1f}%) dan {second_name} ({second_confidence or 0:.1f}%). Lakukan uji fisik pembeda (usap jari / bau) pada helai daun di bedengan untuk memastikan."
+    elif confidence < conf_threshold:
+        fallback = f"🔍 Verifikasi Lapangan: Tingkat keyakinan diagnosis ({confidence:.1f}%) berada di rentang waspada. Cermati penampakan bercak dan lakukan uji raba di kebun."
     else:
         sev_info = visual_evidence.get('severity_level', 'gejala aktif') if visual_evidence else 'gejala aktif'
-        fallback = f"🔍 Verifikasi Diagnosa: Karakteristik kerusakan helai daun ({sev_info}) selaras dengan profil fitopatologi Balitsa untuk {primary_name}. Silakan cocokkan dengan ciri fisik di sawah."
+        fallback = f"🔍 Verifikasi Diagnosa: Karakteristik kerusakan helai daun ({sev_info}) dengan tingkat kepastian tinggi ({confidence:.1f}%) selaras dengan profil fitopatologi Balitsa untuk {primary_name}. Silakan cocokkan dengan ciri fisik di sawah."
+        # Kasus pasti dominan: HEMAT 100% token Gemini!
+        return fallback, False, "🌱 Verifikasi Mandiri Balitsa"
 
-    api_key = get_groq_api_key()
-    if not api_key:
-        return fallback, False
+    # Jika ragu / 2-3 kemungkinan penyakit, panggil Asisten Visual Gemini
+    api_key = get_gemini_api_key()
+    if not api_key or image is None:
+        return fallback, False, "🌱 Verifikasi Mandiri Balitsa"
 
-    user_prompt = f"Model EfficientNet memprediksi: {primary_name} (Kepastian: {confidence:.1f}%).\nMode: {diag_mode}.\n"
-    if second_name:
-        user_prompt += f"Pesaing 2: {second_name} ({second_confidence or 0:.1f}%).\n"
-    if third_name:
-        user_prompt += f"Pesaing 3: {third_name} ({third_confidence or 0:.1f}%).\n"
-    if visual_evidence:
-        sev = visual_evidence.get("severity_pct", 0)
-        desc = visual_evidence.get("evidence_desc", "")
-        user_prompt += f"Bukti fisik piksel daun: Kerusakan {sev:.1f}%. {desc}\n"
-    user_prompt += "Berikan konfirmasi ringkas 1-2 kalimat padat apakah gejala ini selaras dan apa yang perlu dipastikan petani di sawah."
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "User-Agent": "AgroScan-Assistant/1.0"
-    }
-    payload = {
-        "model": "qwen/qwen3.8-27b",
-        "temperature": 0.5,
-        "max_tokens": 140,
-        "messages": [
-            {
-                "role": "system",
-                "content": "Anda adalah Dokter Tanaman Konsultan Balitsa & BPTP Kementan. Berikan 1-2 kalimat padat konfirmasi/pendapat kedua atas hasil deteksi model AI dan kondisi daun bawang merah."
-            },
-            {
-                "role": "user",
-                "content": user_prompt
-            }
-        ]
-    }
     try:
-        r = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=3.5)
-        if r.status_code == 200:
-            res_content = r.json()["choices"][0]["message"]["content"].strip()
-            if len(res_content) > 15:
-                return res_content, True
+        # Resize dan kompres gambar hemat token (~384x384, ~30KB)
+        img_copy = image.copy().convert("RGB")
+        img_copy.thumbnail((384, 384), Image.Resampling.LANCZOS)
+        buf = BytesIO()
+        img_copy.save(buf, format="JPEG", quality=75)
+        b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+        candidates_text = f"- Pilihan 1: {primary_name} ({confidence:.1f}%)\n"
+        if second_name:
+            candidates_text += f"- Pilihan 2: {second_name} ({second_confidence or 0:.1f}%)\n"
+        if third_name:
+            candidates_text += f"- Pilihan 3: {third_name} ({third_confidence or 0:.1f}%)\n"
+
+        prompt_text = (
+            "Anda adalah Asisten Dokter Tanaman Spesialis Citra Daun Bawang Merah.\n"
+            "Model pendeteksi menemukan kemungkinan gejala yang bersaing pada daun bawang ini:\n"
+            f"{candidates_text}\n"
+            "Tugas Anda: Amati foto daun ini secara visual dengan cermat.\n"
+            "Berikan analisis pembeda visual singkat 1-2 kalimat dalam Bahasa Indonesia yang lugas: "
+            "ciri lesi visual apa yang paling tampak pada daun (bentuk, cincin konsentris, cekungan, warna, atau pola bercak), "
+            "dan penyakit mana yang paling sesuai berdasarkan penampakan foto tersebut."
+        )
+
+        models_to_try = ["gemini-3.5-flash-lite", "gemini-2.5-flash"]
+        for m in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {"inline_data": {"mime_type": "image/jpeg", "data": b64_img}},
+                            {"text": prompt_text}
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 600
+                }
+            }
+            try:
+                r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=4.5)
+                if r.status_code == 200:
+                    data = r.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        raw_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                        if len(raw_text) > 15:
+                            return raw_text, True, "✨ Google Gemini Vision"
+            except Exception:
+                continue
     except Exception:
         pass
 
-    return fallback, False
+    return fallback, False, "🌱 Verifikasi Mandiri Balitsa"
+
+
+def get_groq_auxiliary_second_opinion(*args, **kwargs):
+    """Alias kompatibilitas: Mengarahkan opini kedua ke consult_gemini_visual_assistant."""
+    return consult_gemini_visual_assistant(*args, **kwargs)
+
 
 
 def build_complete_practical_summary(info, second_info=None, is_differential=False, third_info=None, is_three_way=False):
@@ -3528,22 +3587,28 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # Indikator Status Koneksi Groq AI Otomatis (Secrets / Env)
-    active_key = get_groq_api_key()
-    if active_key and len(active_key) > 15:
-        st.markdown(
-            "<div style='text-align: center; margin: 0.1rem 0 0.75rem 0; font-weight: 700; color: #16a34a; font-size: 0.95rem;'>"
-            "🟢 AI Dokter Terhubung"
-            "</div>",
-            unsafe_allow_html=True
-        )
-    else:
-        st.markdown(
-            "<div style='text-align: center; margin: 0.1rem 0 0.75rem 0; font-weight: 700; color: #dc2626; font-size: 0.95rem;'>"
-            "🟡 Mode Agronomi Mandiri (Offline)"
-            "</div>",
-            unsafe_allow_html=True
-        )
+    # Indikator Status Koneksi AI Otomatis (Secrets / Env)
+    active_groq_key = get_groq_api_key()
+    active_gemini_key = get_gemini_api_key()
+    groq_ok = bool(active_groq_key and len(active_groq_key) > 15)
+    gemini_ok = bool(active_gemini_key and len(active_gemini_key) > 15)
+
+    st.markdown(f"""
+        <div style="background: #F8FAFC; border-radius: 10px; padding: 8px 10px; margin: 0.3rem 0 0.8rem 0; border: 1px solid #E2E8F0; font-size: 0.80rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                <span style="font-weight: 700; color: #334155;">✨ Gemini Vision:</span>
+                <span style="color: {'#16A34A' if gemini_ok else '#DC2626'}; font-weight: 800;">
+                    {'🟢 Siap (Langkah 2)' if gemini_ok else '🟡 Standby'}
+                </span>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-weight: 700; color: #334155;">🤖 Groq Apoteker:</span>
+                <span style="color: {'#16A34A' if groq_ok else '#DC2626'}; font-weight: 800;">
+                    {'🟢 Siap (Langkah 3)' if groq_ok else '🟡 Mode Mandiri'}
+                </span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
     st.divider()
 
@@ -4528,12 +4593,14 @@ if selected_image is not None and not file_error:
                 st.markdown("</div>", unsafe_allow_html=True)
 
             # ==============================================================================
-            # ASISTEN DOKTER AI: KONFIRMASI & PENDAPAT KEDUA (DUAL-ENGINE COOPERATION)
-            # Berperan sebagai pembantu biasa; jika Groq limit/offline, otomatis fallback mandiri
+            # ASISTEN DOKTER AI: KONFIRMASI & PENDAPAT KEDUA (TRIO-ENGINE: GEMINI VISION)
+            # Fokus membantu jika ada keraguan atau kemungkinan 2-3 penyakit.
+            # Menghemat kuota token jika diagnosis pasti/sehat. Groq dikhususkan untuk Langkah 3.
             # ==============================================================================
             opinion_cache_key = f"second_opinion_{current_img_sig}"
             if opinion_cache_key not in st.session_state:
-                st.session_state[opinion_cache_key] = get_groq_auxiliary_second_opinion(
+                st.session_state[opinion_cache_key] = consult_gemini_visual_assistant(
+                    image=selected_image,
                     primary_name=info['nama_id'],
                     confidence=top_confidence,
                     diag_mode=diag_mode,
@@ -4542,26 +4609,50 @@ if selected_image is not None and not file_error:
                     third_name=third_info.get('nama_id', third_class_raw) if (diag_mode == 'three_way' and third_info) else None,
                     third_confidence=third_confidence if (diag_mode == 'three_way' and third_info) else None,
                     is_pure_healthy=is_pure_healthy,
-                    visual_evidence=visual_evidence
+                    visual_evidence=visual_evidence,
+                    conf_threshold=conf_threshold
                 )
-            second_opinion_text, is_from_groq = st.session_state[opinion_cache_key]
+            second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
 
-            badge_src_label = "🤖 Groq AI Intelligence" if is_from_groq else "🌱 Verifikasi Mandiri Balitsa"
-            badge_bg = "#DCFCE7" if is_from_groq else "#F1F5F9"
-            badge_color = "#166534" if is_from_groq else "#475569"
-            badge_border = "#86EFAC" if is_from_groq else "#CBD5E1"
+            if is_from_gemini:
+                card_bg = "#FAF5FF"
+                card_border = "#DDD6FE"
+                accent_bar = "#8B5CF6"
+                title_color = "#6D28D9"
+                text_color = "#2E1065"
+                badge_bg = "#EDE9FE"
+                badge_color = "#5B21B6"
+                badge_border = "#C4B5FD"
+                title_icon = "🩺✨"
+                title_label = "Opini Kedua Asisten Gemini AI (Analisis Visual Foto Daun)"
+                sub_note = "Analisis multimodal cerdas membedakan lesi 2–3 penyakit yang bersaing"
+            else:
+                card_bg = "#F8FAFC"
+                card_border = "#E2E8F0"
+                accent_bar = "#16A34A"
+                title_color = "#166534"
+                text_color = "#0F172A"
+                badge_bg = "#F1F5F9"
+                badge_color = "#475569"
+                badge_border = "#CBD5E1"
+                title_icon = "🩺"
+                title_label = "Verifikasi Diagnosa Lapangan (Standar Balitsa)"
+                sub_note = "Verifikasi fitopatologi mandiri terintegrasi (kuota token AI dihemat)"
 
             st.markdown(f"""
-                <div style="background: #F0FDF4; border-left: 5px solid #16A34A; border-radius: 12px; padding: 12px 16px; margin: 12px 0 16px 0; border: 1px solid #BBF7D0; border-left-width: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                <div style="background: {card_bg}; border-left: 5px solid {accent_bar}; border-radius: 12px; padding: 13px 17px; margin: 12px 0 16px 0; border: 1px solid {card_border}; border-left-width: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
-                        <span style="font-weight: 800; font-size: 0.90rem; color: #166534; display: flex; align-items: center; gap: 6px;">
-                            🩺 <span>Konfirmasi & Pendapat Kedua (Asisten Dokter AI)</span>
-                        </span>
-                        <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.74rem; font-weight: 800; padding: 2px 10px; border-radius: 999px; border: 1px solid {badge_border};">
+                        <div>
+                            <span style="font-weight: 800; font-size: 0.92rem; color: {title_color}; display: flex; align-items: center; gap: 6px;">
+                                {title_icon} <span>{title_label}</span>
+                            </span>
+                            <div style="font-size: 0.74rem; color: #64748B; margin-top: 2px;">{sub_note}</div>
+                        </div>
+                        <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.76rem; font-weight: 800; padding: 3px 11px; border-radius: 999px; border: 1px solid {badge_border};">
                             {badge_src_label}
                         </span>
                     </div>
-                    <div style="font-size: 0.88rem; color: #14532D; line-height: 1.6;">
+                    <div style="font-size: 0.89rem; color: {text_color}; line-height: 1.6; margin-top: 6px;">
                         {second_opinion_text}
                     </div>
                 </div>
