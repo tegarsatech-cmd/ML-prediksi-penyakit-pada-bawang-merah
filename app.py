@@ -1666,6 +1666,41 @@ def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.08) -> tupl
         
         if plant_ratio < min_ratio:
             return False, f"Rasio daun bawang pada foto hanya {plant_ratio*100:.1f}% (minimal {min_ratio*100:.0f}%).", plant_ratio
+
+        # 3. Analisis Geometri Morfologi Daun Bawang Merah (Bentuk Ramping Memanjang vs Bidang Lebar Padat)
+        if cv2 is not None:
+            clean_mask = cv2.morphologyEx(plant_mask.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+            contours, _ = cv2.findContours(clean_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if contours:
+                sig_contours = [c for c in contours if cv2.contourArea(c) >= 35]
+                if sig_contours:
+                    has_shallot_structure = False
+                    is_massive_solid_block = False
+
+                    for c in sig_contours:
+                        c_area = cv2.contourArea(c)
+                        rect = cv2.minAreaRect(c)
+                        l = max(rect[1])
+                        w = min(rect[1])
+                        aspect = l / max(w, 1.0)
+
+                        hull = cv2.convexHull(c)
+                        hull_area = cv2.contourArea(hull)
+                        solidity = c_area / max(hull_area, 1.0)
+
+                        # Karakteristik helai daun bawang: ramping memanjang (aspect >= 1.45) ATAU rumpun bercabang berongga (solidity <= 0.65)
+                        if aspect >= 1.45 or (c_area > 300 and solidity <= 0.65):
+                            has_shallot_structure = True
+
+                        # Blok hijau padat raksasa (kain hijau/kertas/dinding)
+                        if c_area > (224 * 224 * 0.40) and aspect < 1.35 and solidity > 0.85:
+                            is_massive_solid_block = True
+
+                    if is_massive_solid_block:
+                        return False, "Terdeteksi bidang hijau padat/lebar (seperti kain atau dinding), bukan helai daun bawang.", plant_ratio
+
+                    if not has_shallot_structure:
+                        return False, "Bentuk objek terdeteksi melebar padat (daun lebar/bukan bawang), bukan helai daun bawang merah.", plant_ratio
             
         return True, "Valid", plant_ratio
     except Exception as e:
@@ -3106,8 +3141,9 @@ def consult_gemini_visual_assistant(
             "Model pendeteksi menemukan kemungkinan gejala yang bersaing pada daun bawang ini:\n"
             f"{candidates_text}\n"
             "Tugas Anda: Amati foto daun ini secara visual dengan cermat.\n"
-            "Berikan analisis pembeda visual singkat 1-2 kalimat dalam Bahasa Indonesia yang lugas: "
-            "ciri lesi visual apa yang paling tampak pada daun (bentuk, cincin konsentris, cekungan, warna, atau pola bercak), "
+            "1. Jika foto ini ternyata bukan daun tanaman bawang merah (misal daun mangga, cabai, rumput, atau benda non-bawang), sebutkan secara tegas bahwa objek ini bukan daun bawang merah.\n"
+            "2. Jika benar daun bawang merah, berikan analisis pembeda visual singkat 1-2 kalimat dalam Bahasa Indonesia: "
+            "ciri lesi visual apa yang paling tampak pada daun (bentuk cincin konsentris, cekungan melekuk, warna, atau pola bercak), "
             "dan penyakit mana yang paling sesuai berdasarkan penampakan foto tersebut."
         )
 
