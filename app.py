@@ -1448,18 +1448,54 @@ def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.08) -> tuple[Ima
         if valid_c:
             all_pts = np.vstack(valid_c)
             bx, by, bw, bh = cv2.boundingRect(all_pts)
+            raw_coverage = (bw * bh) / float(thumb_dim * thumb_dim)
+        else:
+            bx, by, bw, bh = 0, 0, thumb_dim, thumb_dim
+            raw_coverage = 1.0
+
+        # SMART CENTER SALIENCY CROP:
+        # Jika dedaunan terdeteksi menyentuh hampir seluruh sudut layar (tanaman campur / pot penuh dari jauh)
+        # Pangkas dedaunan luar/perifer dan fokuskan pada rumpun daun bawang di area tengah bidikan!
+        if raw_coverage >= 0.85 or (bx <= 3 and by <= 3 and bw >= thumb_dim - 6 and bh >= thumb_dim - 6):
+            # 1. Filter morfologi silinder vertikal (helai daun bawang merah tegak memanjang)
+            kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 7))
+            tubes = cv2.morphologyEx(clean_leaf_mask, cv2.MORPH_OPEN, kernel_v)
+
+            # 2. Distribusi spasial kolom & baris untuk mengabaikan tanaman perifer luar (jambu, lidah buaya, pot)
+            col_density = np.mean(tubes, axis=0)
+            row_density = np.mean(tubes, axis=1)
+
+            thresh_col = np.percentile(col_density, 30)
+            active_cols = np.where(col_density > max(thresh_col, 0.04))[0]
+
+            thresh_row = np.percentile(row_density, 25)
+            active_rows = np.where(row_density > max(thresh_row, 0.04))[0]
+
+            # Potongan fokus tengah (fokus pada 60-70% area tengah tempat kamera dibidikkan)
+            x1_s = max(int(thumb_dim * 0.12), int(np.percentile(active_cols, 5))) if len(active_cols) > 0 else int(thumb_dim * 0.14)
+            x2_s = min(int(thumb_dim * 0.88), int(np.percentile(active_cols, 95))) if len(active_cols) > 0 else int(thumb_dim * 0.86)
+
+            y1_s = max(int(thumb_dim * 0.09), int(np.percentile(active_rows, 5))) if len(active_rows) > 0 else int(thumb_dim * 0.10)
+            y2_s = min(int(thumb_dim * 0.90), int(np.percentile(active_rows, 95))) if len(active_rows) > 0 else int(thumb_dim * 0.88)
+
+            ox1, oy1 = int(x1_s * scale_w), int(y1_s * scale_h)
+            ox2, oy2 = int(x2_s * scale_w), int(y2_s * scale_h)
+        else:
+            # Foto fokus helai tunggal biasa: gunakan bounding box kontur + padding
             ox1 = int(bx * scale_w)
             oy1 = int(by * scale_h)
             ox2 = int((bx + bw) * scale_w)
             oy2 = int((by + bh) * scale_h)
-        else:
-            plant_pixels = np.argwhere(total_leaf_mask)
-            if len(plant_pixels) < 30:
-                return img_rgb, (0, 0, orig_w, orig_h), 1.0
-            y_min, x_min = plant_pixels.min(axis=0)
-            y_max, x_max = plant_pixels.max(axis=0)
-            ox1, oy1 = int(x_min * scale_w), int(y_min * scale_h)
-            ox2, oy2 = int(x_max * scale_w), int(y_max * scale_h)
+
+            bw_px = ox2 - ox1
+            bh_px = oy2 - oy1
+            pad_x = int(bw_px * padding_pct)
+            pad_y = int(bh_px * padding_pct)
+
+            ox1 = max(0, ox1 - pad_x)
+            oy1 = max(0, oy1 - pad_y)
+            ox2 = min(orig_w, ox2 + pad_x)
+            oy2 = min(orig_h, oy2 + pad_y)
     else:
         plant_pixels = np.argwhere(total_leaf_mask)
         if len(plant_pixels) < 30:
@@ -1468,26 +1504,24 @@ def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.08) -> tuple[Ima
         y_max, x_max = plant_pixels.max(axis=0)
         ox1, oy1 = int(x_min * scale_w), int(y_min * scale_h)
         ox2, oy2 = int(x_max * scale_w), int(y_max * scale_h)
+        bw_px = ox2 - ox1
+        bh_px = oy2 - oy1
+        pad_x = int(bw_px * padding_pct)
+        pad_y = int(bh_px * padding_pct)
+        ox1 = max(0, ox1 - pad_x)
+        oy1 = max(0, oy1 - pad_y)
+        ox2 = min(orig_w, ox2 + pad_x)
+        oy2 = min(orig_h, oy2 + pad_y)
 
-    bw_px = ox2 - ox1
-    bh_px = oy2 - oy1
-    pad_x = int(bw_px * padding_pct)
-    pad_y = int(bh_px * padding_pct)
-
-    fx1 = max(0, ox1 - pad_x)
-    fy1 = max(0, oy1 - pad_y)
-    fx2 = min(orig_w, ox2 + pad_x)
-    fy2 = min(orig_h, oy2 + pad_y)
-
-    crop_w = fx2 - fx1
-    crop_h = fy2 - fy1
+    crop_w = ox2 - ox1
+    crop_h = oy2 - oy1
     area_ratio = (crop_w * crop_h) / float(orig_w * orig_h)
 
     if area_ratio < 0.02 or crop_w < 30 or crop_h < 30:
         return img_rgb, (0, 0, orig_w, orig_h), 1.0
 
-    cropped_roi = img_rgb.crop((fx1, fy1, fx2, fy2))
-    return cropped_roi, (fx1, fy1, fx2, fy2), area_ratio
+    cropped_roi = img_rgb.crop((ox1, oy1, ox2, oy2))
+    return cropped_roi, (ox1, oy1, ox2, oy2), area_ratio
 
 def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: bool = True, **kwargs):
     """
@@ -3949,7 +3983,7 @@ if selected_image is not None and not file_error:
             st.markdown(
                 f"<div style='text-align: center; margin-top: -4px; margin-bottom: 6px;'>"
                 f"<span style='background: #DCFCE7; color: #166534; font-size: 0.78rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; border: 1px solid #86EFAC; display: inline-flex; align-items: center; gap: 4px;'>"
-                f"✂️ <span>Fokus Helai Daun Terpotong Otomatis (Area: {leaf_coverage*100.0:.0f}%)</span>"
+                f"✂️ <span>Fokus Helai Daun Terpotong Otomatis (Smart Saliency: {leaf_coverage*100.0:.0f}% area fokus)</span>"
                 f"</span></div>",
                 unsafe_allow_html=True
             )
