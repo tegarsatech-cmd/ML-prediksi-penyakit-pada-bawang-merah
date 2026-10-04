@@ -3938,9 +3938,9 @@ with st.sidebar:
 
     st.divider()
     st.markdown("""
-        <div style='font-size: 0.85rem; color: #94a3b8; text-align: center;'>
-            Model Deep Learning: EfficientNet-B0 TorchScript (7 Kelas)<br>
-            Asisten AI: Groq Cloud Intelligence & Built-in Engine
+        <div style='font-size: 0.82rem; color: #94a3b8; text-align: center;'>
+            Model Utama: EfficientNet-B0 TorchScript (7 Kelas)<br>
+            Standar Diagnosa: Balitsa & BPTP Kementan RI
         </div>
     """, unsafe_allow_html=True)
 
@@ -4145,17 +4145,15 @@ if selected_image is not None and not file_error:
     st.markdown(f"""
         <div style="background: {m_bg}; border: 1.5px solid {m_border}; border-radius: 12px; padding: 10px 14px; margin: 6px 0 14px 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
-                <span style="font-weight: 700; color: #1e293b; font-size: 0.90rem;">🍃 Monitor Validasi Kanopi Daun (Live Real-Time):</span>
+                <span style="font-weight: 700; color: #1e293b; font-size: 0.90rem;">🍃 Validasi Kanopi Daun:</span>
                 <span style="font-weight: 800; color: {m_color}; font-size: 0.85rem;">{m_icon} {m_status_title}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px 12px; font-size: 0.85rem; color: #475569; flex-wrap: wrap;">
-                <span>Daun Terdeteksi: <strong style="color: #0f172a;">{ratio_pct_live:.1f}%</strong></span>
+                <span>Helai Daun Terdeteksi: <strong style="color: #0f172a;">{ratio_pct_live:.1f}%</strong></span>
                 <span>•</span>
-                <span>Batas Slider Anda: <strong style="color: #0f172a;">{min_leaf_ratio_pct}%</strong></span>
+                <span>Batas Minimal: <strong style="color: #0f172a;">{min_leaf_ratio_pct}%</strong></span>
                 <span>•</span>
                 <span>Standar Sawah: <strong style="color: #166534;">8%</strong></span>
-                <span>•</span>
-                <span>Sistem: <strong style="color: #0284c7;">Dual-Engine AI (Vision + Groq)</strong></span>
             </div>
             <div style="background: #e2e8f0; border-radius: 999px; height: 8px; width: 100%; margin-top: 8px; overflow: hidden;">
                 <div style="background: {m_color}; width: {min(max(ratio_pct_live, 0.0), 100.0):.1f}%; height: 100%; border-radius: 999px;"></div>
@@ -4624,8 +4622,7 @@ if selected_image is not None and not file_error:
                 badge_color = "#5B21B6"
                 badge_border = "#C4B5FD"
                 title_icon = "🩺✨"
-                title_label = "Opini Kedua Asisten Gemini AI (Analisis Visual Foto Daun)"
-                sub_note = "Analisis multimodal cerdas membedakan lesi 2–3 penyakit yang bersaing"
+                title_label = "Opini Kedua Asisten AI (Analisis Visual Lesi Daun)"
             else:
                 card_bg = "#F8FAFC"
                 card_border = "#E2E8F0"
@@ -4637,22 +4634,18 @@ if selected_image is not None and not file_error:
                 badge_border = "#CBD5E1"
                 title_icon = "🩺"
                 title_label = "Verifikasi Diagnosa Lapangan (Standar Balitsa)"
-                sub_note = "Verifikasi fitopatologi mandiri terintegrasi (kuota token AI dihemat)"
 
             st.markdown(f"""
                 <div style="background: {card_bg}; border-left: 5px solid {accent_bar}; border-radius: 12px; padding: 13px 17px; margin: 12px 0 16px 0; border: 1px solid {card_border}; border-left-width: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
-                        <div>
-                            <span style="font-weight: 800; font-size: 0.92rem; color: {title_color}; display: flex; align-items: center; gap: 6px;">
-                                {title_icon} <span>{title_label}</span>
-                            </span>
-                            <div style="font-size: 0.74rem; color: #64748B; margin-top: 2px;">{sub_note}</div>
-                        </div>
+                        <span style="font-weight: 800; font-size: 0.92rem; color: {title_color}; display: flex; align-items: center; gap: 6px;">
+                            {title_icon} <span>{title_label}</span>
+                        </span>
                         <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.76rem; font-weight: 800; padding: 3px 11px; border-radius: 999px; border: 1px solid {badge_border};">
                             {badge_src_label}
                         </span>
                     </div>
-                    <div style="font-size: 0.89rem; color: {text_color}; line-height: 1.6; margin-top: 6px;">
+                    <div style="font-size: 0.89rem; color: {text_color}; line-height: 1.6; margin-top: 4px;">
                         {second_opinion_text}
                     </div>
                 </div>
