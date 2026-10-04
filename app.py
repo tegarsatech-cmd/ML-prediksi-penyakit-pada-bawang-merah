@@ -4738,27 +4738,7 @@ if selected_image is not None and not file_error:
             </div>
         """, unsafe_allow_html=True)
 
-        # Bar Perbandingan Keyakinan vs Ambang Batas Slider (Transparan & Responsif)
-        if top_confidence >= 60.0 and diag_mode == "single":
-            badge_conf_html = f'<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">🟢 Lolos Langsung (Kepastian: {top_confidence:.1f}%)</span>'
-        elif is_from_gemini:
-            badge_conf_html = f'<span style="background: #ecfdf5; color: #065f46; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #a7f3d0; font-size: 0.78rem;">🛡️ Terverifikasi Valid oleh Sistem Pakar ({top_confidence:.1f}%)</span>'
-        else:
-            diff_conf = top_confidence - conf_threshold_pct
-            diff_text = f"+{diff_conf:.1f}%" if diff_conf >= 0 else f"{diff_conf:.1f}%"
-            badge_conf_html = f'<span style="background: #f1f5f9; color: #334155; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #cbd5e1; font-size: 0.78rem;">🔍 Diagnosa Sistem ({top_confidence:.1f}%, {diff_text})</span>'
 
-        st.markdown(f"""
-            <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 10px 14px; margin: 4px 0 14px 0; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                <div>
-                    🎯 <strong>Tingkat Keyakinan Diagnosa:</strong> <span style="color: #15803d; font-weight: 800; font-size: 1rem;">{top_confidence:.1f}%</span> 
-                    <span style="color: #64748b; font-size: 0.82rem;">(Batas Keyakinan Slider Anda: <strong>{conf_threshold_pct}%</strong>)</span>
-                </div>
-                <div>
-                    {badge_conf_html}
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
 
         is_healthy = is_pure_healthy
         is_pest = info.get("status") == "pest"
