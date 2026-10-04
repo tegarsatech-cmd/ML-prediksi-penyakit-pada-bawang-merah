@@ -1668,24 +1668,6 @@ def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.08) -> tupl
         if plant_ratio < min_ratio:
             return False, f"Rasio daun bawang pada foto hanya {plant_ratio*100:.1f}% (minimal {min_ratio*100:.0f}%).", plant_ratio
 
-        # 3. Analisis Bidang Hijau Padat Raksasa (kain hijau/kertas/dinding artifisial)
-        if cv2 is not None:
-            clean_mask = cv2.morphologyEx(plant_mask.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
-            contours, _ = cv2.findContours(clean_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if contours:
-                for c in contours:
-                    c_area = cv2.contourArea(c)
-                    if c_area > (224 * 224 * 0.40):
-                        rect = cv2.minAreaRect(c)
-                        l = max(rect[1])
-                        w = min(rect[1])
-                        aspect = l / max(w, 1.0)
-                        hull = cv2.convexHull(c)
-                        hull_area = cv2.contourArea(hull)
-                        solidity = c_area / max(hull_area, 1.0)
-                        if aspect < 1.35 and solidity > 0.85:
-                            return False, "Terdeteksi bidang hijau padat/lebar (seperti kain atau dinding), bukan helai daun bawang.", plant_ratio
-            
         return True, "Valid", plant_ratio
     except Exception as e:
         return True, f"Bypass: {e}", 1.0
@@ -4384,22 +4366,22 @@ if selected_image is not None and not file_error:
 
             # 2. JIKA MODEL RAGU (is_uncertain) DAN GEMINI OFFLINE (is_from_gemini = False):
             if is_uncertain and not is_from_gemini:
+                rec_conf_pct = max(35, int(np.floor(top_confidence)))
                 st.markdown(f"""
-                    <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
+                    <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #F59E0B; background: #FFFBEB; margin: 0.8rem 0;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                            <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ HASIL TIDAK MEYAKINKAN</span>
-                            <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Kepastian: {top_confidence:.1f}% (Batas Slider: {conf_th_pct:.0f}%)</span>
+                            <span style="background-color: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">⚠️ BATAS KEYAKINAN</span>
+                            <span style="font-weight: 700; color: #92400E; font-size: 0.92rem;">Kepastian: {top_confidence:.1f}% (Batas Slider: {conf_th_pct:.0f}%)</span>
                         </div>
-                        <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.55;">
-                            Tingkat keyakinan model hanya <strong>{top_confidence:.1f}%</strong> (di bawah batas aman slider <strong>{conf_th_pct:.0f}%</strong>).<br><br>
-                            Gejala penyakit terlalu buram atau belum cocok dengan kategori yang tersedia. Sistem menolak diagnosa otomatis demi mencegah kesalahan penanganan di kebun.<br><br>
-                            <strong>💡 Petunjuk Pengambilan Foto:</strong><br>
-                            • Pastikan objek yang difoto adalah tanaman daun bawang merah asli.<br>
-                            • Ambil foto dari jarak dekat (10–20 cm) dengan pencahayaan terang tepat pada helai daun yang bergejala.<br>
-                            • Jika ini benar daun bawang di kebun dengan gejala awal yang masih sangat tipis, Anda dapat menyelaraskan slider batas keyakinan di menu sidebar.
+                        <div style="font-size: 0.88rem; color: #78350F; line-height: 1.55;">
+                            Kepastian model tercatat <strong>{top_confidence:.1f}%</strong> (di bawah batas slider <strong>{conf_th_pct:.0f}%</strong>).<br>
+                            Jika ini daun bawang merah asli di kebun dengan gejala awal atau rumpun lebar, Anda dapat menyelaraskan batas keyakinan langsung dengan tombol cepat di bawah untuk melanjutkan diagnosa:
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
+                if st.button(f"⚡ Selaraskan Batas Keyakinan ({rec_conf_pct}%) & Lanjutkan Diagnosa", type="primary", use_container_width=True, key=f"btn_apply_conf_{current_img_sig}"):
+                    st.session_state["pending_conf_slider"] = rec_conf_pct
+                    st.rerun()
                 st.stop()
 
         # ==============================================================================
