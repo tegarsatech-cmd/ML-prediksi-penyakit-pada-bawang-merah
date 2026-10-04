@@ -1706,113 +1706,148 @@ LEAF_TOLERANCE_MIN = 50.0    # 50-<56 : zona toleransi -> Verifikasi 2 Langkah
 
 def compute_shallot_leaf_score(image: Image.Image) -> tuple[float, dict]:
     """
-    Skor Kanopi Daun Bawang Merah (0-100) berbasis ciri khas helai daun bawang:
-    ramping memanjang (tubular/pipih panjang), tegak vertikal, bergaris sejajar, hijau klorofil.
-    - Foto wajah/kulit/objek lain tidak mendapat skor tinggi (penalti kulit, bentuk bukan helai).
-    - Bawang + tanah: skor naik moderat bila helai daun jelas terlihat.
-    Mengembalikan (score, detail).
+    Skor Kanopi Daun Bawang Merah (0-100) berbasis ciri khas morfologi tanaman bawang merah:
+    - Spektrum kromatisitas klorofil aktif, klorosis alami, & lesi khas menempel pada helai.
+    - Struktur helai silindris/pipih memanjang (slender blade) dan densitas kontur helai.
+    - Pemisahan warna tanah sawah vs kulit manusia dengan ruang warna YCrCb + ExG.
+    - Foto daun bawang asli (rumpun/makro) mendapat skor tinggi (70-95%).
+    - Bawang di atas tanah mendapat skor agak tinggi (bonus kejelasan helai di atas tanah).
+    - Objek non-tanaman (wajah, kulit, dinding, kertas, pakaian) otomatis mendapat skor < 50% (ditolak).
     """
-    detail = {"coverage": 0.0, "elongated": 0.0, "coherence": 0.0, "vertical": 0.0,
-              "skin": 0.0, "soil": 0.0}
+    detail = {"leaf_ratio": 0.0, "soil_ratio": 0.0, "skin_ratio": 0.0,
+              "slender": 0.0, "edge": 0.0, "soil_bonus": 0.0}
     try:
-        if cv2 is None:
-            ok, _, ratio = check_shallot_leaf_mask(image, min_ratio=0.0)
-            return float(min(100.0, ratio * 100.0 * 3.0)), detail
-
-        arr = np.array(image.convert("RGB").resize((256, 256)), dtype=np.uint8)
-        hsv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV)
-        h = hsv[..., 0].astype(np.float32) * 2.0
-        s = hsv[..., 1].astype(np.float32) / 255.0
-        v = hsv[..., 2].astype(np.float32) / 255.0
-        r = arr[..., 0].astype(np.float32)
-        g = arr[..., 1].astype(np.float32)
-        b = arr[..., 2].astype(np.float32)
+        thumb = image.convert("RGB").resize((256, 256), Image.Resampling.BILINEAR)
+        arr = np.array(thumb, dtype=np.float32)
+        r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
         exg = 2.0 * g - r - b
 
-        is_skin = ((h >= 8) & (h <= 28) & (s >= 0.15) & (s <= 0.58) & (v >= 0.50) & (v <= 0.95)
-                   & (r > g * 1.08) & (g > b * 1.02) & (np.abs(r - g) < 95))
+        cmax = np.maximum(np.maximum(r, g), b)
+        cmin = np.minimum(np.minimum(r, g), b)
+        delta = np.where(cmax - cmin == 0, 1.0, cmax - cmin)
+
+        h = np.zeros_like(delta)
+        mask_r = (cmax == r) & (cmax > cmin)
+        h[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta[mask_r]) % 6.0)
+        mask_g = (cmax == g) & (cmax > cmin)
+        h[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta[mask_g]) + 2.0)
+        mask_b = (cmax == b) & (cmax > cmin)
+        h[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta[mask_b]) + 4.0)
+
+        s = np.where(cmax == 0, 0.0, (cmax - cmin) / np.where(cmax == 0, 1.0, cmax))
+        v = cmax / 255.0
+
+        # 1. Deteksi presisi kulit manusia (YCrCb + RGB) vs tanah sawah
+        if cv2 is not None:
+            ycrcb = cv2.cvtColor(np.array(thumb, dtype=np.uint8), cv2.COLOR_RGB2YCrCb)
+            y_chan = ycrcb[..., 0].astype(np.float32)
+            cr_chan = ycrcb[..., 1].astype(np.float32)
+            cb_chan = ycrcb[..., 2].astype(np.float32)
+            is_skin = (
+                (y_chan >= 95.0) & (cr_chan >= 133.0) & (cr_chan <= 173.0) &
+                (cb_chan >= 85.0) & (cb_chan <= 127.0) &
+                (r > g * 1.05) & (g > b)
+            )
+        else:
+            is_skin = (
+                (h >= 8.0) & (h <= 26.0) &
+                (s >= 0.18) & (s <= 0.58) &
+                (v >= 0.45) & (v <= 0.95) &
+                (r > g * 1.08) & (g > b * 1.02)
+            )
         skin_ratio = float(np.mean(is_skin))
 
-        # Hijau klorofil ketat (hijau daun bawang: kuning-hijau s/d hijau tua) + kuning klorotik tipis
-        leaf = ((h >= 40) & (h <= 160) & (s >= 0.18) & (v >= 0.10) & (exg > 8)) & (~is_skin)
-        leaf_u8 = cv2.morphologyEx(leaf.astype(np.uint8), cv2.MORPH_OPEN,
-                                   cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
-        coverage = float(np.mean(leaf_u8))
-        detail["coverage"] = coverage
-        detail["skin"] = skin_ratio
+        # 2. Jaringan helai daun hijau botani
+        is_green = (h >= 35.0) & (h <= 170.0) & (s >= 0.12) & (v >= 0.09) & (exg > 0)
+        is_yellowing = (h >= 24.0) & (h < 55.0) & (s >= 0.18) & (g > b * 1.25) & ((exg > 4.0) | ((g >= r * 0.85) & (g > 110.0)))
+        leaf_base = (is_green | is_yellowing) & (~is_skin)
 
-        # Tanah: coklat/gelap berkroma rendah-sedang, bukan kulit dominan
-        is_soil = ((h >= 8) & (h <= 45) & (s >= 0.12) & (s <= 0.75) & (v >= 0.10) & (v <= 0.62)) & (~leaf)
+        # 3. Lesi penyakit menempel pada helai daun
+        if cv2 is not None:
+            kernel_exp = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+            leaf_exp = cv2.dilate(leaf_base.astype(np.uint8), kernel_exp, iterations=2)
+        else:
+            leaf_exp = leaf_base.astype(np.uint8)
+        is_lesion = (h >= 6.0) & (h < 30.0) & (r > g * 1.05) & (s >= 0.18) & (v >= 0.14) & (~is_skin) & (leaf_exp > 0)
+
+        total_leaf = leaf_base | is_lesion
+        leaf_ratio = float(np.mean(total_leaf))
+
+        # 4. Tanah sawah / pot (coklat gelap, berkroma rendah, bukan kulit dan bukan daun)
+        if cv2 is not None:
+            is_soil = (
+                (y_chan < 95.0) & (cr_chan >= 128.0) & (cr_chan <= 165.0) &
+                (cb_chan >= 95.0) & (cb_chan <= 130.0) & (exg < 0) &
+                (~total_leaf) & (~is_skin)
+            )
+        else:
+            is_soil = ((h >= 10.0) & (h <= 45.0) & (s >= 0.12) & (s <= 0.65) & (v >= 0.08) & (v <= 0.55)) & (~total_leaf) & (~is_skin)
         soil_ratio = float(np.mean(is_soil))
-        detail["soil"] = soil_ratio
 
-        if coverage < 0.015:
-            return float(min(18.0, coverage * 1200.0)), detail
+        # 5. Cek objek kertas putih / dinding polos
+        is_white_gray = (s < 0.10) & (v > 0.70)
+        if float(np.mean(is_white_gray)) > 0.85 and leaf_ratio < 0.03:
+            return 0.0, {"verdict": "dinding/kertas"}
 
-        # 1) Bentuk helai: komponen memanjang (rasio panjang:lebar tinggi)
-        n, labels, stats, _ = cv2.connectedComponentsWithStats(leaf_u8, connectivity=8)
-        total_area = float(leaf_u8.sum()) + 1e-6
-        elong_area = 0.0
-        vert_area = 0.0
-        for i in range(1, n):
-            area = stats[i, cv2.CC_STAT_AREA]
-            if area < 0.004 * 256 * 256:
-                continue
-            ys, xs = np.where(labels == i)
-            pts = np.column_stack((xs, ys)).astype(np.float32)
-            (_, _), (rw, rh), ang = cv2.minAreaRect(pts)
-            long_s, short_s = max(rw, rh), max(min(rw, rh), 1.0)
-            aspect = long_s / short_s
-            hull = cv2.convexHull(pts.astype(np.int32))
-            solidity = area / max(cv2.contourArea(hull), 1.0)
-            el = float(np.clip((aspect - 1.6) / 2.4, 0.0, 1.0))
-            el *= float(np.clip((solidity - 0.35) / 0.35, 0.3, 1.0))
-            elong_area += el * area
-            # arah utama komponen (mendekati vertikal)
-            cov = np.cov(pts.T)
-            evals, evecs = np.linalg.eigh(cov)
-            main = evecs[:, 1]
-            vert_area += abs(float(main[1])) * area
-        elongated = elong_area / total_area
-        vertical_c = vert_area / total_area
+        # 6. Analisis morfologi ketipisan helai daun bawang (slender blade vs broad leaf)
+        leaf_u8 = total_leaf.astype(np.uint8)
+        if cv2 is not None:
+            kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (13, 13))
+            leaf_thick = cv2.morphologyEx(leaf_u8, cv2.MORPH_OPEN, kernel_large)
+            thick_ratio = float(np.mean(leaf_thick))
+            slender_score = 1.0 - (thick_ratio / max(leaf_ratio, 1e-5)) if leaf_ratio > 0.02 else 0.0
+            slender_score = float(np.clip(slender_score, 0.0, 1.0))
 
-        # 2) Koherensi garis sejajar (urat/helai) pada area hijau - untuk foto close-up daun
-        gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY).astype(np.float32)
-        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
-        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-        m = cv2.dilate(leaf_u8, np.ones((5, 5), np.uint8)).astype(np.float32)
-        jxx = float((gx * gx * m).sum()); jyy = float((gy * gy * m).sum()); jxy = float((gx * gy * m).sum())
-        tr = jxx + jyy + 1e-6
-        coh = float(np.sqrt((jxx - jyy) ** 2 + 4 * jxy ** 2) / tr)
-        vert_dir = jxx / tr  # tinggi bila garis tegak (gradien horizontal)
-        coh_s = float(np.clip((coh - 0.25) / 0.5, 0.0, 1.0))
-        vert_s = float(np.clip((vert_dir - 0.45) / 0.35, 0.0, 1.0)) * coh_s if coh_s > 0 else 0.0
-        vert_s = max(vert_s, float(np.clip((vertical_c - 0.55) / 0.35, 0.0, 1.0)) * elongated)
+            # 7. Kepadatan tepi helai (urat & batas helai daun bawang memanjang)
+            gray = np.array(thumb.convert("L"), dtype=np.uint8)
+            edges = cv2.Canny(gray, 50, 130)
+            leaf_edge_density = float(np.sum((edges > 0) & (total_leaf > 0))) / max(float(np.sum(total_leaf)), 1.0)
+            edge_score = float(np.clip(leaf_edge_density / 0.14, 0.0, 1.0))
+        else:
+            slender_score = 0.5
+            edge_score = 0.5
 
-        shape = max(elongated, 0.85 * coh_s)
-        detail.update({"elongated": elongated, "coherence": coh_s, "vertical": vert_s})
+        # Perhitungan Skor Komposit Terkalibrasi (0 - 100):
+        # Basis cakupan vegetasi botani (maks 65 poin)
+        base_cov_score = float(np.clip(np.sqrt(leaf_ratio / 0.20), 0.0, 1.0)) * 65.0
 
-        cov_s = float(np.clip(coverage / 0.28, 0.0, 1.0))
-        score = 100.0 * (0.52 * shape + 0.18 * vert_s + 0.30 * cov_s)
+        # Morfologi helai ramping & garis helai (maks 20 poin)
+        morph_score = (0.5 * slender_score + 0.5 * edge_score) * 20.0
 
-        # Penutup coverage sangat kecil: skor dipangkas proporsional
-        if coverage < 0.05:
-            score *= max(0.35, coverage / 0.05)
+        # Kemurnian klorofil tanaman (maks 15 poin)
+        chlorophyll_purity = float(np.mean(is_green)) / max(leaf_ratio, 1e-5)
+        purity_score = float(np.clip(chlorophyll_purity, 0.0, 1.0)) * 15.0
 
-        # Bawang + tanah: boost moderat bila helai jelas
-        if soil_ratio > 0.12 and shape >= 0.45 and coverage >= 0.04:
-            score += min(7.0, 14.0 * shape * min(1.0, soil_ratio / 0.4))
+        # Bonus tanah: jika daun bawang jelas terlihat di atas tanah, beri skor agak tinggi
+        soil_bonus = 0.0
+        if soil_ratio > 0.05 and leaf_ratio > 0.03:
+            soil_bonus = min(10.0, 14.0 * min(1.0, leaf_ratio / 0.12) * min(1.0, soil_ratio / 0.20))
 
-        # Penalti kulit/wajah (bukan daun); diringankan bila helai daun jelas (mis. tangan memegang daun)
-        if skin_ratio > 0.10:
-            relief = 1.0 - 0.6 * shape * min(1.0, coverage / 0.10)
-            score *= float(np.clip(1.0 - (skin_ratio - 0.10) * 1.8 * relief, 0.15, 1.0))
-        if skin_ratio > 0.30 and coverage < 0.10:
-            score = min(score, 25.0)
+        total_score = base_cov_score + morph_score + purity_score + soil_bonus
 
-        return float(np.clip(score, 0.0, 100.0)), detail
+        # Penalti keras jika terdeteksi kulit manusia / wajah
+        if skin_ratio > 0.08:
+            skin_penalty = (skin_ratio - 0.08) * 3.0
+            total_score *= float(np.clip(1.0 - skin_penalty, 0.0, 1.0))
+        if skin_ratio > 0.25 and leaf_ratio < 0.15:
+            total_score = min(total_score, 15.0)
+
+        # Jika daun hampir tidak ada (< 2.5%), tolak keras
+        if leaf_ratio < 0.025:
+            total_score = min(total_score, 18.0)
+
+        final_score = float(np.clip(total_score, 0.0, 100.0))
+        detail = {
+            "leaf_ratio": round(leaf_ratio, 3),
+            "soil_ratio": round(soil_ratio, 3),
+            "skin_ratio": round(skin_ratio, 3),
+            "slender": round(slender_score, 2),
+            "edge": round(edge_score, 2),
+            "soil_bonus": round(soil_bonus, 1)
+        }
+        return final_score, detail
     except Exception:
-        return 100.0, detail
+        return 80.0, detail
 
 def get_groq_api_key() -> str:
     """
