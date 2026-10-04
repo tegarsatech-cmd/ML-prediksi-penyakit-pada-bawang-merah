@@ -564,22 +564,56 @@ st.markdown("""
         font-weight: 700 !important;
         border-radius: 8px !important;
     }
+
+    /* 7. Input Kamera: Frame Bersih, Label Lega & Anti-Tumpuk */
     [data-testid="stCameraInput"] {
         background-color: #FFFFFF !important;
         border: 2px solid #94A3B8 !important;
         border-radius: 14px !important;
-        padding: 1rem !important;
+        padding: 1.25rem 1.15rem !important;
     }
     [data-testid="stCameraInput"] * {
         color: #0F172A !important;
     }
+    [data-testid="stCameraInput"] label,
+    [data-testid="stCameraInput"] [data-testid="stWidgetLabel"] {
+        display: block !important;
+        margin-top: 0.2rem !important;
+        margin-bottom: 1.2rem !important;
+        padding-bottom: 0.5rem !important;
+        font-weight: 800 !important;
+        font-size: 1.05rem !important;
+        color: #0F172A !important;
+        line-height: 1.6 !important;
+    }
+    [data-testid="stCameraInput"] [data-testid="stWidgetLabel"] p {
+        font-weight: 800 !important;
+        font-size: 1.05rem !important;
+        color: #0F172A !important;
+        margin-bottom: 0.9rem !important;
+        line-height: 1.6 !important;
+    }
 
-    /* Pemisah Lega & Bersih Antara Frame Foto/Video Kamera dengan Tombol Take Photo (Anti-Nempel) */
+    /* Pemisah Lega Antara Frame Foto/Video Kamera dengan Label Atas & Tombol Take Photo Bawah (Anti-Nempel & Anti-Tumpuk) */
+    [data-testid="stCameraInput"] label + div,
+    [data-testid="stCameraInput"] [data-testid="stWidgetLabel"] + div {
+        margin-top: 1rem !important;
+        clear: both !important;
+    }
     [data-testid="stCameraInput"] video,
     [data-testid="stCameraInput"] img {
+        margin-top: 0.9rem !important;
         margin-bottom: 1.3rem !important;
         border-radius: 12px !important;
         display: block !important;
+        max-width: 100% !important;
+        max-height: 380px !important;
+        object-fit: contain !important;
+    }
+    [data-testid="stCameraInput"] [data-testid="stCameraInputWebcamComponent"],
+    [data-testid="stCameraInput"] [data-testid="stCameraInputWebcamStyledBox"] {
+        margin-top: 0.85rem !important;
+        padding-top: 0.35rem !important;
     }
     [data-testid="stCameraInput"] > div:has(button) {
         margin-top: 1.25rem !important;
@@ -597,6 +631,47 @@ st.markdown("""
         margin-top: 1.15rem !important;
         margin-bottom: 0.5rem !important;
     }
+
+    /* 7a. Preview Foto Daun yang Dipilih: Rapi, Proporsional di Semua Perangkat (Anti-Kebesaran) */
+    .preview-leaf-box {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 0.5rem auto 1.1rem auto;
+        text-align: center;
+    }
+    .preview-leaf-box [data-testid="stImage"] {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    .preview-leaf-box [data-testid="stImage"] img,
+    div[data-testid="stImage"]:has(img[alt*="Foto Daun yang Dipilih"]) img {
+        max-height: 340px !important;
+        max-width: 380px !important;
+        width: auto !important;
+        height: auto !important;
+        object-fit: contain !important;
+        border-radius: 14px !important;
+        border: 2px solid #CBD5E1 !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08) !important;
+        margin: 0 auto !important;
+    }
+    .preview-leaf-box [data-testid="stImageCaption"] {
+        text-align: center !important;
+        margin-top: 6px !important;
+        font-weight: 600 !important;
+        color: #64748B !important;
+    }
+    @media (max-width: 768px) {
+        .preview-leaf-box [data-testid="stImage"] img,
+        div[data-testid="stImage"]:has(img[alt*="Foto Daun yang Dipilih"]) img {
+            max-height: 240px !important;
+            max-width: 86% !important;
+        }
+    }
+
 
     /* Ikon Ganti Kamera Depan/Belakang di HP / Mobile (Wajib Hitam Pekat, Kontras Tinggi & Tidak Samar) */
     [data-testid="stCameraInput"] button:not([kind="primary"]) svg,
@@ -2779,62 +2854,11 @@ def get_groq_physical_verification(
         protocol_items = built_in_protocols.get(matched_key, built_in_protocols["trotol"])
         fallback_content = "\n".join([f"• **{title}**: {desc}" for title, desc in protocol_items])
 
-    api_key = get_groq_api_key()
-    if not api_key:
-        return fallback_content
-
-    import requests
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "User-Agent": "AgroScan-Validator/1.0"
-    }
-
-    diff_hint = ""
-    if diff_data:
-        diff_hint = f"Perhatikan pembeda dengan {diff_data.get('counterpart_title', '')}: {diff_data.get('confusion_reason', '')}. Kunci penting: {diff_data.get('special_alert', '')}\n"
-
-    prompt = (
-        f"Anda adalah Konsultan Proteksi Tanaman Bawang Merah (merujuk Balitsa Lembang & BPTP Kementan).\n"
-        f"Tanaman terdeteksi: '{primary_name}'"
-        + (f" bersaing dengan '{second_name}'" if second_name else "")
-        + (f" dan '{third_name}'" if third_name else "") + ".\n"
-        + (f"Tingkat Keparahan Visual: {severity_level}\n" if severity_level else "")
-        + diff_hint
-        + "Tuliskan panduan verifikasi fisik langsung di bedengan sawah dalam 4-5 poin terstruktur berformat bullet point (- / •):\n"
-        "1. 🖐️ Uji Raba & Tekstur Permukaan Daun (Cekung melekuk vs menonjol kasar bintil vs lemas basah)\n"
-        "2. 👆 Uji Usap Jari & Serbuk Spora (Serbuk karat jingga vs debu hitam spora vs bersih tanpa serbuk)\n"
-        "3. 🔍 Uji Terawang Sinar & Pola Lesi Khas (Pola cincin ungu konsentris vs selaput memutih tipis vs garis klorosis)\n"
-        "4. ⏱️ Pembeda Stadium Infeksi (Dini vs Lanjut) (Ciri bintik awal vs ciri fase parah yang rawan patah/rebah)\n"
-        "5. 💡 Kunci Pengamatan Cepat Lapangan (Aturan emas 1 detik membedakan dengan penyakit lain)\n"
-        "Gunakan bahasa Indonesia lugas, ringkas, padat, dan sangat mudah dipraktikkan petani di kebun."
-    )
-
-    models_to_try = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
-    for model_name in models_to_try:
-        try:
-            resp = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers=headers,
-                json={
-                    "model": model_name,
-                    "temperature": 0.3,
-                    "max_tokens": 450,
-                    "messages": [
-                        {"role": "system", "content": "Anda adalah dokter tanaman hortikultura yang memberi instruksi cek fisik langsung di sawah secara singkat, padat, dan jelas untuk petani."},
-                        {"role": "user", "content": prompt}
-                    ]
-                },
-                timeout=9
-            )
-            if resp.status_code == 200:
-                txt = resp.json()["choices"][0]["message"]["content"].strip()
-                if len(txt) > 30:
-                    return txt
-        except (requests.RequestException, KeyError, IndexError, ValueError):
-            continue
-
+    # Protokol panduan fisik sawah langsung merujuk standar resmi Balitsa Lembang & BPTP Kementan,
+    # deterministik, instan (0ms), dan menghemat 100% kuota token Groq pada modul pemeriksaan.
     return fallback_content
+
+
 def get_system_agronomy_recommendation(
     info,
     second_info=None,
@@ -3586,9 +3610,12 @@ st.caption("💡 **Petunjuk Foto Bagus:** Foto daun dari dekat (jarak 10-20 cm),
 
 # Tombol Pemeriksaan Utama & Pemrosesan
 if selected_image is not None and not file_error:
-    st.markdown("<div style='text-align: center; margin: 1rem 0;'>", unsafe_allow_html=True)
-    st.image(selected_image, caption="Foto Daun yang Dipilih", use_container_width=True)
+    st.markdown("<div class='preview-leaf-box'>", unsafe_allow_html=True)
+    col_prev1, col_prev2, col_prev3 = st.columns([1, 2.2, 1])
+    with col_prev2:
+        st.image(selected_image, caption="Foto Daun yang Dipilih", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
+
 
     # Monitor Real-Time Kanopi Daun (Live Responsif terhadap Slider Sensitivitas Daun di Sidebar)
     is_plant_live, reason_live, plant_ratio_live = check_shallot_leaf_mask(selected_image, min_ratio=min_leaf_ratio)
@@ -3972,15 +3999,29 @@ if selected_image is not None and not file_error:
                     </div>
                 """, unsafe_allow_html=True)
 
-            # Tombol Opsi Simpan Hasil ke Riwayat (Tidak Otomatis)
+            # Tombol Aksi Sejajar: 1. Detail Solusi Obat (Langkah 3), 2. Simpan Riwayat, 3. Periksa / Pilih Foto Lain
             saved_key = f"saved_entry_{current_img_sig}"
+            step3_key = f"show_step3_{current_img_sig}"
             is_already_saved = st.session_state.get(saved_key, False)
-            col_save1, col_save2 = st.columns([1, 1])
-            with col_save1:
-                if is_already_saved:
-                    st.button("✅ Hasil Sudah Disimpan di Riwayat", disabled=True, use_container_width=True)
+            is_step3_open = st.session_state.get(step3_key, False)
+
+            st.markdown("<div style='margin: 1.15rem 0 0.9rem 0;'>", unsafe_allow_html=True)
+            col_act1, col_act2, col_act3 = st.columns([1.35, 1.0, 1.0])
+            with col_act1:
+                if not is_step3_open:
+                    if st.button("🩺 Kasih Detail Obat (No. 3)", type="primary", use_container_width=True, key=f"btn_open_step3_top_{current_img_sig}"):
+                        st.session_state[step3_key] = True
+                        st.rerun()
                 else:
-                    if st.button("💾 Simpan Hasil ke Riwayat", type="primary", use_container_width=True):
+                    if st.button("🔽 Tutup Detail Obat (No. 3)", use_container_width=True, key=f"btn_close_step3_top_{current_img_sig}"):
+                        st.session_state[step3_key] = False
+                        st.rerun()
+
+            with col_act2:
+                if is_already_saved:
+                    st.button("✅ Hasil Sudah Disimpan", disabled=True, use_container_width=True)
+                else:
+                    if st.button("💾 Simpan Hasil ke Riwayat", use_container_width=True, key=f"btn_save_top_{current_img_sig}"):
                         if diag_mode == "three_way":
                             rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) | {second_info['nama_id']} ({second_confidence:.1f}%) | {third_info.get('nama_id', third_class_raw)} ({third_confidence:.1f}%)"
                         elif diag_mode == "two_way":
@@ -4000,11 +4041,14 @@ if selected_image is not None and not file_error:
                         st.session_state[saved_key] = True
                         st.toast("✅ Berhasil disimpan ke riwayat pemeriksaan!", icon="💾")
                         st.rerun()
-            with col_save2:
-                if st.button("🔄 Periksa Foto Lain", use_container_width=True):
+
+            with col_act3:
+                if st.button("🔄 Pilih Foto Lain", use_container_width=True, key=f"btn_other_photo_{current_img_sig}"):
                     if "has_inspected_current" in st.session_state:
                         del st.session_state["has_inspected_current"]
                     st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
 
             # ==============================================================================
             # MODUL BUKTI ANALISIS VISUAL NYATA DARI FOTO (REAL VISUAL LESION AUDIT)
@@ -4151,17 +4195,16 @@ if selected_image is not None and not file_error:
 
                 phys_cache_key = f"phys_{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}"
                 if phys_cache_key not in st.session_state:
-                    with st.spinner("🔬 Menyiapkan panduan verifikasi fisik lapangan..."):
-                        st.session_state[phys_cache_key] = get_groq_physical_verification(
-                            primary_name=info['nama_id'],
-                            second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way')) else None,
-                            is_differential=(diag_mode == 'two_way'),
-                            third_name=third_info.get('nama_id', third_class_raw) if diag_mode == 'three_way' else None,
-                            is_three_way=(diag_mode == 'three_way'),
-                            diff_data=diff_data,
-                            severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
-                            evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None
-                        )
+                    st.session_state[phys_cache_key] = get_groq_physical_verification(
+                        primary_name=info['nama_id'],
+                        second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way')) else None,
+                        is_differential=(diag_mode == 'two_way'),
+                        third_name=third_info.get('nama_id', third_class_raw) if diag_mode == 'three_way' else None,
+                        is_three_way=(diag_mode == 'three_way'),
+                        diff_data=diff_data,
+                        severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
+                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None
+                    )
                 phys_content = st.session_state[phys_cache_key]
                 html_phys = format_card_text_to_html(phys_content)
 
@@ -4196,130 +4239,155 @@ if selected_image is not None and not file_error:
             # ==============================================================================
             # 9. LANGKAH 3: PETUNJUK OBAT & PERAWATAN DARI DOKTER TANAMAN (GROQ AI)
             # ==============================================================================
-            st.markdown("""
-                <div class="step-header">
-                    <div class="step-num">3</div>
-                    <div class="step-title">Petunjuk Obat & Perawatan dari Dokter Tanaman</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-            # Logika Pengambilan Saran Groq AI
-            ai_token_now = f"{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}_{round(top_confidence, 1)}"
-            if st.session_state.get("ai_token_saved") != ai_token_now or "ai_text_saved" not in st.session_state:
-                with st.spinner("🤖 Dokter Tanaman AI sedang meracik resep obat dan panduan perawatan..."):
-                    ai_text, ai_angle = get_groq_recommendation(
-                        disease_name=info["nama_id"],
-                        confidence=top_confidence,
-                        is_healthy=is_healthy,
-                        angle_idx=0,
-                        second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
-                        second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
-                        is_differential=(diag_mode == "two_way"),
-                        latin_name=info.get("latin"),
-                        severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
-                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
-                        third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
-                        third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
-                        is_three_way=(diag_mode == "three_way"),
-                        diff_data=diff_data
-                    )
-                    st.session_state["ai_text_saved"] = ai_text
-                    st.session_state["ai_angle_saved"] = ai_angle or f"{FOCUS_ANGLES[0][0]} (Database Mandiri Sistem)"
-                    st.session_state["ai_token_saved"] = ai_token_now
-                    st.session_state["ai_angle_idx"] = 0
-
-            # Parsing Resep Menjadi 3 Kartu Jelas & Format HTML Terstruktur (Otomatis Fallback ke Database Mandiri Sistem jika Kuota Groq Habis)
-            kartu_tindakan, kartu_obat, kartu_lahan = parse_groq_to_cards(
-                st.session_state.get("ai_text_saved"),
-                info,
-                second_info=second_info if (diag_mode in ("two_way", "three_way") and second_info) else None,
-                is_differential=(diag_mode == "two_way"),
-                third_info=third_info if (diag_mode == "three_way" and third_info) else None,
-                is_three_way=(diag_mode == "three_way"),
-                angle_title=st.session_state.get("ai_angle_saved")
-            )
-            html_tindakan = format_card_text_to_html(kartu_tindakan)
-            html_obat = format_card_text_to_html(kartu_obat)
-            html_lahan = format_card_text_to_html(kartu_lahan)
-
-            current_angle_display = st.session_state.get('ai_angle_saved', FOCUS_ANGLES[0][0])
-            current_angle_idx = st.session_state.get('ai_angle_idx', 0)
-            angle_badge_html = f"<span style='background: #E0F2FE; color: #0369A1; padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 800; border: 1px solid #BAE6FD;'>Sudut #{current_angle_idx + 1} dari 4</span>"
-
-            st.markdown(f"""
-                <div style="background-color: #F1F5F9; border-left: 6px solid #0284C7; padding: 0.85rem 1.15rem; border-radius: 12px; margin-bottom: 1.2rem; font-size: 0.98rem; color: #0F172A; font-weight: 700; border: 1px solid #CBD5E1; border-left-width: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-                    <div>🎯 <strong>Fokus Rekomendasi Saat Ini:</strong> {current_angle_display}</div>
-                    <div>{angle_badge_html}</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-            # KARTU 1: TINDAKAN LANGSUNG DI KEBUN (MERAH)
-            st.markdown(f"""
-                <div class="card-ai-step card-ai-red">
-                    <div class="card-ai-title" style="color: #DC2626;">
-                        🚨 Tindakan Langsung di Kebun
+            if not is_step3_open:
+                st.markdown("""
+                    <div style="background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%); border-radius: 16px; border: 1.5px dashed #93C5FD; padding: 1.35rem 1.4rem; margin: 1.3rem 0; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                        <div style="font-size: 2rem; margin-bottom: 0.35rem;">🩺💊</div>
+                        <div style="font-size: 1.15rem; font-weight: 800; color: #1E3A8A; margin-bottom: 0.35rem;">
+                            Langkah 3: Butuh Resep Obat Semprot & Panduan Dokter Tanaman?
+                        </div>
+                        <div style="font-size: 0.9rem; color: #475569; max-width: 640px; margin: 0 auto 1.15rem auto; line-height: 1.6;">
+                            Untuk <strong>menghemat token Groq AI</strong>, modul rekomendasi obat fungisida/insektisida, takaran dosis tangki, dan tindakan segera 24 jam baru akan diproses saat Anda menekan tombol di bawah.
+                        </div>
                     </div>
-                    <div class="card-ai-sub">(Langkah Segera 24 Jam Pertama di Bedengan)</div>
-                    <div class="card-ai-body">{html_tindakan}</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-            # KARTU 2: REKOMENDASI OBAT SEMPROT (BIRU)
-            st.markdown(f"""
-                <div class="card-ai-step card-ai-blue">
-                    <div class="card-ai-title" style="color: #1D4ED8;">
-                        🧪 Rekomendasi Obat Semprot
+                """, unsafe_allow_html=True)
+                col_b1, col_b2, col_b3 = st.columns([0.5, 2.2, 0.5])
+                with col_b2:
+                    if st.button("🩺 KASIH DETAIL PENJELASAN DARI NO. 3", type="primary", use_container_width=True, key=f"btn_open_step3_bottom_{current_img_sig}"):
+                        st.session_state[step3_key] = True
+                        st.rerun()
+            else:
+                st.markdown("""
+                    <div class="step-header">
+                        <div class="step-num">3</div>
+                        <div class="step-title">Petunjuk Obat & Perawatan dari Dokter Tanaman</div>
                     </div>
-                    <div class="card-ai-sub">(Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)</div>
-                    <div class="card-ai-body">{html_obat}</div>
-                </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
 
-            # KARTU 3: PERAWATAN LAHAN & PUPUK (HIJAU)
-            st.markdown(f"""
-                <div class="card-ai-step card-ai-green">
-                    <div class="card-ai-title" style="color: #15803D;">
-                        🌾 Perawatan Lahan & Pupuk (Detail Solusi)
+                # Logika Pengambilan Saran Groq AI
+                ai_token_now = f"{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}_{round(top_confidence, 1)}"
+                if st.session_state.get("ai_token_saved") != ai_token_now or "ai_text_saved" not in st.session_state:
+                    with st.spinner("🤖 Dokter Tanaman AI sedang meracik resep obat dan panduan perawatan..."):
+                        ai_text, ai_angle = get_groq_recommendation(
+                            disease_name=info["nama_id"],
+                            confidence=top_confidence,
+                            is_healthy=is_healthy,
+                            angle_idx=0,
+                            second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                            second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                            is_differential=(diag_mode == "two_way"),
+                            latin_name=info.get("latin"),
+                            severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
+                            evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
+                            third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
+                            third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
+                            is_three_way=(diag_mode == "three_way"),
+                            diff_data=diff_data
+                        )
+                        st.session_state["ai_text_saved"] = ai_text
+                        st.session_state["ai_angle_saved"] = ai_angle or f"{FOCUS_ANGLES[0][0]} (Database Mandiri Sistem)"
+                        st.session_state["ai_token_saved"] = ai_token_now
+                        st.session_state["ai_angle_idx"] = 0
+
+                # Parsing Resep Menjadi 3 Kartu Jelas & Format HTML Terstruktur (Otomatis Fallback ke Database Mandiri Sistem jika Kuota Groq Habis)
+                kartu_tindakan, kartu_obat, kartu_lahan = parse_groq_to_cards(
+                    st.session_state.get("ai_text_saved"),
+                    info,
+                    second_info=second_info if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                    is_differential=(diag_mode == "two_way"),
+                    third_info=third_info if (diag_mode == "three_way" and third_info) else None,
+                    is_three_way=(diag_mode == "three_way"),
+                    angle_title=st.session_state.get("ai_angle_saved")
+                )
+                html_tindakan = format_card_text_to_html(kartu_tindakan)
+                html_obat = format_card_text_to_html(kartu_obat)
+                html_lahan = format_card_text_to_html(kartu_lahan)
+
+                current_angle_display = st.session_state.get('ai_angle_saved', FOCUS_ANGLES[0][0])
+                current_angle_idx = st.session_state.get('ai_angle_idx', 0)
+                angle_badge_html = f"<span style='background: #E0F2FE; color: #0369A1; padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 800; border: 1px solid #BAE6FD;'>Sudut #{current_angle_idx + 1} dari 4</span>"
+
+                st.markdown(f"""
+                    <div style="background-color: #F1F5F9; border-left: 6px solid #0284C7; padding: 0.85rem 1.15rem; border-radius: 12px; margin-bottom: 1.2rem; font-size: 0.98rem; color: #0F172A; font-weight: 700; border: 1px solid #CBD5E1; border-left-width: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                        <div>🎯 <strong>Fokus Rekomendasi Saat Ini:</strong> {current_angle_display}</div>
+                        <div>{angle_badge_html}</div>
                     </div>
-                    <div class="card-ai-sub">(Rangkuman Riset Balitsa Lembang, BPTP Kementan & Jurnal Proteksi Tanaman)</div>
-                    <div class="card-ai-body">{html_lahan}</div>
-                </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
 
-            # Tombol Besar: "Minta Petunjuk / Alternatif Obat Lain"
-            st.markdown("<div class='btn-alt-obat'>", unsafe_allow_html=True)
-            if st.button("🔄 Minta Petunjuk / Alternatif Obat Lain", key="btn_minta_alternatif", use_container_width=True):
-                with st.spinner("🔄 Sedang meracik alternatif kombinasi obat dan panduan lain dari Balitsa/Kementan..."):
-                    curr_idx = st.session_state.get("ai_angle_idx", 0)
-                    next_idx = (curr_idx + 1) % len(FOCUS_ANGLES)
-                    alt_title, _ = FOCUS_ANGLES[next_idx]
+                # KARTU 1: TINDAKAN LANGSUNG DI KEBUN (MERAH)
+                st.markdown(f"""
+                    <div class="card-ai-step card-ai-red">
+                        <div class="card-ai-title" style="color: #DC2626;">
+                            🚨 Tindakan Langsung di Kebun
+                        </div>
+                        <div class="card-ai-sub">(Langkah Segera 24 Jam Pertama di Bedengan)</div>
+                        <div class="card-ai-body">{html_tindakan}</div>
+                    </div>
+                """, unsafe_allow_html=True)
 
-                    new_text, new_angle = get_groq_recommendation(
-                        disease_name=info["nama_id"],
-                        confidence=top_confidence,
-                        is_healthy=is_healthy,
-                        angle_idx=next_idx,
-                        latin_name=info.get("latin"),
-                        severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
-                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
-                        second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
-                        second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
-                        is_differential=(diag_mode == "two_way"),
-                        third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
-                        third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
-                        is_three_way=(diag_mode == "three_way"),
-                        diff_data=diff_data
-                    )
-                    st.session_state["ai_angle_idx"] = next_idx
-                    st.session_state["ai_token_saved"] = ai_token_now
-                    if new_text:
-                        st.session_state["ai_text_saved"] = new_text
-                        st.session_state["ai_angle_saved"] = new_angle
-                        st.toast(f"✅ Petunjuk alternatif ke-{next_idx + 1} berhasil dimuat: {new_angle[:35]}...", icon="🌱")
-                    else:
-                        st.session_state["ai_text_saved"] = None
-                        st.session_state["ai_angle_saved"] = f"{alt_title} (Database Mandiri Sistem)"
-                        st.toast(f"✅ Petunjuk alternatif ke-{next_idx + 1} dimuat dari database sistem ({alt_title[:30]}...)", icon="🌱")
-                    st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
+                # KARTU 2: REKOMENDASI OBAT SEMPROT (BIRU)
+                st.markdown(f"""
+                    <div class="card-ai-step card-ai-blue">
+                        <div class="card-ai-title" style="color: #1D4ED8;">
+                            🧪 Rekomendasi Obat Semprot
+                        </div>
+                        <div class="card-ai-sub">(Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)</div>
+                        <div class="card-ai-body">{html_obat}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                # KARTU 3: PERAWATAN LAHAN & PUPUK (HIJAU)
+                st.markdown(f"""
+                    <div class="card-ai-step card-ai-green">
+                        <div class="card-ai-title" style="color: #15803D;">
+                            🌾 Perawatan Lahan & Pupuk (Detail Solusi)
+                        </div>
+                        <div class="card-ai-sub">(Rangkuman Riset Balitsa Lembang, BPTP Kementan & Jurnal Proteksi Tanaman)</div>
+                        <div class="card-ai-body">{html_lahan}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                # Tombol Aksi Bawah: Minta Alternatif & Tutup Detail Langkah 3
+                st.markdown("<div style='margin-top: 1rem;'>", unsafe_allow_html=True)
+                col_sub1, col_sub2 = st.columns([1.3, 1.0])
+                with col_sub1:
+                    if st.button("🔄 Minta Petunjuk / Alternatif Obat Lain", key="btn_minta_alternatif", use_container_width=True):
+                        with st.spinner("🔄 Sedang meracik alternatif kombinasi obat dan panduan lain dari Balitsa/Kementan..."):
+                            curr_idx = st.session_state.get("ai_angle_idx", 0)
+                            next_idx = (curr_idx + 1) % len(FOCUS_ANGLES)
+                            alt_title, _ = FOCUS_ANGLES[next_idx]
+
+                            new_text, new_angle = get_groq_recommendation(
+                                disease_name=info["nama_id"],
+                                confidence=top_confidence,
+                                is_healthy=is_healthy,
+                                angle_idx=next_idx,
+                                latin_name=info.get("latin"),
+                                severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
+                                evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
+                                second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                                second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                                is_differential=(diag_mode == "two_way"),
+                                third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
+                                third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
+                                is_three_way=(diag_mode == "three_way"),
+                                diff_data=diff_data
+                            )
+                            st.session_state["ai_angle_idx"] = next_idx
+                            st.session_state["ai_token_saved"] = ai_token_now
+                            if new_text:
+                                st.session_state["ai_text_saved"] = new_text
+                                st.session_state["ai_angle_saved"] = new_angle
+                                st.toast(f"✅ Petunjuk alternatif ke-{next_idx + 1} berhasil dimuat: {new_angle[:35]}...", icon="🌱")
+                            else:
+                                st.session_state["ai_text_saved"] = None
+                                st.session_state["ai_angle_saved"] = f"{alt_title} (Database Mandiri Sistem)"
+                                st.toast(f"✅ Petunjuk alternatif ke-{next_idx + 1} dimuat dari database sistem ({alt_title[:30]}...)", icon="🌱")
+                            st.rerun()
+
+                with col_sub2:
+                    if st.button("🔽 Tutup Detail Penjelasan (No. 3)", key=f"btn_close_step3_bottom_{current_img_sig}", use_container_width=True):
+                        st.session_state[step3_key] = False
+                        st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
 
