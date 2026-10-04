@@ -4258,19 +4258,11 @@ if selected_image is not None and not file_error:
                     <div class="card-rejection" style="padding: 1rem 1.25rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
                         <div style="font-weight: 800; color: #B91C1C; font-size: 0.95rem; margin-bottom: 4px;">⚠️ FOTO BUKAN DAUN BAWANG</div>
                         <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.5;">
-                            {vision_verdict}<br>
-                            Pastikan foto menampilkan helai daun tanaman bawang merah dari dekat (10-20 cm) dengan pencahayaan cukup.
+                            {vision_verdict}<br><br>
+                            <strong>💡 Petunjuk:</strong> Pastikan foto menampilkan helai daun tanaman bawang merah asli dari dekat (10–20 cm) dengan pencahayaan cukup.
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
-
-                if detected_ratio >= 3.0:
-                    tol_pct = max(3, int(np.floor(detected_ratio)))
-                    if st.button(f"🌱 Sesuaikan Sensitivitas ({tol_pct}%) & Diagnosa Ulang", type="primary", use_container_width=True, key=f"btn_retry_tolerant_{current_img_sig}"):
-                        st.session_state["pending_leaf_slider"] = tol_pct
-                        st.session_state[force_pass_key] = True
-                        st.session_state["has_inspected_current"] = current_img_sig
-                        st.rerun()
             st.stop()
 
         # ==============================================================================
@@ -4314,35 +4306,29 @@ if selected_image is not None and not file_error:
         # ==============================================================================
         # ==============================================================================
         # TAHAP 3: EVALUASI KEPUTUSAN MODEL / THRESHOLD
-        # Jika confidence < conf_threshold, tampilkan peringatan & rekomendasi penyesuaian
+        # Jika kepastian < conf_threshold, tolak diagnosa demi mencegah salah penanganan
         # ==============================================================================
-        allow_conf_key = f"allow_conf_{current_img_sig}"
-        user_allowed_conf = st.session_state.get(allow_conf_key, False)
-
-        is_uncertain = (not user_allowed_conf) and (api_output.get("uncertain", False) or (top_confidence < (conf_threshold * 100.0)))
+        is_uncertain = api_output.get("uncertain", False) or (top_confidence < (conf_threshold * 100.0))
         if is_uncertain:
             current_conf_pct = conf_threshold * 100.0
-            # Hitung rekomendasi batas keyakinan yang adaptif kelipatan 5 (rentang slider: 20% - 90%)
-            rec_conf_pct = max(20, min(90, int(np.floor(top_confidence / 5.0) * 5)))
 
             st.markdown(f"""
-                <div class="card-rejection" style="padding: 1rem 1.25rem; border-radius: 14px; border: 1.5px solid #F59E0B; background: #FFFBEB; margin: 0.8rem 0;">
+                <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                        <span style="background-color: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">⚠️ BATAS KEYAKINAN</span>
-                        <span style="font-weight: 700; color: #92400E; font-size: 0.92rem;">Kepastian: {top_confidence:.1f}% (Batas Slider: {current_conf_pct:.0f}%)</span>
+                        <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ HASIL TIDAK MEYAKINKAN</span>
+                        <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Kepastian: {top_confidence:.1f}% (Batas Slider: {current_conf_pct:.0f}%)</span>
                     </div>
-                    <div style="font-size: 0.9rem; color: #78350F; line-height: 1.55;">
-                        Kepastian model tercatat <strong>{top_confidence:.1f}%</strong> (di bawah batas slider <strong>{current_conf_pct:.0f}%</strong>).
-                        Klik tombol di bawah untuk menyelaraskan batas keyakinan dan melanjutkan prediksi:
+                    <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.55;">
+                        Tingkat keyakinan model hanya <strong>{top_confidence:.1f}%</strong> (di bawah batas aman slider <strong>{current_conf_pct:.0f}%</strong>).<br><br>
+                        Foto terdeteksi bukan daun bawang merah yang valid, atau gejala penyakit terlalu buram/tidak cocok. Sistem menolak diagnosa otomatis demi mencegah kesalahan penanganan di kebun.<br><br>
+                        <strong>💡 Petunjuk Pengambilan Foto:</strong><br>
+                        • Pastikan objek yang difoto adalah tanaman daun bawang merah asli.<br>
+                        • Ambil foto dari jarak dekat (10–20 cm) dengan pencahayaan terang tepat pada helai daun yang bergejala.<br>
+                        • Jika ini benar daun bawang di kebun dengan gejala awal yang masih sangat tipis, Anda dapat menyelaraskan slider batas keyakinan di menu sidebar.
                     </div>
                 </div>
             """, unsafe_allow_html=True)
-
-            if st.button(f"⚡ Sesuaikan Batas Keyakinan ({rec_conf_pct}%) & Lanjutkan Prediksi", type="primary", use_container_width=True, key=f"btn_apply_conf_rec_{current_img_sig}"):
-                st.session_state["pending_conf_slider"] = rec_conf_pct
-                st.session_state[allow_conf_key] = True
-                st.rerun()
-            st.stop()  # Hentikan eksekusi sampai tombol penyesuaian ditekan
+            st.stop()
 
         # ==============================================================================
         # KASUS 2: FOTO VALID & KEYAKINAN TINGGI (LOLOS THRESHOLD)
