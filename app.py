@@ -3927,10 +3927,32 @@ st.caption("💡 **Petunjuk Foto Bagus:** Foto daun dari dekat (jarak 10-20 cm),
 
 # Tombol Pemeriksaan Utama & Pemrosesan
 if selected_image is not None and not file_error:
+    # 1. Normalisasi orientasi EXIF & konversi RGB dari kamera smartphone / galeri
+    raw_input_img = ImageOps.exif_transpose(selected_image).convert("RGB")
+
+    # 2. Auto-Crop Deteksi Helai Daun Bawang Merah (Langsung fokus helai daun & pangkas latar belakang tanah/mulsa/tangan)
+    leaf_roi, leaf_bbox, leaf_coverage = extract_leaf_roi(raw_input_img, padding_pct=0.08)
+    is_auto_cropped = bool(leaf_coverage < 0.96 and leaf_roi.size[0] >= 30 and leaf_roi.size[1] >= 30)
+
+    # Tetapkan gambar aktif langsung ke hasil auto-crop helai daun agar seluruh proses (pratinjau, model, riwayat) efisien
+    if is_auto_cropped:
+        selected_image = leaf_roi
+    else:
+        selected_image = raw_input_img
+
     st.markdown("<div class='preview-leaf-box'>", unsafe_allow_html=True)
     col_prev1, col_prev2, col_prev3 = st.columns([1, 2.2, 1])
     with col_prev2:
-        st.image(selected_image, caption="Foto Daun yang Dipilih", use_container_width=True)
+        caption_text = "Foto Daun yang Dipilih (Fokus Otomatis Helai Daun)" if is_auto_cropped else "Foto Daun yang Dipilih"
+        st.image(selected_image, caption=caption_text, use_container_width=True)
+        if is_auto_cropped:
+            st.markdown(
+                f"<div style='text-align: center; margin-top: -4px; margin-bottom: 6px;'>"
+                f"<span style='background: #DCFCE7; color: #166534; font-size: 0.78rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; border: 1px solid #86EFAC; display: inline-flex; align-items: center; gap: 4px;'>"
+                f"✂️ <span>Fokus Helai Daun Terpotong Otomatis (Area: {leaf_coverage*100.0:.0f}%)</span>"
+                f"</span></div>",
+                unsafe_allow_html=True
+            )
     st.markdown("</div>", unsafe_allow_html=True)
 
 
