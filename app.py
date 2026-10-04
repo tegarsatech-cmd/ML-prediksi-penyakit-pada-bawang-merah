@@ -2485,10 +2485,11 @@ def get_groq_recommendation(
             f"- Jelaskan panduan praktis membedakan {disease_name} vs {second_disease_name} vs {third_disease_name} secara visual dengan mata telanjang di sawah.\n"
             "- Jelaskan teknik pemotongan daun bergejala dan sanitasi alat gunting/pisau agar patogen tidak menyebar ke tanaman sekitar.\n\n"
             "=== REKOMENDASI OBAT SEMPROT ===\n"
-            "- Berikan kombinasi obat semprot terpadu yang aman mencakup spektrum ketiga masalah (kombinasi bakterisida tembaga seperti Tembaga Hidroksida / Kasugamisin, fungisida sistemik seperti Difenokonazol / Mankozeb / Azoksistrobin, dan perlakuan serangga vektor bila ada suspek virus).\n"
+            "- Berikan 2-3 pilihan kombinasi bahan aktif fungisida/insektisida/bakterisida terpercaya resmi Balitsa/Kementan (sebutkan golongan kontak dan sistemik).\n"
             "- Sebutkan takaran dosis realistis (misal: 1,5 - 2 sendok makan per tangki semprot 16 Liter air).\n"
             "- Sebutkan waktu semprot terbaik (pagi hari sebelum jam 09.00 saat embun mengering, atau sore setelah jam 16.00 saat angin tenang).\n"
-            "- Wajib ingatkan penambahan perekat/perata (surfactant) non-ionik agar obat menempel kuat di lapisan lilin daun bawang.\n\n"
+            "- Wajib ingatkan penambahan perekat/perata (surfactant) non-ionik agar obat menempel kuat di lapisan lilin daun bawang.\n"
+            "- FORMAT WAJIB: Sajikan per opsi secara bersih dan profesional dengan poin bernomor (Pilihan 1, Pilihan 2). DILARANG KERAS membuat tabel karakter pipa (|) atau pembatas minus (---|---).\n\n"
             "=== PERAWATAN LAHAN & PUPUK ===\n"
             "Jelaskan bagian ini secara terstruktur dalam 4 poin praktis:\n"
             "1. Pengaturan Parit & Tata Air: Atur muka air parit 20-25 cm di bawah bedengan (sistem macak-macak), buang genangan air hujan segera.\n"
@@ -2511,13 +2512,14 @@ def get_groq_recommendation(
             "WAJIB susun jawaban ke dalam 3 bagian persis dengan judul pemisah berikut:\n\n"
             "=== TINDAKAN LANGSUNG DI KEBUN ===\n"
             "- Berikan langkah taktis darurat dalam 24 jam pertama di bedengan.\n"
-            f"- Jelaskan secara spesifik cara membedakan {disease_name} vs {second_disease_name} langsung dengan mata telanjang di sawah (misal: lendir busuk basah vs cincin konsentris tepung spora kering).\n"
+            f"- Jelaskan secara spesifik cara membedakan {disease_name} vs {second_disease_name} langsung dengan mata telanjang di sawah.\n"
             "- Jelaskan teknik pemotongan daun bergejala dan sanitasi alat gunting/pisau agar spora atau bakteri tidak menyebar ke tanaman sekitar.\n\n"
             "=== REKOMENDASI OBAT SEMPROT ===\n"
             "- Berikan kombinasi obat semprot aman yang mencakup kedua spektrum patogen (kombinasi bakterisida tembaga seperti Tembaga Hidroksida / Kasugamisin dengan fungisida seperti Difenokonazol atau Mankozeb).\n"
             "- Sebutkan takaran dosis realistis (misal: 1,5 - 2 sendok makan per tangki semprot 16 Liter).\n"
             "- Sebutkan waktu semprot terbaik (pagi hari sebelum jam 09.00 saat embun mengering, atau sore setelah jam 16.00 saat angin tenang).\n"
-            "- Ingatkan penambahan perekat/perata (surfactant) agar obat tidak mudah luntur.\n\n"
+            "- Ingatkan penambahan perekat/perata (surfactant) agar obat tidak mudah luntur.\n"
+            "- FORMAT WAJIB: Sajikan per opsi secara bersih dan profesional dengan poin bernomor (Pilihan 1, Pilihan 2). DILARANG KERAS membuat tabel karakter pipa (|) atau pembatas minus (---|---).\n\n"
             "=== PERAWATAN LAHAN & PUPUK ===\n"
             "Jelaskan bagian ini secara terstruktur dalam 4 poin praktis:\n"
             "1. Pengaturan Parit & Tata Air: Atur muka air parit 20-25 cm di bawah bedengan, cegah genangan air hujan yang memicu penularan patogen.\n"
@@ -2547,9 +2549,10 @@ def get_groq_recommendation(
             "- Jelaskan tindakan sanitasi alat gunting/pisau dan pemusnahan sisa pangkasan ke luar lahan (bakar/kubur jauh dari saluran air irigasi).\n\n"
             "=== REKOMENDASI OBAT SEMPROT ===\n"
             "- Berikan 2-3 pilihan kombinasi bahan aktif fungisida/insektisida/bakterisida terpercaya resmi Balitsa/Kementan (sebutkan golongan kontak dan sistemik).\n"
-            "- Sebutkan takaran dosis realistis (misal: 1,5 - 2 sendok makan per tangki semprot 16 Liter).\n"
+            "- Sebutkan takaran dosis realistis (misal: 1,5 - 2 sendok makan per tangki semprot 16 Liter air).\n"
             "- Sebutkan waktu semprot terbaik (pagi hari sebelum jam 09.00 saat embun mengering, atau sore setelah jam 16.00 saat angin tenang dan tidak terik).\n"
-            "- Ingatkan penggunaan perekat/perata/penembus (surfactant) terutama saat musim hujan agar obat tidak luntur.\n\n"
+            "- Ingatkan penggunaan perekat/perata/penembus (surfactant) terutama saat musim hujan agar obat tidak luntur.\n"
+            "- FORMAT WAJIB: Sajikan per opsi secara bersih dan profesional dengan poin bernomor (Pilihan 1, Pilihan 2). DILARANG KERAS membuat tabel karakter pipa (|) atau pembatas minus (---|---).\n\n"
             "=== PERAWATAN LAHAN & PUPUK ===\n"
             "Jelaskan bagian ini secara PANJANG, MENDALAM, DAN DETAIL terbagi dalam 4 poin terstruktur:\n"
             "1. Pengaturan Parit & Tata Air: Atur muka air parit sekitar 20-25 cm di bawah permukaan bedengan. Pastikan drainase lancar dan terapkan pengairan berselang (macak-macak), jangan biarkan air hujan menggenang di parit bedengan.\n"
@@ -2580,6 +2583,8 @@ def get_groq_recommendation(
                         "PENTING: Pastikan seluruh penjelasan, rekomendasi obat, takaran dosis, keempat poin perawatan lahan, "
                         "dan bagian ringkasan praktis ditulis lengkap hingga tuntas. "
                         "DILARANG KERAS memotong kalimat di tengah jalan atau meninggalkan judul ringkasan tanpa isi! "
+                        "DILARANG KERAS membuat tabel markdown dengan karakter pipa (|) atau pembatas minus (---|---). "
+                        "Gunakan format teks bersih, profesional, dan mudah dibaca petani dalam bentuk poin bernomor (1., 2., 3.) atau bullet list rapi. "
                         "Setiap poin dan ringkasan wajib diakhiri tanda titik penutup yang sempurna."
                     )
                 },
@@ -3584,28 +3589,161 @@ def clean_text_output(text: str) -> str:
     clean = re.sub(r'<[^>]*>', '', str(text))
     return clean.strip()
 
+def render_markdown_table_to_clean_html(table_lines: list[str]) -> str:
+    """
+    Mengubah tabel markdown mentah (yang mengandung | dan ---) menjadi kartu atau tabel HTML modern.
+    Menghilangkan 100% karakter pipa (|) dan garis strip (---) mentah agar tampilan bersih dan profesional.
+    """
+    if len(table_lines) < 2:
+        return ""
+
+    header_line = table_lines[0]
+    headers = [c.strip() for c in header_line.split('|') if c.strip()]
+    if not headers:
+        return ""
+
+    data_start = 1
+    # Lewati baris separator tabel seperti |---|---|
+    if len(table_lines) > 1 and re.match(r'^\|?[\s:-]+\|', table_lines[1]):
+        data_start = 2
+
+    lower_headers = [h.lower() for h in headers]
+    is_medicine = any(x in h for x in ["bahan aktif", "obat", "kombinasi", "fungisida", "bakterisida"] for h in lower_headers) and any(x in h for x in ["dosis", "takaran", "golongan", "frac", "waktu"] for h in lower_headers)
+
+    if is_medicine:
+        cards = []
+        for r_idx, row_str in enumerate(table_lines[data_start:], 1):
+            if not row_str.strip() or ('|' not in row_str):
+                continue
+            cells = [c.strip() for c in row_str.split('|')[1:-1]]
+            if not cells:
+                continue
+
+            row_map = {}
+            for i, h in enumerate(headers):
+                val = cells[i] if i < len(cells) else ""
+                row_map[h.lower()] = val
+
+            no_val = ""
+            active_val = ""
+            group_val = ""
+            dose_val = ""
+            time_val = ""
+            note_val = ""
+
+            for k, v in row_map.items():
+                if "no" in k:
+                    no_val = v
+                elif any(x in k for x in ["bahan aktif", "kombinasi", "nama"]):
+                    active_val = v
+                elif any(x in k for x in ["golongan", "tipe", "cara kerja", "frac"]):
+                    group_val = v
+                elif any(x in k for x in ["dosis", "takaran", "konsentrasi"]):
+                    dose_val = v
+                elif any(x in k for x in ["waktu", "aplikasi", "jadwal"]):
+                    time_val = v
+                elif any(x in k for x in ["catatan", "keterangan", "anjuran", "penggunaan"]):
+                    note_val = v
+
+            title_text = active_val or f"Pilihan #{r_idx}"
+            title_text = re.sub(r'\*\*(.*?)\*\*', r'\1', title_text).strip()
+            group_val = re.sub(r'\*\*(.*?)\*\*', r'\1', group_val).strip()
+
+            badge_num = no_val if no_val else str(r_idx)
+            header_title = f"💊 Rekomendasi #{badge_num}: {title_text}"
+
+            card_html = f"""<div style="background: #FFFFFF; border: 1.5px solid #BFDBFE; border-left: 5px solid #2563EB; border-radius: 12px; padding: 13px 17px; margin: 12px 0; box-shadow: 0 2px 6px rgba(37,99,235,0.06);">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+        <span style="font-weight: 800; font-size: 0.95rem; color: #1E40AF;">
+            {header_title}
+        </span>
+        {f'<span style="background: #EFF6FF; color: #1D4ED8; font-size: 0.76rem; font-weight: 800; padding: 3px 11px; border-radius: 999px; border: 1px solid #BFDBFE;">{group_val}</span>' if group_val else ''}
+    </div>
+    <div style="font-size: 0.88rem; color: #1E293B; line-height: 1.65;">
+        {f'<div style="margin-bottom: 4px;"><strong>🥄 Takaran Dosis:</strong> {dose_val}</div>' if dose_val else ''}
+        {f'<div style="margin-bottom: 4px;"><strong>⏰ Waktu Semprot:</strong> {time_val}</div>' if time_val else ''}
+        {f'<div style="margin-bottom: 2px;"><strong>💡 Petunjuk Penggunaan:</strong> {note_val}</div>' if note_val else ''}
+    </div>
+</div>"""
+            cards.append(card_html)
+        return "\n".join(cards)
+    else:
+        # Tabel HTML Umum Responsif (Clean tanpa pipa mentah)
+        thead_ths = "".join([f'<th style="padding: 10px 14px; font-weight: 700; color: #1E293B; border-bottom: 2px solid #CBD5E1; background: #F8FAFC;">{h}</th>' for h in headers])
+        tbody_trs = []
+        for r_idx, row_str in enumerate(table_lines[data_start:]):
+            if not row_str.strip() or ('|' not in row_str):
+                continue
+            cells = [c.strip() for c in row_str.split('|')[1:-1]]
+            if not cells:
+                continue
+            bg_col = "#FFFFFF" if r_idx % 2 == 0 else "#F8FAFC"
+            tds = "".join([f'<td style="padding: 9px 14px; color: #334155; border-bottom: 1px solid #E2E8F0;">{c}</td>' for c in cells])
+            tbody_trs.append(f'<tr style="background: {bg_col};">{tds}</tr>')
+
+        return f"""<div style="overflow-x: auto; margin: 12px 0; border-radius: 10px; border: 1.5px solid #CBD5E1; box-shadow: 0 1px 4px rgba(0,0,0,0.04);">
+    <table style="width: 100%; border-collapse: collapse; font-size: 0.86rem; text-align: left; background: #FFFFFF;">
+        <thead>
+            <tr>{thead_ths}</tr>
+        </thead>
+        <tbody>
+            {"".join(tbody_trs)}
+        </tbody>
+    </table>
+</div>"""
+
 def format_card_text_to_html(text: str) -> str:
     """
-    Mengubah format markdown bullet points, penomoran, heading sub-bagian, dan bold ke HTML yang rapi & responsif.
-    Membersihkan tag HTML tak diinginkan terlebih dahulu untuk mencegah kebocoran tag mentah.
+    Mengubah format markdown bullet points, penomoran, heading, tabel, dan bold ke HTML yang rapi & responsif.
+    Membersihkan 100% kebocoran karakter pipe (|) dan deretan garis strip (-) agar tampilan clean dan profesional.
     """
     if not text:
         return ""
 
-    # 1. Bersihkan dari tag HTML tak diinginkan
+    # 1. Bersihkan dari tag HTML tak diinginkan terlebih dahulu
     text_clean = clean_text_output(text)
 
     # 2. Ubah format bold **text** menjadi <strong>text</strong>
     formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text_clean)
-    lines = formatted.split('\n')
+
+    raw_lines = formatted.split('\n')
     output_lines = []
     in_list = False
-    for line in lines:
+    table_buffer = []
+
+    def flush_table():
+        nonlocal table_buffer
+        if table_buffer:
+            tbl_html = render_markdown_table_to_clean_html(table_buffer)
+            if tbl_html:
+                output_lines.append(tbl_html)
+            table_buffer = []
+
+    for line in raw_lines:
         stripped = line.strip()
+
+        # Deteksi baris tabel markdown (mengandung | dan diawali/diakhiri |)
+        if stripped.startswith('|') and stripped.endswith('|'):
+            if in_list:
+                output_lines.append('</ul>')
+                in_list = False
+            table_buffer.append(stripped)
+            continue
+        elif table_buffer:
+            flush_table()
+
         if not stripped:
             if in_list:
                 output_lines.append('</ul>')
                 in_list = False
+            continue
+
+        # Cek apakah baris berupa garis pembatas (--- atau === atau |---|)
+        if re.match(r'^[-*=_]{3,}$', stripped) or re.match(r'^\|?[\s:-]+\|$', stripped):
+            if in_list:
+                output_lines.append('</ul>')
+                in_list = False
+            output_lines.append('<hr style="margin: 10px 0; border: none; border-top: 1.5px dashed #CBD5E1;">')
             continue
 
         # Cek apakah baris berupa heading markdown (### atau ##)
@@ -3614,7 +3752,7 @@ def format_card_text_to_html(text: str) -> str:
                 output_lines.append('</ul>')
                 in_list = False
             heading_txt = re.sub(r'^#{2,4}\s*', '', stripped)
-            heading_clean = heading_txt.replace('📋', '').strip()
+            heading_clean = heading_txt.replace('📋', '').replace('|', '').strip()
             output_lines.append(
                 f'<div style="font-weight: 800; font-size: 1.02rem; color: #166534; margin: 1.15rem 0 0.55rem 0; padding-top: 0.6rem; border-top: 1.5px dashed #86EFAC; display: flex; align-items: center; gap: 8px;">'
                 f'<span style="font-size: 1.15rem;">📋</span> <span>{heading_clean}</span>'
@@ -3622,20 +3760,19 @@ def format_card_text_to_html(text: str) -> str:
             )
             continue
 
-        # Cek apakah baris berupa garis pembatas (---)
-        if stripped.startswith(('---', '***', '___')):
-            if in_list:
-                output_lines.append('</ul>')
-                in_list = False
-            output_lines.append('<hr style="margin: 10px 0; border: none; border-top: 1.5px dashed #CBD5E1;">')
-            continue
+        # Bersihkan karakter pipa tersesat di dalam baris biasa menjadi bullet elegan
+        clean_line = stripped
+        if '|' in clean_line:
+            clean_line = re.sub(r'\s*\|\s*', ' • ', clean_line.strip('| ')).strip()
 
-        # Cek apakah baris berupa list poin (- atau * atau 1. atau a.)
-        is_bullet = stripped.startswith(('- ', '* '))
-        is_numbered = bool(re.match(r'^\d+[\.\)]\s+', stripped))
+        # Cek apakah baris berupa list poin (- atau * atau 1. atau a. atau •)
+        is_bullet = clean_line.startswith(('- ', '* ', '• '))
+        is_numbered = bool(re.match(r'^\d+[\.\)]\s+', clean_line))
 
         if is_bullet or is_numbered:
-            content = re.sub(r'^([-*]|\d+[\.\)])\s+', '', stripped)
+            content = re.sub(r'^([-*•]|\d+[\.\)])\s+', '', clean_line)
+            # Bersihkan jika ada tanda minus ganda di awal konten
+            content = re.sub(r'^[-–]\s*', '', content).strip()
             if not in_list:
                 output_lines.append('<ul style="margin: 0.5rem 0; padding-left: 1.35rem; list-style-type: disc;">')
                 in_list = True
@@ -3644,7 +3781,10 @@ def format_card_text_to_html(text: str) -> str:
             if in_list:
                 output_lines.append('</ul>')
                 in_list = False
-            output_lines.append(f'<p style="margin: 0.5rem 0; line-height: 1.75;">{stripped}</p>')
+            output_lines.append(f'<p style="margin: 0.5rem 0; line-height: 1.75;">{clean_line}</p>')
+
+    if table_buffer:
+        flush_table()
 
     if in_list:
         output_lines.append('</ul>')
