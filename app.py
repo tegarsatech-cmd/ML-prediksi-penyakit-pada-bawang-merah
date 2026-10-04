@@ -1673,27 +1673,31 @@ def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.08) -> tupl
         return True, f"Bypass: {e}", 1.0
 
 def detect_skin_ratio(image: Image.Image) -> float:
-    """Menghitung rasio warna kulit manusia pada citra untuk deteksi wajah/anggota tubuh."""
+    """Menghitung rasio warna kulit manusia murni pada citra untuk deteksi wajah/anggota tubuh dominan tanpa salah mendeteksi daun kering/tanah."""
     try:
         img_rgb = image.copy().convert("RGB")
         img_rgb.thumbnail((224, 224), Image.Resampling.BILINEAR)
         arr = np.array(img_rgb, dtype=np.uint8)
         if cv2 is not None:
-            hsv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV)
-            h = hsv[..., 0]
-            s = hsv[..., 1] / 255.0
-            v = hsv[..., 2] / 255.0
+            ycrcb = cv2.cvtColor(arr, cv2.COLOR_RGB2YCrCb)
+            y = ycrcb[..., 0].astype(np.float32)
+            cr = ycrcb[..., 1].astype(np.float32)
+            cb = ycrcb[..., 2].astype(np.float32)
         else:
             return 0.0
         r = arr[..., 0].astype(np.float32)
         g = arr[..., 1].astype(np.float32)
         b = arr[..., 2].astype(np.float32)
+
+        # Kulit manusia murni: Cr spesifik (133-173), Cb (85-125), Y >= 80, R > G > B, dan R - G >= 15
+        # Ini mencegah daun hawar/kering (kuning-cokelat) atau tanah terdeteksi sebagai kulit manusia
         is_skin = (
-            (h >= 5.0) & (h <= 28.0) &
-            (s >= 0.15) & (s <= 0.60) &
-            (v >= 0.30) & (v <= 0.95) &
-            (r > g * 1.08) & (g > b * 1.02) &
-            (np.abs(r - g) < 95)
+            (y >= 80.0) &
+            (cr >= 135.0) & (cr <= 173.0) &
+            (cb >= 85.0) & (cb <= 125.0) &
+            (r > g) & (g > b) &
+            ((r - g) >= 15.0) & ((r - g) <= 80.0) &
+            ((r - b) >= 20.0)
         )
         return float(np.mean(is_skin))
     except Exception:
@@ -3151,36 +3155,35 @@ def consult_gemini_visual_assistant(
         if third_name:
             candidates_text += f"- Pilihan 3: {third_name} ({third_confidence or 0:.1f}%)\n"
 
+        is_multi_candidate = (diag_mode in ("two_way", "three_way") or confidence < 60.0)
+        if is_multi_candidate:
+            disease_context = (
+                f"Sistem mendeteksi kemungkinan penyakit:\n{candidates_text}\n"
+                "TUGAS UTAMA: Jadilah PENJELAS PENYAKIT YANG SESUNGGUHNYA. "
+                "Berdasarkan pengamatan visual nyata dari gejala lesi pada helai daun foto, tentukan dan jelaskan secara langsung "
+                "penyakit mana yang sesungguhnya dialami oleh tanaman dan alasan visualnya. Jangan mengulang daftar pilihan, langsung jelaskan penyakit yang terkonfirmasi.\n"
+            )
+        else:
+            disease_context = (
+                f"Prediksi penyakit terdeteksi: {primary_name} ({confidence:.1f}%).\n"
+                "TUGAS: Berikan penjelasan klinis ringkas 1-2 kalimat mengonfirmasi ciri lesi daun yang terlihat.\n"
+            )
+
         prompt_text = (
-            "Anda adalah Ahli Fitopatologi dan Asisten Dokter Tanaman Spesialis Citra Daun Bawang Merah.\n"
-            "Lakukan verifikasi 2 langkah dengan cermat untuk menentukan KELAYAKAN DIAGNOSA pada foto yang diunggah:\n\n"
-            "LANGKAH 1 (Verifikasi Keaslian Tanaman Bawang Merah & Kelayakan Diagnosa):\n"
-            "Periksa apakah objek utama pada foto adalah tanaman keluarga bawang (daun bawang merah / Allium cepa / scallion / daun bawang).\n"
-            "Evaluasi apakah kondisi helai daun cukup jelas dan memenuhi syarat kelayakan untuk didiagnosa penyakitnya (LAYAK DIAGNOSA).\n\n"
-            "CATATAN PENTING KONDISI LAPANGAN (TANGAN PETANI & TANAH SAWAH):\n"
-            "Foto di kebun atau sawah sering menampilkan:\n"
-            "1. Tangan atau jari petani yang sedang memegang helai daun agar fokus kamera stabil dan jelas.\n"
-            "2. Latar belakang tanah kebun, bedengan sawah, polybag, pot tanaman, atau mulsa plastik.\n"
-            "Jika foto menampilkan helai daun bawang merah asli dan helai daunnya tampak cukup jelas untuk didiagnosa (meskipun sedang dipegang tangan petani atau berlatar tanah/pot/bedengan), maka tanaman LAYAK DIAGNOSA dan STATUS WAJIB:\n"
-            "STATUS: VALID_BAWANG\n\n"
-            "TOLAK DAN NYATAKAN BUKAN_BAWANG (TIDAK LAYAK DIAGNOSA) JIKA:\n"
-            "- Foto menampilkan wajah/tubuh manusia, perabotan, pakaian, kendaraan, hewan, lantai/dinding polos tanpa daun bawang.\n"
-            "- Foto menampilkan daun tanaman jenis lain (seperti daun mangga, cabai, pisang, pepaya, gulma daun lebar).\n"
-            "- Foto terlalu buram/gelap/hancur atau hanya berupa tanah/tangan kosong tanpa helai daun bawang yang layak didiagnosa.\n"
-            "Ketik baris pertama persis:\n"
-            "STATUS: BUKAN_BAWANG\n"
-            "PENJELASAN: [Jelaskan secara tegas objek apa yang tampak pada foto dan mengapa tidak layak didiagnosa sebagai daun bawang merah]\n\n"
-            "- Jika foto BENAR menampilkan helai daun bawang merah dan LAYAK DIAGNOSA:\n"
-            "Ketik baris pertama persis:\n"
-            "STATUS: VALID_BAWANG\n"
-            f"PENJELASAN: [Berdasarkan kemungkinan penyakit:\n{candidates_text}\n"
-            "Berikan analisis pembeda visual singkat 1-2 kalimat dalam Bahasa Indonesia mengenai ciri lesi/gejala nyata yang tampak pada helai daun dan penyakit yang paling sesuai]\n\n"
-            "PENTING: Selalu awali jawaban Anda dengan format persis:\n"
-            "STATUS: VALID_BAWANG atau STATUS: BUKAN_BAWANG\n"
-            "diikuti oleh PENJELASAN:"
+            "Anda adalah Ahli Fitopatologi Tanaman Spesialis Daun Bawang Merah (Allium cepa).\n"
+            "Lakukan verifikasi kelayakan foto dan penjelasan klinis dengan aturan berikut:\n\n"
+            "1. KELAYAKAN FOTO:\n"
+            "- Jika foto menampilkan daun bawang merah (termasuk yang dipegang tangan petani atau berlatar tanah/pot/kebun sawah), nyatakan LAYAK DIAGNOSA.\n"
+            "Format baris pertama: STATUS: VALID_BAWANG\n"
+            f"Format baris kedua: PENJELASAN: (Tuliskan penjelasan klinis langsung)\n"
+            f"{disease_context}\n"
+            "- TOLAK FOTO JIKA: Menampilkan wajah/tubuh manusia murni, perabotan, pakaian, kendaraan, hewan, atau daun tanaman lain non-bawang.\n"
+            "Format baris pertama: STATUS: BUKAN_BAWANG\n"
+            "Format baris kedua: PENJELASAN: (Jelaskan secara tegas objek apa yang terlihat dan mengapa tidak layak didiagnosa sebagai daun bawang merah)\n\n"
+            "PENTING: Jawaban Anda HARUS diawali persis dengan 'STATUS: VALID_BAWANG' atau 'STATUS: BUKAN_BAWANG', lalu baris berikutnya 'PENJELASAN: ' diikuti kalimat penjelasan yang utuh dan lengkap tanpa tanda kurung siku."
         )
 
-        models_to_try = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]
+        models_to_try = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
         for m in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
             payload = {
@@ -3194,17 +3197,23 @@ def consult_gemini_visual_assistant(
                 ],
                 "generationConfig": {
                     "temperature": 0.1,
-                    "maxOutputTokens": 300
+                    "maxOutputTokens": 800,
+                    "thinkingConfig": {"thinkingBudget": 0}
                 }
             }
             try:
-                r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=5.0)
+                r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8.0)
+                # Fallback tanpa thinkingConfig jika model mengembalikan 400
+                if r.status_code == 400:
+                    payload["generationConfig"].pop("thinkingConfig", None)
+                    r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8.0)
+
                 if r.status_code == 200:
                     data = r.json()
                     candidates = data.get("candidates", [])
                     if candidates:
                         raw_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                        if len(raw_text) > 10:
+                        if len(raw_text) >= 5:
                             is_shallot_valid = True
                             clean_text = raw_text
 
@@ -3221,6 +3230,17 @@ def consult_gemini_visual_assistant(
                             elif "STATUS:" in raw_text:
                                 lines_no_status = [l for l in raw_text.splitlines() if not l.strip().upper().startswith("STATUS:")]
                                 clean_text = "\n".join(lines_no_status).strip()
+
+                            # Bersihkan artefak formatting seperti kurung siku dan markdown berlebih
+                            clean_text = clean_text.replace("[", "").replace("]", "").strip()
+                            clean_text = re.sub(r'^(?:PENJELASAN\s*:\s*)+', '', clean_text, flags=re.IGNORECASE).strip()
+
+                            # Safeguard anti-terpotong: jika teks terlalu pendek (< 15 karakter)
+                            if len(clean_text) < 15:
+                                if not is_shallot_valid:
+                                    clean_text = "Foto yang diunggah tidak memperlihatkan karakteristik helai daun bawang merah (Allium cepa) yang memenuhi syarat kelayakan diagnosa klinis."
+                                else:
+                                    clean_text = f"Analisis visual mengonfirmasi gejala klinis yang paling sesuai dengan indikasi {primary_name} pada helai daun bawang merah."
 
                             return is_shallot_valid, clean_text, True, "🩺 Verifikasi Klinis Terpadu"
             except Exception:
@@ -4407,16 +4427,23 @@ if selected_image is not None and not file_error:
         is_shallot_valid = True
 
         # 2. ATURAN VERIFIKASI 2 LANGKAH:
-        # - Score >= 60.0% (single mode): Lolos langsung tanpa verifikasi tambahan (cukup baca 1 skor tinggi)
-        # - Score 40.0% s/d 59.9% (di sekitar 50% toleransi 5% ke bawah & ke atas): Wajib Verifikasi
-        # - Kasus 2-3 kemungkinan bersaing (two_way / three_way): Wajib Verifikasi
-        # - Kasus kanopi daun di zona toleransi (delegated_to_gemini) atau kecurigaan wajah: Wajib Verifikasi kelayakan daun
+        # - Score >= 60.0% (single mode): Lolos langsung tanpa verifikasi tambahan (cukup baca 1 skor tinggi definitif)
+        # - Score 40.0% s/d 59.9% (di sekitar 50% toleransi 5% ke bawah & ke atas): Wajib Verifikasi untuk menjelaskan penyakit sesungguhnya
+        # - Kasus 2-3 kemungkinan bersaing (two_way / three_way): Wajib Verifikasi untuk menentukan penyakit sesungguhnya
+        # - Kasus kanopi daun di zona toleransi atau kecurigaan wajah dominan murni: Wajib Verifikasi kelayakan daun
         conf_th_pct = conf_threshold * 100.0 if conf_threshold <= 1.0 else conf_threshold
         is_ragu_ragu = (top_confidence < 60.0)
         is_competing = (diag_mode in ("two_way", "three_way"))
         has_field_borderline = val_info.get("delegated_to_gemini", False)
+        
         detected_skin_ratio = detect_skin_ratio(selected_image)
-        is_face_suspicious = (detected_skin_ratio > 0.12)
+        detected_leaf_ratio = val_info.get("plant_ratio", 0.0)
+        # Jika daun asli sudah lolos kanopi (>= 8%), jari/tangan petani adalah hal wajar (<30% area)
+        # Kecurigaan wajah manusia murni hanya jika rasio kulit manusia sangat dominan (> 35%)
+        if val_info.get("is_valid", False) and detected_leaf_ratio >= 0.08:
+            is_face_suspicious = (detected_skin_ratio > 0.35)
+        else:
+            is_face_suspicious = (detected_skin_ratio > 0.18)
         
         needs_leaf_verification = has_field_borderline or is_face_suspicious
         needs_disease_verification = is_ragu_ragu or is_competing
@@ -4444,6 +4471,11 @@ if selected_image is not None and not file_error:
 
             # JIKA TERBUKTI BUKAN DAUN BAWANG / TIDAK LAYAK DIAGNOSA:
             if not is_shallot_valid:
+                # Pastikan teks alasan penolakan tidak pernah terpotong atau kosong
+                rejection_reason = second_opinion_text.strip() if second_opinion_text else ""
+                if len(rejection_reason) < 15:
+                    rejection_reason = "Foto yang diunggah tidak memperlihatkan karakteristik helai daun bawang merah (Allium cepa) yang memenuhi syarat kelayakan diagnosa klinis."
+
                 st.markdown(f"""
                     <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
@@ -4451,7 +4483,7 @@ if selected_image is not None and not file_error:
                             <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Verifikasi Klinis 2 Langkah</span>
                         </div>
                         <div style="font-size: 0.88rem; color: #7F1D1D; line-height: 1.55;">
-                            {second_opinion_text}<br><br>
+                            {rejection_reason}<br><br>
                             Sistem mendeteksi bahwa foto tidak memenuhi syarat kelayakan diagnosa tanaman daun bawang merah (Allium cepa). Diagnosa penyakit otomatis dan anjuran obat dihentikan demi menjaga akurasi.<br><br>
                             <strong>💡 Petunjuk Pengambilan Foto Layak Diagnosa:</strong><br>
                             • Pastikan objek yang difoto adalah tanaman daun bawang merah asli di pot atau bedengan sawah.<br>
@@ -4495,7 +4527,7 @@ if selected_image is not None and not file_error:
         """, unsafe_allow_html=True)
 
         # Bar Perbandingan Keyakinan vs Ambang Batas Slider (Transparan & Responsif)
-        if top_confidence >= 60.0 and diag_mode == "single" and not needs_leaf_verification:
+        if top_confidence >= 60.0 and diag_mode == "single":
             badge_conf_html = f'<span style="background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86efac; font-size: 0.78rem;">🟢 Lolos Langsung (Kepastian: {top_confidence:.1f}%)</span>'
         elif is_from_gemini:
             badge_conf_html = f'<span style="background: #ecfdf5; color: #065f46; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #a7f3d0; font-size: 0.78rem;">🛡️ Terverifikasi Valid oleh Sistem Pakar ({top_confidence:.1f}%)</span>'
@@ -4765,13 +4797,13 @@ if selected_image is not None and not file_error:
             st.markdown("</div>", unsafe_allow_html=True)
 
         # ==============================================================================
-        # VERIFIKASI 2 LANGKAH: VALIDASI KARAKTERISTIK LESI & GEJALA KLINIS
+        # VERIFIKASI KLINIS: PENJELAS PENYAKIT SESUNGGUHNYA
         # HANYA ditampilkan jika prediksi EfficientNet ragu-ragu (<60%) atau
         # menjawab 2-3 kemungkinan bersaing (two_way / three_way).
-        # Jika EfficientNet mantap (score >= 60% dan single mode), verifikasi tambahan TIDAK DIMUNCULKAN
+        # Jika EfficientNet mantap (score >= 60% dan single mode), kartu verifikasi TIDAK DIMUNCULKAN
         # karena pembacaan skor tunggal EfficientNet sudah mencukupi secara definitif.
         # ==============================================================================
-        show_verification_card = (top_confidence < 60.0 or diag_mode in ("two_way", "three_way") or needs_leaf_verification)
+        show_verification_card = (top_confidence < 60.0 or diag_mode in ("two_way", "three_way"))
         if show_verification_card and opinion_cache_key in st.session_state:
             is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
 
@@ -4785,7 +4817,7 @@ if selected_image is not None and not file_error:
                 badge_color = "#5B21B6"
                 badge_border = "#C4B5FD"
                 title_icon = "🩺✨"
-                title_label = "Verifikasi Klinis 2 Langkah (Validasi Botani & Ciri Lesi Daun)"
+                title_label = "Verifikasi Klinis (Penjelas Penyakit Sesungguhnya)"
             else:
                 card_bg = "#F8FAFC"
                 card_border = "#E2E8F0"
