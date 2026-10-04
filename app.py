@@ -1660,10 +1660,10 @@ def check_shallot_leaf_mask(image: Image.Image, min_ratio: float = 0.08) -> tupl
         if np.mean(is_white_gray) > 0.88 and plant_ratio < 0.02:
             return False, "Terdeteksi objek kertas atau dinding putih polos, bukan daun bawang.", plant_ratio
 
-        # Deteksi kulit/wajah manusia mendominasi
-        # Menolak foto wajah/selfie manusia atau tangan yang mendominasi tanpa helai daun yang cukup
-        if (skin_ratio > 0.30 and plant_ratio < 0.05) or (skin_ratio > 0.22 and skin_ratio > plant_ratio * 1.3):
-            return False, "Terdeteksi wajah atau kulit manusia mendominasi, bukan helai daun bawang merah.", plant_ratio
+        # Deteksi kulit/wajah manusia mendominasi tanpa tanaman (selfie wajah / foto tubuh murni)
+        # Jika ada helai daun (plant_ratio >= 0.015), foto diizinkan agar dapat divalidasi oleh Gemini
+        if skin_ratio > 0.35 and plant_ratio < 0.015:
+            return False, "Terdeteksi wajah atau kulit manusia mendominasi tanpa tanaman daun bawang merah.", plant_ratio
         
         if plant_ratio < min_ratio:
             return False, f"Rasio daun bawang pada foto hanya {plant_ratio*100:.1f}% (minimal {min_ratio*100:.0f}%).", plant_ratio
@@ -1745,15 +1745,26 @@ def validate_onion_image(image: Image.Image, api_key: str | None = None, min_rat
     """
     Sistem Validasi Guardrail Gatekeeper Citra Tanaman Bawang Merah:
     Memverifikasi keaslian foto daun bawang merah sebelum proses diagnosa.
-    Menolak foto manusia, hewan, kendaraan, tanah kosong, dan objek non-bawang.
-    Tetap mengizinkan anomali wajar seperti daun bawang yang dipegang tangan petani di kebun.
+    Menolak foto manusia murni, hewan, kendaraan, dinding kosong, dan objek non-tanaman.
+    Untuk foto daun bawang yang dipegang tangan petani atau berlatar tanah/pot/bedengan sawah,
+    validasi botani dialihkan ke Gemini Vision pada Tahap 3.
     """
     is_plant, reason, ratio = check_shallot_leaf_mask(image, min_ratio=min_ratio)
     rec_leaf_pct = max(3, min(35, int(np.floor(ratio * 100.0)))) if ratio >= 0.03 else 5
+    
+    gemini_key = get_gemini_api_key()
+    # Jika rasio di bawah batas slider tetapi memiliki jaringan vegetasi daun (ratio >= 0.02)
+    # dan Gemini aktif, izinkan lolos Tahap 1 untuk divalidasi langsung oleh Gemini di Tahap 3:
+    is_field_delegated = (not is_plant and "Rasio daun bawang pada foto hanya" in reason and ratio >= 0.02 and bool(gemini_key))
+    if is_field_delegated:
+        is_plant = True
+        reason = f"Diteruskan ke Verifikasi AI Gemini (Rasio Daun: {ratio*100:.1f}%)"
+
     info = {
         "plant_ratio": ratio,
         "min_ratio": min_ratio,
         "is_ratio_rejection": (not is_plant and "Rasio daun bawang pada foto hanya" in reason),
+        "delegated_to_gemini": is_field_delegated,
         "reason": reason,
         "recommended_leaf_pct": rec_leaf_pct
     }
@@ -3128,8 +3139,14 @@ def consult_gemini_visual_assistant(
             "Anda adalah Ahli Fitopatologi dan Asisten Dokter Tanaman Spesialis Citra Daun Bawang Merah.\n"
             "Lakukan verifikasi 2 langkah dengan cermat pada foto yang diunggah:\n\n"
             "LANGKAH 1 (Verifikasi Keaslian Tanaman Bawang Merah):\n"
-            "Periksa apakah objek pada foto adalah tanaman keluarga bawang (daun bawang merah / Allium cepa / scallion / daun bawang).\n"
-            "- Jika foto menampilkan wajah manusia, kulit orang, hewan, perabotan, pakaian, lantai/dinding, atau daun tanaman lebar (seperti daun mangga, cabai, pepaya, pisang, gulma):\n"
+            "Periksa apakah objek pada foto adalah tanaman keluarga bawang (daun bawang merah / Allium cepa / scallion / daun bawang).\n\n"
+            "CATATAN PENTING KONDISI LAPANGAN (TANGAN PETANI & TANAH SAWAH):\n"
+            "Foto di kebun atau sawah SANGAT SERING menampilkan:\n"
+            "1. Tangan atau jari petani yang sedang memegang helai daun agar fokus kamera stabil dan jelas.\n"
+            "2. Latar belakang tanah kebun, bedengan sawah, polybag, pot tanaman, atau mulsa plastik.\n"
+            "Jika foto menampilkan helai daun bawang merah (meskipun sedang dipegang tangan petani atau berlatar tanah/pot/bedengan), ini adalah foto tanaman asli yang valid dan STATUS WAJIB:\n"
+            "STATUS: VALID_BAWANG\n\n"
+            "HANYA jawab BUKAN_BAWANG jika foto BENAR-BENAR bukan tanaman daun bawang merah, seperti: wajah manusia/selfie tanpa tanaman, tubuh manusia, perabotan, pakaian, kendaraan, hewan, lantai/dinding polos, atau daun tanaman lebar jenis lain (seperti daun mangga, cabai, pisang, pepaya, gulma lebar).\n"
             "Ketik baris pertama:\n"
             "STATUS: BUKAN_BAWANG\n"
             "PENJELASAN: [Jelaskan secara tegas objek apa yang tampak pada foto dan mengapa bukan daun tanaman bawang merah]\n\n"
@@ -3143,7 +3160,7 @@ def consult_gemini_visual_assistant(
             "diikuti oleh PENJELASAN:"
         )
 
-        models_to_try = ["gemini-3.5-flash-lite", "gemini-2.5-flash"]
+        models_to_try = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]
         for m in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
             payload = {
@@ -4321,8 +4338,9 @@ if selected_image is not None and not file_error:
         conf_th_pct = conf_threshold * 100.0 if conf_threshold <= 1.0 else conf_threshold
         is_uncertain = api_output.get("uncertain", False) or (top_confidence < conf_th_pct)
         detected_skin_ratio = detect_skin_ratio(selected_image)
-        is_face_suspicious = (detected_skin_ratio > 0.15)
-        needs_2step_verification = is_uncertain or is_face_suspicious or (diag_mode in ("two_way", "three_way"))
+        is_face_suspicious = (detected_skin_ratio > 0.12)
+        has_hand_or_soil = (detected_skin_ratio > 0.05) or val_info.get("delegated_to_gemini", False) or (val_info.get("plant_ratio", 1.0) < min_leaf_ratio)
+        needs_2step_verification = is_uncertain or is_face_suspicious or has_hand_or_soil or (diag_mode in ("two_way", "three_way"))
 
         # Jalankan Verifikasi 2 Langkah Gemini jika ada keraguan atau kecurigaan non-bawang
         opinion_cache_key = f"second_opinion_{current_img_sig}"
@@ -4403,648 +4421,648 @@ if selected_image is not None and not file_error:
         else:
             badge_conf_html = f'<span style="background: #ecfdf5; color: #065f46; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #a7f3d0; font-size: 0.78rem;">🛡️ Terverifikasi Daun Bawang Asli oleh Gemini ({top_confidence:.1f}%)</span>'
 
-            st.markdown(f"""
-                <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 10px 14px; margin: 4px 0 14px 0; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                    <div>
-                        🎯 <strong>Tingkat Keyakinan AI:</strong> <span style="color: #15803d; font-weight: 800; font-size: 1rem;">{top_confidence:.1f}%</span> 
-                        <span style="color: #64748b; font-size: 0.82rem;">(Batas Keyakinan Slider Anda: <strong>{conf_threshold_pct}%</strong>)</span>
+        st.markdown(f"""
+            <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 10px 14px; margin: 4px 0 14px 0; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    🎯 <strong>Tingkat Keyakinan AI:</strong> <span style="color: #15803d; font-weight: 800; font-size: 1rem;">{top_confidence:.1f}%</span> 
+                    <span style="color: #64748b; font-size: 0.82rem;">(Batas Keyakinan Slider Anda: <strong>{conf_threshold_pct}%</strong>)</span>
+                </div>
+                <div>
+                    {badge_conf_html}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        is_healthy = is_pure_healthy
+        is_pest = info.get("status") == "pest"
+
+        if diag_mode == "three_way":
+            # ------------------------------------------------------------------
+            # TAMPILAN 3 KEMUNGKINAN BERSAING (PERINGKAT 1, 2, & 3)
+            # ------------------------------------------------------------------
+            p1_is_h = ("sehat" in info.get("nama_id", "").lower())
+            header_title = (
+                "⚠️ **Waspada Gejala Awal: Terdeteksi 3 Kemungkinan Bersaing**"
+                if p1_is_h else
+                "🚨 **Terdeteksi 3 Kemungkinan Penyakit Bersaing**"
+            )
+            st.warning(
+                f"{header_title}\n\n"
+                f"Model mencatat distribusi probabilitas yang tersebar pada 3 kemungkinan dengan selisih mendekati "
+                f"(Peringkat 1: **{top_confidence:.1f}%**, Peringkat 2: **{second_confidence:.1f}%**, Peringkat 3: **{third_confidence:.1f}%**). "
+                f"Sistem menyajikan 3 kemungkinan agar petani dapat memverifikasi langsung di bedengan sawah:"
+            )
+
+            col_top1, col_top2, col_top3 = st.columns(3)
+            with col_top1:
+                b_color_1 = "#16a34a" if p1_is_h else "#dc2626"
+                badge_text_1 = "🥇 PREDIKSI TERPILIH (SEHAT)" if p1_is_h else "🥇 PERINGKAT 1"
+                st.markdown(f"""
+                    <div style="background: #ffffff; border: 2.5px solid {b_color_1}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                        <span style="background: {b_color_1}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_1}</span>
+                        <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{info['nama_id']}</div>
+                        <div style="font-size: 0.90rem; color: {b_color_1}; font-weight: 800; margin-bottom: 8px;">Kepastian: {top_confidence:.1f}%</div>
+                        <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
+                            <strong>🔍 Ciri di Sawah:</strong><br>{info.get('ciri_lapangan', '-')}
+                        </div>
                     </div>
-                    <div>
-                        {badge_conf_html}
+                """, unsafe_allow_html=True)
+
+            with col_top2:
+                b_color_2 = "#ea580c"
+                badge_text_2 = "🥈 PERINGKAT 2"
+                st.markdown(f"""
+                    <div style="background: #ffffff; border: 2.5px solid {b_color_2}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                        <span style="background: {b_color_2}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_2}</span>
+                        <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{second_info['nama_id']}</div>
+                        <div style="font-size: 0.90rem; color: {b_color_2}; font-weight: 800; margin-bottom: 8px;">Kepastian: {second_confidence:.1f}%</div>
+                        <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
+                            <strong>🔍 Ciri di Sawah:</strong><br>{second_info.get('ciri_lapangan', '-')}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            with col_top3:
+                b_color_3 = "#0284c7"
+                badge_text_3 = "🥉 PERINGKAT 3"
+                st.markdown(f"""
+                    <div style="background: #ffffff; border: 2.5px solid {b_color_3}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                        <span style="background: {b_color_3}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_3}</span>
+                        <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{third_info.get('nama_id', third_class_raw)}</div>
+                        <div style="font-size: 0.90rem; color: {b_color_3}; font-weight: 800; margin-bottom: 8px;">Kepastian: {third_confidence:.1f}%</div>
+                        <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
+                            <strong>🔍 Ciri di Sawah:</strong><br>{third_info.get('ciri_lapangan', '-')}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            st.info(
+                "💡 **Panduan Identifikasi 3 Titik Gejala di Kebun:**\n\n"
+                "• **Titik [1] (Hijau/Merah):** Cek kondisi daun dominan apakah masih berklorofil tegar atau sudah berpusat lesi.\n\n"
+                f"• **Titik [2] (Oranye):** Cek apakah tampak gejala khas **{second_info['nama_id']}** (misal: ujung daun menguning kering atau bercak basah).\n\n"
+                f"• **Titik [3] (Biru):** Cek apakah tampak gejala **{third_info.get('nama_id', third_class_raw)}** (misal: garis klorosis virus atau bercak cincin jamur)."
+            )
+
+        elif diag_mode == "two_way":
+            # ------------------------------------------------------------------
+            # TAMPILAN 2 KEMUNGKINAN BERSAING (DIFERENSIAL)
+            # ------------------------------------------------------------------
+            st.warning(
+                f"⚠️ **Gejala Ganda / Memerlukan Konfirmasi Fisik**\n\n"
+                f"### Terdeteksi 2 Kemungkinan Penyakit Serupa\n\n"
+                f"Model visual menemukan kemiripan tinggi dengan selisih probabilitas tipis (hanya **{confidence_margin:.1f}%**). "
+                f"Petani disarankan mencocokkan ciri fisik langsung di kebun:"
+            )
+
+            col_diff1, col_diff2 = st.columns(2)
+            with col_diff1:
+                latin_a = f"*{info.get('latin', '')}*\n\n" if info.get("latin") else ""
+                st.error(
+                    f"**Kemungkinan A (Peringkat 1)**\n\n"
+                    f"### {info['nama_id']}\n\n"
+                    f"{latin_a}"
+                    f"**Tingkat Kepastian:** `{top_confidence:.1f}%`\n\n"
+                    f"🔍 **Ciri di Sawah:**\n\n{info.get('ciri_lapangan', '-')}"
+                )
+            with col_diff2:
+                latin_b = f"*{second_info.get('latin', '')}*\n\n" if second_info.get("latin") else ""
+                st.warning(
+                    f"**Kemungkinan B (Peringkat 2)**\n\n"
+                    f"### {second_info['nama_id']}\n\n"
+                    f"{latin_b}"
+                    f"**Tingkat Kepastian:** `{second_confidence:.1f}%`\n\n"
+                    f"🔍 **Ciri di Sawah:**\n\n{second_info.get('ciri_lapangan', '-')}"
+                )
+
+            st.info(
+                "💡 **Kunci Pembeda Cepat di Lapangan:**\n\n"
+                "Periksa helai bercak daun secara teliti:\n\n"
+                "• **Bakteri (Hawar Daun):** Biasanya tampak berlendir kebasah-basahan seperti tersiram air mendidih saat pagi hari lembap dan berbau busuk.\n\n"
+                "• **Jamur (Bercak Ungu / Trotol / Stemphylium / Karat):** Tampak bercak cincin konsentris kering, bertepung spora, atau bintil karat serbuk oranye."
+            )
+        else:
+            # ------------------------------------------------------------------
+            # TAMPILAN SATU VONIS TUNGGAL (DOMINAN TINGGI)
+            # ------------------------------------------------------------------
+            if is_pure_healthy:
+                status_card_class = "status-card-healthy"
+                badge_class = "badge-healthy-tag"
+                badge_text = "✅ DAUN SEHAT & NORMAL"
+                conf_color = "#10b981"
+            elif is_pest:
+                status_card_class = "status-card-pest"
+                badge_class = "badge-pest-tag"
+                badge_text = "🐛 SERANGAN HAMA TANAMAN"
+                conf_color = "#ea580c"
+            else:
+                status_card_class = "status-card-disease"
+                badge_class = "badge-disease-tag"
+                badge_text = "🚨 DAUN TERSERANG PENYAKIT"
+                conf_color = "#dc2626"
+
+            st.markdown(f"""
+                <div class="{status_card_class}">
+                    <div class="status-badge {badge_class}">{badge_text}</div>
+                    <div class="status-disease-name">{info['nama_id']}</div>
+                    <div class="status-confidence-text">
+                        Tingkat Kepastian: <span style="color: {conf_color}; font-size: 1.4rem;">{top_confidence:.1f}%</span>
+                    </div>
+                    <div style="font-size: 0.92rem; color: #475569; margin-top: 0.6rem; line-height: 1.5;">
+                        🔍 <strong>Ciri Khas di Sawah:</strong> {info.get('ciri_lapangan', '-')}
                     </div>
                 </div>
             """, unsafe_allow_html=True)
 
-            is_healthy = is_pure_healthy
-            is_pest = info.get("status") == "pest"
+        # Tombol Aksi Atas: 1. Simpan Riwayat, 2. Periksa / Pilih Foto Lain
+        saved_key = f"saved_entry_{current_img_sig}"
+        confirm_save_key = f"confirm_save_{current_img_sig}"
+        confirm_other_key = f"confirm_other_{current_img_sig}"
+        step3_key = f"show_step3_{current_img_sig}"
+        is_already_saved = st.session_state.get(saved_key, False)
+        is_confirming_save = st.session_state.get(confirm_save_key, False)
+        is_confirming_other = st.session_state.get(confirm_other_key, False)
+        is_step3_open = st.session_state.get(step3_key, False)
 
-            if diag_mode == "three_way":
-                # ------------------------------------------------------------------
-                # TAMPILAN 3 KEMUNGKINAN BERSAING (PERINGKAT 1, 2, & 3)
-                # ------------------------------------------------------------------
-                p1_is_h = ("sehat" in info.get("nama_id", "").lower())
-                header_title = (
-                    "⚠️ **Waspada Gejala Awal: Terdeteksi 3 Kemungkinan Bersaing**"
-                    if p1_is_h else
-                    "🚨 **Terdeteksi 3 Kemungkinan Penyakit Bersaing**"
-                )
-                st.warning(
-                    f"{header_title}\n\n"
-                    f"Model mencatat distribusi probabilitas yang tersebar pada 3 kemungkinan dengan selisih mendekati "
-                    f"(Peringkat 1: **{top_confidence:.1f}%**, Peringkat 2: **{second_confidence:.1f}%**, Peringkat 3: **{third_confidence:.1f}%**). "
-                    f"Sistem menyajikan 3 kemungkinan agar petani dapat memverifikasi langsung di bedengan sawah:"
-                )
+        # Notifikasi Status Tersimpan
+        if is_already_saved:
+            st.markdown("""
+                <div style="background: #F0FDF4; border: 1.5px solid #86EFAC; border-radius: 12px; padding: 10px 14px; margin: 0.7rem 0 0.5rem 0; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.25rem;">💾</span>
+                    <div style="font-size: 0.88rem; color: #166534; line-height: 1.45;">
+                        <strong>Hasil Diagnosa Telah Tersimpan:</strong> Data pemeriksaan foto ini sudah aman di Riwayat Pemeriksaan dan dapat Anda unduh sebagai file Excel (.xlsx) di menu samping.
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
-                col_top1, col_top2, col_top3 = st.columns(3)
-                with col_top1:
-                    b_color_1 = "#16a34a" if p1_is_h else "#dc2626"
-                    badge_text_1 = "🥇 PREDIKSI TERPILIH (SEHAT)" if p1_is_h else "🥇 PERINGKAT 1"
-                    st.markdown(f"""
-                        <div style="background: #ffffff; border: 2.5px solid {b_color_1}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
-                            <span style="background: {b_color_1}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_1}</span>
-                            <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{info['nama_id']}</div>
-                            <div style="font-size: 0.90rem; color: {b_color_1}; font-weight: 800; margin-bottom: 8px;">Kepastian: {top_confidence:.1f}%</div>
-                            <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
-                                <strong>🔍 Ciri di Sawah:</strong><br>{info.get('ciri_lapangan', '-')}
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
+        # Dialog Konfirmasi Simpan Hasil
+        if is_confirming_save:
+            diag_target_name = info.get('nama_id', 'Penyakit Daun')
+            st.markdown(f"""
+                <div style="background: #F0FDF4; border: 2px solid #22C55E; border-radius: 14px; padding: 14px 16px; margin: 0.9rem 0; box-shadow: 0 3px 10px rgba(34, 197, 94, 0.12);">
+                    <div style="font-weight: 800; color: #14532D; font-size: 1.02rem; margin-bottom: 4px;">
+                        📋 Konfirmasi Simpan Hasil Diagnosa
+                    </div>
+                    <div style="color: #166534; font-size: 0.90rem; line-height: 1.55;">
+                        Apakah Anda yakin ingin menyimpan hasil pemeriksaan <strong>{diag_target_name} ({top_confidence:.1f}%)</strong> beserta foto dan bukti analisisnya ke daftar Riwayat?
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            col_csave_yes, col_csave_no = st.columns(2)
+            with col_csave_yes:
+                if st.button("✅ Ya, Simpan Sekarang", type="primary", use_container_width=True, key=f"btn_act_save_yes_{current_img_sig}"):
+                    if diag_mode == "three_way":
+                        rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) | {second_info['nama_id']} ({second_confidence:.1f}%) | {third_info.get('nama_id', third_class_raw)} ({third_confidence:.1f}%)"
+                    elif diag_mode == "two_way":
+                        rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) & {second_info['nama_id']} ({second_confidence:.1f}%)"
+                    else:
+                        rec_name = info["nama_id"]
 
-                with col_top2:
-                    b_color_2 = "#ea580c"
-                    badge_text_2 = "🥈 PERINGKAT 2"
-                    st.markdown(f"""
-                        <div style="background: #ffffff; border: 2.5px solid {b_color_2}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
-                            <span style="background: {b_color_2}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_2}</span>
-                            <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{second_info['nama_id']}</div>
-                            <div style="font-size: 0.90rem; color: {b_color_2}; font-weight: 800; margin-bottom: 8px;">Kepastian: {second_confidence:.1f}%</div>
-                            <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
-                                <strong>🔍 Ciri di Sawah:</strong><br>{second_info.get('ciri_lapangan', '-')}
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    save_diagnosis_to_history(
+                        disease_code=top_class_raw,
+                        display_name=rec_name,
+                        confidence=top_confidence,
+                        recommendation=info.get("rekomendasi_singkat", ""),
+                        is_healthy=is_pure_healthy,
+                        notes=info.get("ciri_lapangan", "-"),
+                        location="Kebun Bawang",
+                        image=selected_image,
+                        visual_details=visual_evidence.get("evidence_desc", "") if visual_evidence else info.get("ciri_lapangan", "-")
+                    )
+                    st.session_state[saved_key] = True
+                    st.session_state[confirm_save_key] = False
+                    st.toast("✅ Berhasil disimpan ke riwayat pemeriksaan!", icon="💾")
+                    st.rerun()
+            with col_csave_no:
+                if st.button("❌ Batal Simpan", use_container_width=True, key=f"btn_act_save_no_{current_img_sig}"):
+                    st.session_state[confirm_save_key] = False
+                    st.toast("Penyimpanan riwayat dibatalkan.", icon="ℹ️")
+                    st.rerun()
 
-                with col_top3:
-                    b_color_3 = "#0284c7"
-                    badge_text_3 = "🥉 PERINGKAT 3"
-                    st.markdown(f"""
-                        <div style="background: #ffffff; border: 2.5px solid {b_color_3}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
-                            <span style="background: {b_color_3}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_3}</span>
-                            <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{third_info.get('nama_id', third_class_raw)}</div>
-                            <div style="font-size: 0.90rem; color: {b_color_3}; font-weight: 800; margin-bottom: 8px;">Kepastian: {third_confidence:.1f}%</div>
-                            <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
-                                <strong>🔍 Ciri di Sawah:</strong><br>{third_info.get('ciri_lapangan', '-')}
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
+        # Dialog Konfirmasi Ganti Foto
+        if is_confirming_other:
+            st.markdown("""
+                <div style="background: #FEF3C7; border: 2px solid #F59E0B; border-radius: 14px; padding: 14px 16px; margin: 0.9rem 0; box-shadow: 0 3px 10px rgba(245, 158, 11, 0.12);">
+                    <div style="font-weight: 800; color: #92400E; font-size: 1.02rem; margin-bottom: 4px;">
+                        📸 Konfirmasi Ganti Foto Pemeriksaan
+                    </div>
+                    <div style="color: #78350F; font-size: 0.90rem; line-height: 1.55;">
+                        Pemeriksaan foto daun saat ini akan ditutup untuk memilih atau memotret daun baru. Pastikan hasil penting sudah disimpan jika diperlukan.
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            col_cother_yes, col_cother_no = st.columns(2)
+            with col_cother_yes:
+                if st.button("📸 Ya, Ganti Foto", type="primary", use_container_width=True, key=f"btn_act_other_yes_{current_img_sig}"):
+                    st.session_state[confirm_other_key] = False
+                    if "has_inspected_current" in st.session_state:
+                        del st.session_state["has_inspected_current"]
+                    st.toast("Siap mengambil atau memilih foto baru.", icon="📸")
+                    st.rerun()
+            with col_cother_no:
+                if st.button("❌ Batal (Tetap di Sini)", use_container_width=True, key=f"btn_act_other_no_{current_img_sig}"):
+                    st.session_state[confirm_other_key] = False
+                    st.rerun()
 
-                st.info(
-                    "💡 **Panduan Identifikasi 3 Titik Gejala di Kebun:**\n\n"
-                    "• **Titik [1] (Hijau/Merah):** Cek kondisi daun dominan apakah masih berklorofil tegar atau sudah berpusat lesi.\n\n"
-                    f"• **Titik [2] (Oranye):** Cek apakah tampak gejala khas **{second_info['nama_id']}** (misal: ujung daun menguning kering atau bercak basah).\n\n"
-                    f"• **Titik [3] (Biru):** Cek apakah tampak gejala **{third_info.get('nama_id', third_class_raw)}** (misal: garis klorosis virus atau bercak cincin jamur)."
-                )
+        # Tombol Utama (Bila Tidak Sedang Membuka Dialog Konfirmasi)
+        if not is_confirming_save and not is_confirming_other:
+            st.markdown("<div style='margin: 1.15rem 0 0.9rem 0;'>", unsafe_allow_html=True)
+            col_save, col_other = st.columns([1.0, 1.0])
+            with col_save:
+                if is_already_saved:
+                    st.button("✅ Hasil Sudah Disimpan", disabled=True, use_container_width=True)
+                else:
+                    if st.button("💾 Simpan Hasil ke Riwayat", use_container_width=True, key=f"btn_save_top_{current_img_sig}"):
+                        st.session_state[confirm_save_key] = True
+                        st.rerun()
 
+            with col_other:
+                if st.button("🔄 Pilih Foto Lain", use_container_width=True, key=f"btn_other_photo_{current_img_sig}"):
+                    st.session_state[confirm_other_key] = True
+                    st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # ==============================================================================
+        # ASISTEN DOKTER AI: KONFIRMASI & PENDAPAT KEDUA (TRIO-ENGINE: GEMINI VISION)
+        # Fokus membantu jika ada keraguan atau kemungkinan 2-3 penyakit.
+        # Menghemat kuota token jika diagnosis pasti/sehat. Groq dikhususkan untuk Langkah 3.
+        # ==============================================================================
+        opinion_cache_key = f"second_opinion_{current_img_sig}"
+        if opinion_cache_key not in st.session_state:
+            st.session_state[opinion_cache_key] = consult_gemini_visual_assistant(
+                image=selected_image,
+                primary_name=info['nama_id'],
+                confidence=top_confidence,
+                diag_mode=diag_mode,
+                second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way') and second_info) else None,
+                second_confidence=second_confidence if (diag_mode in ('two_way', 'three_way') and second_info) else None,
+                third_name=third_info.get('nama_id', third_class_raw) if (diag_mode == 'three_way' and third_info) else None,
+                third_confidence=third_confidence if (diag_mode == 'three_way' and third_info) else None,
+                is_pure_healthy=is_pure_healthy,
+                visual_evidence=visual_evidence,
+                conf_threshold=conf_threshold
+            )
+        is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
+
+        if is_from_gemini:
+            card_bg = "#FAF5FF"
+            card_border = "#DDD6FE"
+            accent_bar = "#8B5CF6"
+            title_color = "#6D28D9"
+            text_color = "#2E1065"
+            badge_bg = "#EDE9FE"
+            badge_color = "#5B21B6"
+            badge_border = "#C4B5FD"
+            title_icon = "🩺✨"
+            title_label = "Verifikasi 2 Langkah AI (Validasi Botani & Ciri Lesi Daun)"
+        else:
+            card_bg = "#F8FAFC"
+            card_border = "#E2E8F0"
+            accent_bar = "#16A34A"
+            title_color = "#166534"
+            text_color = "#0F172A"
+            badge_bg = "#F1F5F9"
+            badge_color = "#475569"
+            badge_border = "#CBD5E1"
+            title_icon = "🩺"
+            title_label = "Verifikasi Diagnosa Lapangan (Standar Balitsa)"
+
+        st.markdown(f"""
+            <div style="background: {card_bg}; border-left: 5px solid {accent_bar}; border-radius: 12px; padding: 13px 17px; margin: 12px 0 16px 0; border: 1px solid {card_border}; border-left-width: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+                    <span style="font-weight: 800; font-size: 0.92rem; color: {title_color}; display: flex; align-items: center; gap: 6px;">
+                        {title_icon} <span>{title_label}</span>
+                    </span>
+                    <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.76rem; font-weight: 800; padding: 3px 11px; border-radius: 999px; border: 1px solid {badge_border};">
+                        {badge_src_label}
+                    </span>
+                </div>
+                <div style="font-size: 0.89rem; color: {text_color}; line-height: 1.6; margin-top: 4px;">
+                    {second_opinion_text}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # ==============================================================================
+        # MODUL BUKTI ANALISIS VISUAL NYATA DARI FOTO (REAL VISUAL LESION AUDIT)
+        # ==============================================================================
+        if visual_evidence and visual_evidence.get("has_visual_evidence"):
+            v_sev_pct = visual_evidence.get("severity_pct", 0.0)
+            v_sev_lvl = visual_evidence.get("severity_level", "Normal")
+            v_healthy_pct = visual_evidence.get("healthy_pct", 100.0)
+            v_desc = visual_evidence.get("evidence_desc", "")
+
+            st.markdown("### 🔬 Bukti Analisis Visual Nyata dari Foto Daun")
+            st.caption("Hasil pemindaian fitur fisik piksel langsung dari foto yang diunggah:")
+
+            # Konfigurasi Nilai Kartu Secara Realistis & Anti-Ngawur
+            if is_pure_healthy:
+                c1_title = "🩺 Luas Kerusakan Daun"
+                c1_val = "0.0%"
+                c1_delta = "Sehat Prima"
+                c1_color = "#16a34a"
+
+                c2_title = "🌿 Jaringan Daun Sehat"
+                c2_val = "100.0%"
+                c2_delta = "Klorofil Utuh"
+                c2_color = "#16a34a"
+
+                c3_title = "🛡️ Kondisi Tanaman"
+                c3_val = "Bebas Patogen"
+                c3_delta = "Aman Terkendali"
+                c3_color = "#16a34a"
+            elif diag_mode == "three_way":
+                c1_title = "🩺 Luas Gejala Visual"
+                c1_val = f"{v_sev_pct:.1f}%"
+                c1_delta = v_sev_lvl
+                c1_color = "#ea580c"
+
+                c2_title = "🌿 Jaringan Hijau Tersisa"
+                c2_val = f"{v_healthy_pct:.1f}%"
+                c2_delta = "Klorofil Bertahan"
+                c2_color = "#16a34a"
+
+                c3_title = "🛡️ Kondisi Tanaman"
+                c3_val = "Waspada Gejala Awal"
+                c3_delta = "3 Penyakit Bersaing"
+                c3_color = "#ea580c"
             elif diag_mode == "two_way":
-                # ------------------------------------------------------------------
-                # TAMPILAN 2 KEMUNGKINAN BERSAING (DIFERENSIAL)
-                # ------------------------------------------------------------------
-                st.warning(
-                    f"⚠️ **Gejala Ganda / Memerlukan Konfirmasi Fisik**\n\n"
-                    f"### Terdeteksi 2 Kemungkinan Penyakit Serupa\n\n"
-                    f"Model visual menemukan kemiripan tinggi dengan selisih probabilitas tipis (hanya **{confidence_margin:.1f}%**). "
-                    f"Petani disarankan mencocokkan ciri fisik langsung di kebun:"
-                )
+                c1_title = "🩺 Luas Kerusakan Daun"
+                c1_val = f"{v_sev_pct:.1f}%"
+                c1_delta = v_sev_lvl
+                c1_color = "#dc2626"
 
-                col_diff1, col_diff2 = st.columns(2)
-                with col_diff1:
-                    latin_a = f"*{info.get('latin', '')}*\n\n" if info.get("latin") else ""
-                    st.error(
-                        f"**Kemungkinan A (Peringkat 1)**\n\n"
-                        f"### {info['nama_id']}\n\n"
-                        f"{latin_a}"
-                        f"**Tingkat Kepastian:** `{top_confidence:.1f}%`\n\n"
-                        f"🔍 **Ciri di Sawah:**\n\n{info.get('ciri_lapangan', '-')}"
-                    )
-                with col_diff2:
-                    latin_b = f"*{second_info.get('latin', '')}*\n\n" if second_info.get("latin") else ""
-                    st.warning(
-                        f"**Kemungkinan B (Peringkat 2)**\n\n"
-                        f"### {second_info['nama_id']}\n\n"
-                        f"{latin_b}"
-                        f"**Tingkat Kepastian:** `{second_confidence:.1f}%`\n\n"
-                        f"🔍 **Ciri di Sawah:**\n\n{second_info.get('ciri_lapangan', '-')}"
-                    )
+                c2_title = "🌿 Jaringan Hijau Tersisa"
+                c2_val = f"{v_healthy_pct:.1f}%"
+                c2_delta = "Area Sehat"
+                c2_color = "#16a34a"
 
-                st.info(
-                    "💡 **Kunci Pembeda Cepat di Lapangan:**\n\n"
-                    "Periksa helai bercak daun secara teliti:\n\n"
-                    "• **Bakteri (Hawar Daun):** Biasanya tampak berlendir kebasah-basahan seperti tersiram air mendidih saat pagi hari lembap dan berbau busuk.\n\n"
-                    "• **Jamur (Bercak Ungu / Trotol / Stemphylium / Karat):** Tampak bercak cincin konsentris kering, bertepung spora, atau bintil karat serbuk oranye."
-                )
+                c3_title = "🛡️ Kondisi Tanaman"
+                c3_val = "Suspek Ganda"
+                c3_delta = "Konfirmasi Ciri Lapangan"
+                c3_color = "#dc2626"
             else:
-                # ------------------------------------------------------------------
-                # TAMPILAN SATU VONIS TUNGGAL (DOMINAN TINGGI)
-                # ------------------------------------------------------------------
-                if is_pure_healthy:
-                    status_card_class = "status-card-healthy"
-                    badge_class = "badge-healthy-tag"
-                    badge_text = "✅ DAUN SEHAT & NORMAL"
-                    conf_color = "#10b981"
-                elif is_pest:
-                    status_card_class = "status-card-pest"
-                    badge_class = "badge-pest-tag"
-                    badge_text = "🐛 SERANGAN HAMA TANAMAN"
-                    conf_color = "#ea580c"
-                else:
-                    status_card_class = "status-card-disease"
-                    badge_class = "badge-disease-tag"
-                    badge_text = "🚨 DAUN TERSERANG PENYAKIT"
-                    conf_color = "#dc2626"
+                c1_title = "🩺 Luas Kerusakan Daun"
+                c1_val = f"{v_sev_pct:.1f}%"
+                c1_delta = v_sev_lvl
+                c1_color = "#dc2626"
 
-                st.markdown(f"""
-                    <div class="{status_card_class}">
-                        <div class="status-badge {badge_class}">{badge_text}</div>
-                        <div class="status-disease-name">{info['nama_id']}</div>
-                        <div class="status-confidence-text">
-                            Tingkat Kepastian: <span style="color: {conf_color}; font-size: 1.4rem;">{top_confidence:.1f}%</span>
-                        </div>
-                        <div style="font-size: 0.92rem; color: #475569; margin-top: 0.6rem; line-height: 1.5;">
-                            🔍 <strong>Ciri Khas di Sawah:</strong> {info.get('ciri_lapangan', '-')}
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
+                c2_title = "🌿 Jaringan Hijau Tersisa"
+                c2_val = f"{v_healthy_pct:.1f}%"
+                c2_delta = "Area Sehat"
+                c2_color = "#16a34a"
 
-            # Tombol Aksi Atas: 1. Simpan Riwayat, 2. Periksa / Pilih Foto Lain
-            saved_key = f"saved_entry_{current_img_sig}"
-            confirm_save_key = f"confirm_save_{current_img_sig}"
-            confirm_other_key = f"confirm_other_{current_img_sig}"
-            step3_key = f"show_step3_{current_img_sig}"
-            is_already_saved = st.session_state.get(saved_key, False)
-            is_confirming_save = st.session_state.get(confirm_save_key, False)
-            is_confirming_other = st.session_state.get(confirm_other_key, False)
-            is_step3_open = st.session_state.get(step3_key, False)
+                short_target = info['nama_id'].split('/')[0].strip()
+                c3_title = "🛡️ Kondisi Tanaman"
+                c3_val = f"Terinfeksi {short_target}"
+                c3_delta = "Butuh Penanganan"
+                c3_color = "#dc2626"
 
-            # Notifikasi Status Tersimpan
-            if is_already_saved:
-                st.markdown("""
-                    <div style="background: #F0FDF4; border: 1.5px solid #86EFAC; border-radius: 12px; padding: 10px 14px; margin: 0.7rem 0 0.5rem 0; display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 1.25rem;">💾</span>
-                        <div style="font-size: 0.88rem; color: #166534; line-height: 1.45;">
-                            <strong>Hasil Diagnosa Telah Tersimpan:</strong> Data pemeriksaan foto ini sudah aman di Riwayat Pemeriksaan dan dapat Anda unduh sebagai file Excel (.xlsx) di menu samping.
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-            # Dialog Konfirmasi Simpan Hasil
-            if is_confirming_save:
-                diag_target_name = info.get('nama_id', 'Penyakit Daun')
-                st.markdown(f"""
-                    <div style="background: #F0FDF4; border: 2px solid #22C55E; border-radius: 14px; padding: 14px 16px; margin: 0.9rem 0; box-shadow: 0 3px 10px rgba(34, 197, 94, 0.12);">
-                        <div style="font-weight: 800; color: #14532D; font-size: 1.02rem; margin-bottom: 4px;">
-                            📋 Konfirmasi Simpan Hasil Diagnosa
-                        </div>
-                        <div style="color: #166534; font-size: 0.90rem; line-height: 1.55;">
-                            Apakah Anda yakin ingin menyimpan hasil pemeriksaan <strong>{diag_target_name} ({top_confidence:.1f}%)</strong> beserta foto dan bukti analisisnya ke daftar Riwayat?
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-                col_csave_yes, col_csave_no = st.columns(2)
-                with col_csave_yes:
-                    if st.button("✅ Ya, Simpan Sekarang", type="primary", use_container_width=True, key=f"btn_act_save_yes_{current_img_sig}"):
-                        if diag_mode == "three_way":
-                            rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) | {second_info['nama_id']} ({second_confidence:.1f}%) | {third_info.get('nama_id', third_class_raw)} ({third_confidence:.1f}%)"
-                        elif diag_mode == "two_way":
-                            rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) & {second_info['nama_id']} ({second_confidence:.1f}%)"
-                        else:
-                            rec_name = info["nama_id"]
-
-                        save_diagnosis_to_history(
-                            disease_code=top_class_raw,
-                            display_name=rec_name,
-                            confidence=top_confidence,
-                            recommendation=info.get("rekomendasi_singkat", ""),
-                            is_healthy=is_pure_healthy,
-                            notes=info.get("ciri_lapangan", "-"),
-                            location="Kebun Bawang",
-                            image=selected_image,
-                            visual_details=visual_evidence.get("evidence_desc", "") if visual_evidence else info.get("ciri_lapangan", "-")
-                        )
-                        st.session_state[saved_key] = True
-                        st.session_state[confirm_save_key] = False
-                        st.toast("✅ Berhasil disimpan ke riwayat pemeriksaan!", icon="💾")
-                        st.rerun()
-                with col_csave_no:
-                    if st.button("❌ Batal Simpan", use_container_width=True, key=f"btn_act_save_no_{current_img_sig}"):
-                        st.session_state[confirm_save_key] = False
-                        st.toast("Penyimpanan riwayat dibatalkan.", icon="ℹ️")
-                        st.rerun()
-
-            # Dialog Konfirmasi Ganti Foto
-            if is_confirming_other:
-                st.markdown("""
-                    <div style="background: #FEF3C7; border: 2px solid #F59E0B; border-radius: 14px; padding: 14px 16px; margin: 0.9rem 0; box-shadow: 0 3px 10px rgba(245, 158, 11, 0.12);">
-                        <div style="font-weight: 800; color: #92400E; font-size: 1.02rem; margin-bottom: 4px;">
-                            📸 Konfirmasi Ganti Foto Pemeriksaan
-                        </div>
-                        <div style="color: #78350F; font-size: 0.90rem; line-height: 1.55;">
-                            Pemeriksaan foto daun saat ini akan ditutup untuk memilih atau memotret daun baru. Pastikan hasil penting sudah disimpan jika diperlukan.
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-                col_cother_yes, col_cother_no = st.columns(2)
-                with col_cother_yes:
-                    if st.button("📸 Ya, Ganti Foto", type="primary", use_container_width=True, key=f"btn_act_other_yes_{current_img_sig}"):
-                        st.session_state[confirm_other_key] = False
-                        if "has_inspected_current" in st.session_state:
-                            del st.session_state["has_inspected_current"]
-                        st.toast("Siap mengambil atau memilih foto baru.", icon="📸")
-                        st.rerun()
-                with col_cother_no:
-                    if st.button("❌ Batal (Tetap di Sini)", use_container_width=True, key=f"btn_act_other_no_{current_img_sig}"):
-                        st.session_state[confirm_other_key] = False
-                        st.rerun()
-
-            # Tombol Utama (Bila Tidak Sedang Membuka Dialog Konfirmasi)
-            if not is_confirming_save and not is_confirming_other:
-                st.markdown("<div style='margin: 1.15rem 0 0.9rem 0;'>", unsafe_allow_html=True)
-                col_save, col_other = st.columns([1.0, 1.0])
-                with col_save:
-                    if is_already_saved:
-                        st.button("✅ Hasil Sudah Disimpan", disabled=True, use_container_width=True)
-                    else:
-                        if st.button("💾 Simpan Hasil ke Riwayat", use_container_width=True, key=f"btn_save_top_{current_img_sig}"):
-                            st.session_state[confirm_save_key] = True
-                            st.rerun()
-
-                with col_other:
-                    if st.button("🔄 Pilih Foto Lain", use_container_width=True, key=f"btn_other_photo_{current_img_sig}"):
-                        st.session_state[confirm_other_key] = True
-                        st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
-
-            # ==============================================================================
-            # ASISTEN DOKTER AI: KONFIRMASI & PENDAPAT KEDUA (TRIO-ENGINE: GEMINI VISION)
-            # Fokus membantu jika ada keraguan atau kemungkinan 2-3 penyakit.
-            # Menghemat kuota token jika diagnosis pasti/sehat. Groq dikhususkan untuk Langkah 3.
-            # ==============================================================================
-            opinion_cache_key = f"second_opinion_{current_img_sig}"
-            if opinion_cache_key not in st.session_state:
-                st.session_state[opinion_cache_key] = consult_gemini_visual_assistant(
-                    image=selected_image,
-                    primary_name=info['nama_id'],
-                    confidence=top_confidence,
-                    diag_mode=diag_mode,
-                    second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way') and second_info) else None,
-                    second_confidence=second_confidence if (diag_mode in ('two_way', 'three_way') and second_info) else None,
-                    third_name=third_info.get('nama_id', third_class_raw) if (diag_mode == 'three_way' and third_info) else None,
-                    third_confidence=third_confidence if (diag_mode == 'three_way' and third_info) else None,
-                    is_pure_healthy=is_pure_healthy,
-                    visual_evidence=visual_evidence,
-                    conf_threshold=conf_threshold
-                )
-            is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
-
-            if is_from_gemini:
-                card_bg = "#FAF5FF"
-                card_border = "#DDD6FE"
-                accent_bar = "#8B5CF6"
-                title_color = "#6D28D9"
-                text_color = "#2E1065"
-                badge_bg = "#EDE9FE"
-                badge_color = "#5B21B6"
-                badge_border = "#C4B5FD"
-                title_icon = "🩺✨"
-                title_label = "Verifikasi 2 Langkah AI (Validasi Botani & Ciri Lesi Daun)"
-            else:
-                card_bg = "#F8FAFC"
-                card_border = "#E2E8F0"
-                accent_bar = "#16A34A"
-                title_color = "#166534"
-                text_color = "#0F172A"
-                badge_bg = "#F1F5F9"
-                badge_color = "#475569"
-                badge_border = "#CBD5E1"
-                title_icon = "🩺"
-                title_label = "Verifikasi Diagnosa Lapangan (Standar Balitsa)"
-
+            # Responsive Anti-Crop Metric Cards Grid (Anti-Potong di HP / Tablet / PC)
             st.markdown(f"""
-                <div style="background: {card_bg}; border-left: 5px solid {accent_bar}; border-radius: 12px; padding: 13px 17px; margin: 12px 0 16px 0; border: 1px solid {card_border}; border-left-width: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
-                        <span style="font-weight: 800; font-size: 0.92rem; color: {title_color}; display: flex; align-items: center; gap: 6px;">
-                            {title_icon} <span>{title_label}</span>
-                        </span>
-                        <span style="background: {badge_bg}; color: {badge_color}; font-size: 0.76rem; font-weight: 800; padding: 3px 11px; border-radius: 999px; border: 1px solid {badge_border};">
-                            {badge_src_label}
-                        </span>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 10px 0 16px 0;">
+                    <div class="metric-anti-crop">
+                        <div class="metric-anti-crop-label">{c1_title}</div>
+                        <div class="metric-anti-crop-val" style="color: {c1_color};">{c1_val}</div>
+                        <div class="metric-anti-crop-delta" style="color: #64748b;">{c1_delta}</div>
                     </div>
-                    <div style="font-size: 0.89rem; color: {text_color}; line-height: 1.6; margin-top: 4px;">
-                        {second_opinion_text}
+                    <div class="metric-anti-crop">
+                        <div class="metric-anti-crop-label">{c2_title}</div>
+                        <div class="metric-anti-crop-val" style="color: {c2_color};">{c2_val}</div>
+                        <div class="metric-anti-crop-delta" style="color: #64748b;">{c2_delta}</div>
+                    </div>
+                    <div class="metric-anti-crop">
+                        <div class="metric-anti-crop-label">{c3_title}</div>
+                        <div class="metric-anti-crop-val" style="color: {c3_color}; font-size: 1.15rem;">{c3_val}</div>
+                        <div class="metric-anti-crop-delta" style="color: #64748b;">{c3_delta}</div>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
 
-            # ==============================================================================
-            # MODUL BUKTI ANALISIS VISUAL NYATA DARI FOTO (REAL VISUAL LESION AUDIT)
-            # ==============================================================================
-            if visual_evidence and visual_evidence.get("has_visual_evidence"):
-                v_sev_pct = visual_evidence.get("severity_pct", 0.0)
-                v_sev_lvl = visual_evidence.get("severity_level", "Normal")
-                v_healthy_pct = visual_evidence.get("healthy_pct", 100.0)
-                v_desc = visual_evidence.get("evidence_desc", "")
+            if is_pure_healthy:
+                st.success("✅ **Daun Sehat & Normal:** Pemindaian visual mengonfirmasi helai daun segar merata, berlilin alami, dan tidak ditemukan bercak lesi patogen aktif.")
+            else:
+                st.info(f"📋 **Karakteristik Fisik Daun pada Foto:**\n\n{v_desc}")
 
-                st.markdown("### 🔬 Bukti Analisis Visual Nyata dari Foto Daun")
-                st.caption("Hasil pemindaian fitur fisik piksel langsung dari foto yang diunggah:")
+        with st.expander("📊 Distribusi Probabilitas Model (TorchScript EfficientNet-B0 - 7 Kelas)", expanded=False):
+            st.caption("Distribusi probabilitas softmax terkalibrasi (temperature-scaled) untuk seluruh 7 kelas:")
+            probs_dict = api_output.get("probabilities", {})
+            sorted_probs = sorted(probs_dict.items(), key=lambda x: x[1], reverse=True)
+            for rank, (c_label, prob_val) in enumerate(sorted_probs, 1):
+                info_c = CLASS_METADATA.get(c_label, {"nama_id": c_label, "icon": "🔍"})
+                c_icon = info_c.get("icon", "🌱" if "sehat" in c_label.lower() else "🚨")
+                prob_pct = round(prob_val * 100.0, 1)
 
-                # Konfigurasi Nilai Kartu Secara Realistis & Anti-Ngawur
-                if is_pure_healthy:
-                    c1_title = "🩺 Luas Kerusakan Daun"
-                    c1_val = "0.0%"
-                    c1_delta = "Sehat Prima"
-                    c1_color = "#16a34a"
-
-                    c2_title = "🌿 Jaringan Daun Sehat"
-                    c2_val = "100.0%"
-                    c2_delta = "Klorofil Utuh"
-                    c2_color = "#16a34a"
-
-                    c3_title = "🛡️ Kondisi Tanaman"
-                    c3_val = "Bebas Patogen"
-                    c3_delta = "Aman Terkendali"
-                    c3_color = "#16a34a"
-                elif diag_mode == "three_way":
-                    c1_title = "🩺 Luas Gejala Visual"
-                    c1_val = f"{v_sev_pct:.1f}%"
-                    c1_delta = v_sev_lvl
-                    c1_color = "#ea580c"
-
-                    c2_title = "🌿 Jaringan Hijau Tersisa"
-                    c2_val = f"{v_healthy_pct:.1f}%"
-                    c2_delta = "Klorofil Bertahan"
-                    c2_color = "#16a34a"
-
-                    c3_title = "🛡️ Kondisi Tanaman"
-                    c3_val = "Waspada Gejala Awal"
-                    c3_delta = "3 Penyakit Bersaing"
-                    c3_color = "#ea580c"
-                elif diag_mode == "two_way":
-                    c1_title = "🩺 Luas Kerusakan Daun"
-                    c1_val = f"{v_sev_pct:.1f}%"
-                    c1_delta = v_sev_lvl
-                    c1_color = "#dc2626"
-
-                    c2_title = "🌿 Jaringan Hijau Tersisa"
-                    c2_val = f"{v_healthy_pct:.1f}%"
-                    c2_delta = "Area Sehat"
-                    c2_color = "#16a34a"
-
-                    c3_title = "🛡️ Kondisi Tanaman"
-                    c3_val = "Suspek Ganda"
-                    c3_delta = "Konfirmasi Ciri Lapangan"
-                    c3_color = "#dc2626"
+                if rank == 1:
+                    rank_badge = "🥇 Prediksi Terpilih"
+                    val_color = "#16a34a" if info_c.get("is_healthy") else "#dc2626"
+                elif rank == 2:
+                    rank_badge = "🥈 Peringkat 2"
+                    val_color = "#ea580c"
+                elif rank == 3:
+                    rank_badge = "🥉 Peringkat 3"
+                    val_color = "#0284c7"
                 else:
-                    c1_title = "🩺 Luas Kerusakan Daun"
-                    c1_val = f"{v_sev_pct:.1f}%"
-                    c1_delta = v_sev_lvl
-                    c1_color = "#dc2626"
+                    rank_badge = f"#{rank}"
+                    val_color = "#475569"
 
-                    c2_title = "🌿 Jaringan Hijau Tersisa"
-                    c2_val = f"{v_healthy_pct:.1f}%"
-                    c2_delta = "Area Sehat"
-                    c2_color = "#16a34a"
+                col_pb1, col_pb2 = st.columns([3, 1])
+                with col_pb1:
+                    st.markdown(f"**{c_icon} {info_c['nama_id']}** <span style='font-size: 0.78rem; color: #64748b; margin-left: 6px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;'>{rank_badge}</span>", unsafe_allow_html=True)
+                with col_pb2:
+                    st.markdown(f"<div style='text-align: right; font-weight: 800; font-size: 0.95rem; color: {val_color};'>{prob_pct:.1f}%</div>", unsafe_allow_html=True)
+                st.progress(min(max(float(prob_val), 0.0), 1.0))
 
-                    short_target = info['nama_id'].split('/')[0].strip()
-                    c3_title = "🛡️ Kondisi Tanaman"
-                    c3_val = f"Terinfeksi {short_target}"
-                    c3_delta = "Butuh Penanganan"
-                    c3_color = "#dc2626"
+        # ==============================================================================
+        # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN & INTEGRASI LOGIKA PEMBEDA
+        # ==============================================================================
+        if not is_pure_healthy:
+            # Logika Pembeda Gejala Serupa tetap aktif di backend untuk memperkaya verifikasi fisik dan dokter tanaman
+            diff_data = get_disease_differential_breakdown(
+                primary_name=info['nama_id'],
+                second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way') and second_info) else None,
+                diag_mode=diag_mode,
+                is_papery_blight=diag_info.get("is_papery_blight", False)
+            )
 
-                # Responsive Anti-Crop Metric Cards Grid (Anti-Potong di HP / Tablet / PC)
-                st.markdown(f"""
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 10px 0 16px 0;">
-                        <div class="metric-anti-crop">
-                            <div class="metric-anti-crop-label">{c1_title}</div>
-                            <div class="metric-anti-crop-val" style="color: {c1_color};">{c1_val}</div>
-                            <div class="metric-anti-crop-delta" style="color: #64748b;">{c1_delta}</div>
-                        </div>
-                        <div class="metric-anti-crop">
-                            <div class="metric-anti-crop-label">{c2_title}</div>
-                            <div class="metric-anti-crop-val" style="color: {c2_color};">{c2_val}</div>
-                            <div class="metric-anti-crop-delta" style="color: #64748b;">{c2_delta}</div>
-                        </div>
-                        <div class="metric-anti-crop">
-                            <div class="metric-anti-crop-label">{c3_title}</div>
-                            <div class="metric-anti-crop-val" style="color: {c3_color}; font-size: 1.15rem;">{c3_val}</div>
-                            <div class="metric-anti-crop-delta" style="color: #64748b;">{c3_delta}</div>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                if is_pure_healthy:
-                    st.success("✅ **Daun Sehat & Normal:** Pemindaian visual mengonfirmasi helai daun segar merata, berlilin alami, dan tidak ditemukan bercak lesi patogen aktif.")
-                else:
-                    st.info(f"📋 **Karakteristik Fisik Daun pada Foto:**\n\n{v_desc}")
-
-            with st.expander("📊 Distribusi Probabilitas Model (TorchScript EfficientNet-B0 - 7 Kelas)", expanded=False):
-                st.caption("Distribusi probabilitas softmax terkalibrasi (temperature-scaled) untuk seluruh 7 kelas:")
-                probs_dict = api_output.get("probabilities", {})
-                sorted_probs = sorted(probs_dict.items(), key=lambda x: x[1], reverse=True)
-                for rank, (c_label, prob_val) in enumerate(sorted_probs, 1):
-                    info_c = CLASS_METADATA.get(c_label, {"nama_id": c_label, "icon": "🔍"})
-                    c_icon = info_c.get("icon", "🌱" if "sehat" in c_label.lower() else "🚨")
-                    prob_pct = round(prob_val * 100.0, 1)
-
-                    if rank == 1:
-                        rank_badge = "🥇 Prediksi Terpilih"
-                        val_color = "#16a34a" if info_c.get("is_healthy") else "#dc2626"
-                    elif rank == 2:
-                        rank_badge = "🥈 Peringkat 2"
-                        val_color = "#ea580c"
-                    elif rank == 3:
-                        rank_badge = "🥉 Peringkat 3"
-                        val_color = "#0284c7"
-                    else:
-                        rank_badge = f"#{rank}"
-                        val_color = "#475569"
-
-                    col_pb1, col_pb2 = st.columns([3, 1])
-                    with col_pb1:
-                        st.markdown(f"**{c_icon} {info_c['nama_id']}** <span style='font-size: 0.78rem; color: #64748b; margin-left: 6px; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;'>{rank_badge}</span>", unsafe_allow_html=True)
-                    with col_pb2:
-                        st.markdown(f"<div style='text-align: right; font-weight: 800; font-size: 0.95rem; color: {val_color};'>{prob_pct:.1f}%</div>", unsafe_allow_html=True)
-                    st.progress(min(max(float(prob_val), 0.0), 1.0))
-
-            # ==============================================================================
-            # MODUL VALIDASI KARAKTERISTIK FISIK LAPANGAN & INTEGRASI LOGIKA PEMBEDA
-            # ==============================================================================
-            if not is_pure_healthy:
-                # Logika Pembeda Gejala Serupa tetap aktif di backend untuk memperkaya verifikasi fisik dan dokter tanaman
-                diff_data = get_disease_differential_breakdown(
+            phys_cache_key = f"phys_{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}"
+            if phys_cache_key not in st.session_state:
+                st.session_state[phys_cache_key] = get_groq_physical_verification(
                     primary_name=info['nama_id'],
-                    second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way') and second_info) else None,
-                    diag_mode=diag_mode,
-                    is_papery_blight=diag_info.get("is_papery_blight", False)
+                    second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way')) else None,
+                    is_differential=(diag_mode == 'two_way'),
+                    third_name=third_info.get('nama_id', third_class_raw) if diag_mode == 'three_way' else None,
+                    is_three_way=(diag_mode == 'three_way'),
+                    diff_data=diff_data,
+                    severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
+                    evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None
                 )
+            phys_content = st.session_state[phys_cache_key]
+            html_phys = format_card_text_to_html(phys_content)
 
-                phys_cache_key = f"phys_{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}"
-                if phys_cache_key not in st.session_state:
-                    st.session_state[phys_cache_key] = get_groq_physical_verification(
-                        primary_name=info['nama_id'],
-                        second_name=second_info['nama_id'] if (diag_mode in ('two_way', 'three_way')) else None,
-                        is_differential=(diag_mode == 'two_way'),
-                        third_name=third_info.get('nama_id', third_class_raw) if diag_mode == 'three_way' else None,
-                        is_three_way=(diag_mode == 'three_way'),
-                        diff_data=diff_data,
+            phys_sub_text = (
+                f"Cocokkan tanda fisik berikut langsung di bedengan untuk memastikan apakah daun terserang <strong>{info['nama_id']}</strong> atau <strong>{second_info['nama_id']}</strong>:"
+                if is_differential and second_info
+                else f"Cocokkan tanda fisik berikut langsung pada tanaman di sawah untuk memastikan gejala penyakit <strong>{info['nama_id']}</strong>:"
+            )
+
+            with st.expander("🔬 Verifikasi Karakteristik Fisik Langsung di Sawah (Standar Balitsa & BPTP)", expanded=False):
+                st.markdown(f"""
+                    <div style="font-size: 0.88rem; color: #475569; margin-bottom: 0.85rem; line-height: 1.55;">
+                        {phys_sub_text}
+                    </div>
+                    <div style="background: #F8FAFC; border-radius: 12px; padding: 1rem 1.15rem; font-size: 0.92rem; color: #1E293B; line-height: 1.7; border: 1px solid #E2E8F0; border-left: 4px solid #0284C7;">
+                        {html_phys}
+                    </div>
+                """, unsafe_allow_html=True)
+        else:
+            diff_data = None
+
+        # ==============================================================================
+        # 9. LANGKAH 3: PETUNJUK OBAT & PERAWATAN DARI DOKTER TANAMAN (GROQ AI)
+        # ==============================================================================
+        if not is_step3_open:
+            st.markdown("""
+                <div style="background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%); border-radius: 16px; border: 1.5px dashed #93C5FD; padding: 1.15rem 1.4rem; margin: 1.3rem 0; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+                    <div style="font-size: 1.8rem; margin-bottom: 0.35rem;">🩺💊</div>
+                    <div style="font-size: 1.15rem; font-weight: 800; color: #1E3A8A; margin-bottom: 0.2rem;">
+                        Langkah 3: Butuh Resep Obat Semprot & Panduan Dokter Tanaman?
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            col_b1, col_b2, col_b3 = st.columns([0.5, 2.2, 0.5])
+            with col_b2:
+                if st.button("🩺 KASIH DETAIL OBAT (LANGKAH 3)", type="primary", use_container_width=True, key=f"btn_open_step3_bottom_{current_img_sig}"):
+                    st.session_state[step3_key] = True
+                    st.rerun()
+        else:
+            st.markdown("""
+                <div class="step-header">
+                    <div class="step-num">3</div>
+                    <div class="step-title">Petunjuk Obat & Perawatan dari Dokter Tanaman</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Logika Pengambilan Saran Groq AI
+            ai_token_now = f"{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}_{round(top_confidence, 1)}"
+            if st.session_state.get("ai_token_saved") != ai_token_now or "ai_text_saved" not in st.session_state:
+                with st.spinner("🤖 Dokter Tanaman AI sedang meracik resep obat dan panduan perawatan..."):
+                    ai_text, ai_angle = get_groq_recommendation(
+                        disease_name=info["nama_id"],
+                        confidence=top_confidence,
+                        is_healthy=is_healthy,
+                        angle_idx=0,
+                        second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                        second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                        is_differential=(diag_mode == "two_way"),
+                        latin_name=info.get("latin"),
                         severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
-                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None
+                        evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
+                        third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
+                        third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
+                        is_three_way=(diag_mode == "three_way"),
+                        diff_data=diff_data
                     )
-                phys_content = st.session_state[phys_cache_key]
-                html_phys = format_card_text_to_html(phys_content)
+                    st.session_state["ai_text_saved"] = ai_text
+                    st.session_state["ai_angle_saved"] = ai_angle or f"{FOCUS_ANGLES[0][0]} (Database Mandiri Sistem)"
+                    st.session_state["ai_token_saved"] = ai_token_now
+                    st.session_state["ai_angle_idx"] = 0
 
-                phys_sub_text = (
-                    f"Cocokkan tanda fisik berikut langsung di bedengan untuk memastikan apakah daun terserang <strong>{info['nama_id']}</strong> atau <strong>{second_info['nama_id']}</strong>:"
-                    if is_differential and second_info
-                    else f"Cocokkan tanda fisik berikut langsung pada tanaman di sawah untuk memastikan gejala penyakit <strong>{info['nama_id']}</strong>:"
-                )
+            # Parsing Resep Menjadi 3 Kartu Jelas & Format HTML Terstruktur (Otomatis Fallback ke Database Mandiri Sistem jika Kuota Groq Habis)
+            kartu_tindakan, kartu_obat, kartu_lahan = parse_groq_to_cards(
+                st.session_state.get("ai_text_saved"),
+                info,
+                second_info=second_info if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                is_differential=(diag_mode == "two_way"),
+                third_info=third_info if (diag_mode == "three_way" and third_info) else None,
+                is_three_way=(diag_mode == "three_way"),
+                angle_title=st.session_state.get("ai_angle_saved")
+            )
+            html_tindakan = format_card_text_to_html(kartu_tindakan)
+            html_obat = format_card_text_to_html(kartu_obat)
+            html_lahan = format_card_text_to_html(kartu_lahan)
 
-                with st.expander("🔬 Verifikasi Karakteristik Fisik Langsung di Sawah (Standar Balitsa & BPTP)", expanded=False):
-                    st.markdown(f"""
-                        <div style="font-size: 0.88rem; color: #475569; margin-bottom: 0.85rem; line-height: 1.55;">
-                            {phys_sub_text}
-                        </div>
-                        <div style="background: #F8FAFC; border-radius: 12px; padding: 1rem 1.15rem; font-size: 0.92rem; color: #1E293B; line-height: 1.7; border: 1px solid #E2E8F0; border-left: 4px solid #0284C7;">
-                            {html_phys}
-                        </div>
-                    """, unsafe_allow_html=True)
-            else:
-                diff_data = None
+            current_angle_display = st.session_state.get('ai_angle_saved', FOCUS_ANGLES[0][0])
+            current_angle_idx = st.session_state.get('ai_angle_idx', 0)
+            angle_badge_html = f"<span style='background: #E0F2FE; color: #0369A1; padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 800; border: 1px solid #BAE6FD;'>Sudut #{current_angle_idx + 1} dari 4</span>"
 
-            # ==============================================================================
-            # 9. LANGKAH 3: PETUNJUK OBAT & PERAWATAN DARI DOKTER TANAMAN (GROQ AI)
-            # ==============================================================================
-            if not is_step3_open:
-                st.markdown("""
-                    <div style="background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%); border-radius: 16px; border: 1.5px dashed #93C5FD; padding: 1.15rem 1.4rem; margin: 1.3rem 0; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
-                        <div style="font-size: 1.8rem; margin-bottom: 0.35rem;">🩺💊</div>
-                        <div style="font-size: 1.15rem; font-weight: 800; color: #1E3A8A; margin-bottom: 0.2rem;">
-                            Langkah 3: Butuh Resep Obat Semprot & Panduan Dokter Tanaman?
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-                col_b1, col_b2, col_b3 = st.columns([0.5, 2.2, 0.5])
-                with col_b2:
-                    if st.button("🩺 KASIH DETAIL OBAT (LANGKAH 3)", type="primary", use_container_width=True, key=f"btn_open_step3_bottom_{current_img_sig}"):
-                        st.session_state[step3_key] = True
-                        st.rerun()
-            else:
-                st.markdown("""
-                    <div class="step-header">
-                        <div class="step-num">3</div>
-                        <div class="step-title">Petunjuk Obat & Perawatan dari Dokter Tanaman</div>
+            st.markdown(f"""
+                <div style="background-color: #F1F5F9; border-left: 6px solid #0284C7; padding: 0.85rem 1.15rem; border-radius: 12px; margin-bottom: 1.2rem; font-size: 0.98rem; color: #0F172A; font-weight: 700; border: 1px solid #CBD5E1; border-left-width: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                    <div>🎯 <strong>Fokus Rekomendasi Saat Ini:</strong> {current_angle_display}</div>
+                    <div>{angle_badge_html}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # KARTU 1: TINDAKAN LANGSUNG DI KEBUN (MERAH)
+            with st.expander("🚨 Tindakan Langsung di Kebun (24 Jam Pertama di Bedengan)", expanded=False):
+                st.markdown(f"""
+                    <div class="card-ai-step card-ai-red" style="margin-top: 0.35rem;">
+                        <div class="card-ai-title" style="color: #DC2626;">🚨 Tindakan Langsung di Kebun</div>
+                        <div class="card-ai-sub">(Langkah Segera 24 Jam Pertama di Bedengan)</div>
+                        <div class="card-ai-body">{html_tindakan}</div>
                     </div>
                 """, unsafe_allow_html=True)
 
-                # Logika Pengambilan Saran Groq AI
-                ai_token_now = f"{top_class_raw}_{second_class_raw}_{third_class_raw}_{diag_mode}_{round(top_confidence, 1)}"
-                if st.session_state.get("ai_token_saved") != ai_token_now or "ai_text_saved" not in st.session_state:
-                    with st.spinner("🤖 Dokter Tanaman AI sedang meracik resep obat dan panduan perawatan..."):
-                        ai_text, ai_angle = get_groq_recommendation(
+            # KARTU 2: REKOMENDASI OBAT SEMPROT (BIRU)
+            with st.expander("🧪 Rekomendasi Obat Semprot (Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)", expanded=False):
+                st.markdown(f"""
+                    <div class="card-ai-step card-ai-blue" style="margin-top: 0.35rem;">
+                        <div class="card-ai-title" style="color: #1D4ED8;">🧪 Rekomendasi Obat Semprot</div>
+                        <div class="card-ai-sub">(Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)</div>
+                        <div class="card-ai-body">{html_obat}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            # KARTU 3: PERAWATAN LAHAN & PUPUK (HIJAU)
+            with st.expander("🌾 Perawatan Lahan & Pupuk (Detail Solusi)", expanded=False):
+                st.markdown(f"""
+                    <div class="card-ai-step card-ai-green" style="margin-top: 0.35rem;">
+                        <div class="card-ai-title" style="color: #15803D;">🌾 Perawatan Lahan & Pupuk (Detail Solusi)</div>
+                        <div class="card-ai-sub">(Rangkuman Riset Balitsa Lembang, BPTP Kementan & Jurnal Proteksi Tanaman)</div>
+                        <div class="card-ai-body">{html_lahan}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            # Tombol Aksi Bawah: Minta Alternatif & Tutup Detail Langkah 3
+            st.markdown("<div style='margin-top: 1rem;'>", unsafe_allow_html=True)
+            col_sub1, col_sub2 = st.columns([1.3, 1.0])
+            with col_sub1:
+                if st.button("🔄 Minta Petunjuk / Alternatif Obat Lain", key="btn_minta_alternatif", use_container_width=True):
+                    with st.spinner("🔄 Sedang meracik alternatif kombinasi obat dan panduan lain dari Balitsa/Kementan..."):
+                        curr_idx = st.session_state.get("ai_angle_idx", 0)
+                        next_idx = (curr_idx + 1) % len(FOCUS_ANGLES)
+                        alt_title, _ = FOCUS_ANGLES[next_idx]
+
+                        new_text, new_angle = get_groq_recommendation(
                             disease_name=info["nama_id"],
                             confidence=top_confidence,
                             is_healthy=is_healthy,
-                            angle_idx=0,
-                            second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
-                            second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
-                            is_differential=(diag_mode == "two_way"),
+                            angle_idx=next_idx,
                             latin_name=info.get("latin"),
                             severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
                             evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
+                            second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                            second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
+                            is_differential=(diag_mode == "two_way"),
                             third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
                             third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
                             is_three_way=(diag_mode == "three_way"),
                             diff_data=diff_data
                         )
-                        st.session_state["ai_text_saved"] = ai_text
-                        st.session_state["ai_angle_saved"] = ai_angle or f"{FOCUS_ANGLES[0][0]} (Database Mandiri Sistem)"
+                        st.session_state["ai_angle_idx"] = next_idx
                         st.session_state["ai_token_saved"] = ai_token_now
-                        st.session_state["ai_angle_idx"] = 0
-
-                # Parsing Resep Menjadi 3 Kartu Jelas & Format HTML Terstruktur (Otomatis Fallback ke Database Mandiri Sistem jika Kuota Groq Habis)
-                kartu_tindakan, kartu_obat, kartu_lahan = parse_groq_to_cards(
-                    st.session_state.get("ai_text_saved"),
-                    info,
-                    second_info=second_info if (diag_mode in ("two_way", "three_way") and second_info) else None,
-                    is_differential=(diag_mode == "two_way"),
-                    third_info=third_info if (diag_mode == "three_way" and third_info) else None,
-                    is_three_way=(diag_mode == "three_way"),
-                    angle_title=st.session_state.get("ai_angle_saved")
-                )
-                html_tindakan = format_card_text_to_html(kartu_tindakan)
-                html_obat = format_card_text_to_html(kartu_obat)
-                html_lahan = format_card_text_to_html(kartu_lahan)
-
-                current_angle_display = st.session_state.get('ai_angle_saved', FOCUS_ANGLES[0][0])
-                current_angle_idx = st.session_state.get('ai_angle_idx', 0)
-                angle_badge_html = f"<span style='background: #E0F2FE; color: #0369A1; padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 800; border: 1px solid #BAE6FD;'>Sudut #{current_angle_idx + 1} dari 4</span>"
-
-                st.markdown(f"""
-                    <div style="background-color: #F1F5F9; border-left: 6px solid #0284C7; padding: 0.85rem 1.15rem; border-radius: 12px; margin-bottom: 1.2rem; font-size: 0.98rem; color: #0F172A; font-weight: 700; border: 1px solid #CBD5E1; border-left-width: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-                        <div>🎯 <strong>Fokus Rekomendasi Saat Ini:</strong> {current_angle_display}</div>
-                        <div>{angle_badge_html}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                # KARTU 1: TINDAKAN LANGSUNG DI KEBUN (MERAH)
-                with st.expander("🚨 Tindakan Langsung di Kebun (24 Jam Pertama di Bedengan)", expanded=False):
-                    st.markdown(f"""
-                        <div class="card-ai-step card-ai-red" style="margin-top: 0.35rem;">
-                            <div class="card-ai-title" style="color: #DC2626;">🚨 Tindakan Langsung di Kebun</div>
-                            <div class="card-ai-sub">(Langkah Segera 24 Jam Pertama di Bedengan)</div>
-                            <div class="card-ai-body">{html_tindakan}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                # KARTU 2: REKOMENDASI OBAT SEMPROT (BIRU)
-                with st.expander("🧪 Rekomendasi Obat Semprot (Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)", expanded=False):
-                    st.markdown(f"""
-                        <div class="card-ai-step card-ai-blue" style="margin-top: 0.35rem;">
-                            <div class="card-ai-title" style="color: #1D4ED8;">🧪 Rekomendasi Obat Semprot</div>
-                            <div class="card-ai-sub">(Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)</div>
-                            <div class="card-ai-body">{html_obat}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                # KARTU 3: PERAWATAN LAHAN & PUPUK (HIJAU)
-                with st.expander("🌾 Perawatan Lahan & Pupuk (Detail Solusi)", expanded=False):
-                    st.markdown(f"""
-                        <div class="card-ai-step card-ai-green" style="margin-top: 0.35rem;">
-                            <div class="card-ai-title" style="color: #15803D;">🌾 Perawatan Lahan & Pupuk (Detail Solusi)</div>
-                            <div class="card-ai-sub">(Rangkuman Riset Balitsa Lembang, BPTP Kementan & Jurnal Proteksi Tanaman)</div>
-                            <div class="card-ai-body">{html_lahan}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                # Tombol Aksi Bawah: Minta Alternatif & Tutup Detail Langkah 3
-                st.markdown("<div style='margin-top: 1rem;'>", unsafe_allow_html=True)
-                col_sub1, col_sub2 = st.columns([1.3, 1.0])
-                with col_sub1:
-                    if st.button("🔄 Minta Petunjuk / Alternatif Obat Lain", key="btn_minta_alternatif", use_container_width=True):
-                        with st.spinner("🔄 Sedang meracik alternatif kombinasi obat dan panduan lain dari Balitsa/Kementan..."):
-                            curr_idx = st.session_state.get("ai_angle_idx", 0)
-                            next_idx = (curr_idx + 1) % len(FOCUS_ANGLES)
-                            alt_title, _ = FOCUS_ANGLES[next_idx]
-
-                            new_text, new_angle = get_groq_recommendation(
-                                disease_name=info["nama_id"],
-                                confidence=top_confidence,
-                                is_healthy=is_healthy,
-                                angle_idx=next_idx,
-                                latin_name=info.get("latin"),
-                                severity_level=visual_evidence.get("severity_level") if visual_evidence else None,
-                                evidence_desc=visual_evidence.get("evidence_desc") if visual_evidence else None,
-                                second_disease_name=second_info["nama_id"] if (diag_mode in ("two_way", "three_way") and second_info) else None,
-                                second_confidence=second_confidence if (diag_mode in ("two_way", "three_way") and second_info) else None,
-                                is_differential=(diag_mode == "two_way"),
-                                third_disease_name=third_info.get("nama_id", third_class_raw) if (diag_mode == "three_way" and third_info) else None,
-                                third_confidence=third_confidence if (diag_mode == "three_way" and third_info) else None,
-                                is_three_way=(diag_mode == "three_way"),
-                                diff_data=diff_data
-                            )
-                            st.session_state["ai_angle_idx"] = next_idx
-                            st.session_state["ai_token_saved"] = ai_token_now
-                            if new_text:
-                                st.session_state["ai_text_saved"] = new_text
-                                st.session_state["ai_angle_saved"] = new_angle
-                                st.toast(f"✅ Petunjuk alternatif ke-{next_idx + 1} berhasil dimuat: {new_angle[:35]}...", icon="🌱")
-                            else:
-                                st.session_state["ai_text_saved"] = None
-                                st.session_state["ai_angle_saved"] = f"{alt_title} (Database Mandiri Sistem)"
-                                st.toast(f"✅ Petunjuk alternatif ke-{next_idx + 1} dimuat dari database sistem ({alt_title[:30]}...)", icon="🌱")
-                            st.rerun()
-
-                with col_sub2:
-                    if st.button("🔽 Tutup Detail Penjelasan (No. 3)", key=f"btn_close_step3_bottom_{current_img_sig}", use_container_width=True):
-                        st.session_state[step3_key] = False
+                        if new_text:
+                            st.session_state["ai_text_saved"] = new_text
+                            st.session_state["ai_angle_saved"] = new_angle
+                            st.toast(f"✅ Petunjuk alternatif ke-{next_idx + 1} berhasil dimuat: {new_angle[:35]}...", icon="🌱")
+                        else:
+                            st.session_state["ai_text_saved"] = None
+                            st.session_state["ai_angle_saved"] = f"{alt_title} (Database Mandiri Sistem)"
+                            st.toast(f"✅ Petunjuk alternatif ke-{next_idx + 1} dimuat dari database sistem ({alt_title[:30]}...)", icon="🌱")
                         st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
+
+            with col_sub2:
+                if st.button("🔽 Tutup Detail Penjelasan (No. 3)", key=f"btn_close_step3_bottom_{current_img_sig}", use_container_width=True):
+                    st.session_state[step3_key] = False
+                    st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
