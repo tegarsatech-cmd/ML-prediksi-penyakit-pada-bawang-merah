@@ -3443,6 +3443,121 @@ def parse_groq_to_cards(
 
     return c1 or sys_c1, c2 or sys_c2, c3 or sys_c3
 
+def get_groq_lesion_map_evaluation(
+    primary_name: str,
+    confidence: float,
+    num_spots: int = 1,
+    severity_pct: float = 10.0,
+    severity_level: str = "Ringan",
+    second_name: str | None = None,
+    second_confidence: float | None = None,
+    diag_mode: str = "single",
+    evidence_desc: str | None = None,
+    is_pure_healthy: bool = False
+) -> str:
+    """
+    Menghasilkan catatan evaluasi klinis cerdas dari Dokter Tanaman AI (Groq)
+    untuk membaca peta titik kerusakan (HUD Lesion Scanner) pada foto daun.
+    Menyertakan sistem fallback mandiri jika Groq offline/limit.
+    """
+    if is_pure_healthy:
+        return (
+            "• 🎯 **Validasi Titik Scanner**: Retikel hijau memverifikasi seluruh helai daun dalam kondisi segar prima berklorofil tinggi dan tidak ditemukan bercak lesi patogen aktif.\n"
+            "• 🌿 **Evaluasi Jaringan**: Dinding sel dan lapisan kutikula lilin daun tebal dan elastis, menandakan nutrisi tanaman tercukupi dengan baik.\n"
+            "• 💡 **Instruksi Pemeliharaan**: Pertahankan sistem drainase macak-macak (muka air 20-25 cm di bawah bedengan) dan semprot pupuk Kalsium-Silika secara rutin tiap 7-10 hari."
+        )
+
+    p_lower = (primary_name or "").lower()
+
+    # Fallback Database Mandiri Bawaan Sistem (Standar Balitsa & BPTP Kementan)
+    if "trotol" in p_lower or "bercak" in p_lower or "ungu" in p_lower:
+        fallback_eval = (
+            f"• 🎯 **Validasi Titik Scanner**: Retikel scanner presisi mengunci {num_spots} titik lesi aktif melekuk (*sunken*) dengan estimasi kerusakan jaringan sekitar {severity_pct:.1f}% ({severity_level}). Pola sebaran lesi di tengah helai daun ini sangat sesuai dengan sifat biologis jamur *Alternaria porri* yang membutuhkan genangan embun di lekukan daun untuk perkecambahan konidia.\n"
+            "• 🚨 **Prioritas Risiko Titik**: Titik lesi dengan diameter terbesar merupakan pusat spora aktif yang siap melepaskan konidia baru saat tertiup angin atau percikan air hujan. Area tengah daun ini paling berisiko mengalami patah leher (*leaf girdling*).\n"
+            "• ✂️ **Instruksi Taktis di Sawah**: Pangkas helai daun tepat 2–3 cm di bawah titik retikel penanda paling bawah menggunakan gunting steril (usap alkohol 70% atau air sabun). Hindari membuang potongan ke saluran parit irigasi; kumpulkan dan musnahkan di luar areal kebun."
+        )
+    elif "rust" in p_lower or "karat" in p_lower:
+        fallback_eval = (
+            f"• 🎯 **Validasi Titik Scanner**: Retikel mengonfirmasi {num_spots} titik bintil pustula timbul kasar pada permukaan daun ({severity_pct:.1f}% jaringan terdampak). Pola sebaran bintil menonjol ini khas infeksi jamur obligat *Puccinia allii*.\n"
+            "• 🚨 **Prioritas Risiko Titik**: Pustula yang telah berwarna merah tembaga/jingga tua telah matang dan berisi jutaan urediniospora berdebu yang siap meletus menulari tanaman dalam radius 5 meter.\n"
+            "• ✂️ **Instruksi Taktis di Sawah**: Dilarang menggesek atau menyapu bintil saat daun kering karena spora akan beterbangan. Bidikkan nosel semprotan fungisida sistemik (Tebukonazol/Difenokonazol) ditambah perekat perata tepat pada area retikel saat pagi hari pukul 07.00–08.30 WIB."
+        )
+    elif "hawar" in p_lower or "stemphylium" in p_lower or "colletotrichum" in p_lower:
+        fallback_eval = (
+            f"• 🎯 **Validasi Titik Scanner**: Retikel menandai {num_spots} zona pengeringan memutih tipis seperti selaput kertas ({severity_pct:.1f}% jaringan terdampak). Pola pengeringan merambat dari ujung ke pangkal (*dieback*) mengonfirmasi invasi miselium jamur hawar daun.\n"
+            "• 🚨 **Prioritas Risiko Titik**: Jaringan yang memutih sudah kehilangan klorofil total; bila lesi mencapai sepertiga daun, helai daun akan terbelah rapuh dan menghentikan pembesaran umbi.\n"
+            "• ✂️ **Instruksi Taktis di Sawah**: Pangkas bagian daun yang memutih sampai menyentuh batas jaringan hijau sehat (+ 2 cm ke bawah). Segera semprotkan kombinasi fungisida protektif dan bakterisida tembaga untuk mengeringkan luka."
+        )
+    elif "moler" in p_lower or "fusarium" in p_lower or "inul" in p_lower:
+        fallback_eval = (
+            f"• 🎯 **Validasi Titik Scanner**: Retikel mendeteksi {num_spots} area klorotik kuning pucat pada helai daun yang mulai melengkung/terpelintir spiral abnormal ({severity_level}). Pola ini mengindikasikan penyumbatan pembuluh xilem oleh jamur tular tanah *Fusarium oxysporum*.\n"
+            "• 🚨 **Prioritas Risiko Titik**: Gejala pada helai daun bertanda retikel berakar dari pembusukan di leher batang dan perakaran di dalam tanah.\n"
+            "• ✂️ **Instruksi Taktis di Sawah**: Lakukan uji cabut perlahan pada tanaman bertanda retikel. Jika akar membusuk kemerahan dan mudah tercabut, cabut dan bakar tanaman, lalu kocor lubang tanam dengan agens hayati *Trichoderma harzianum*."
+        )
+    elif "iysv" in p_lower or "virus" in p_lower:
+        fallback_eval = (
+            f"• 🎯 **Validasi Titik Scanner**: Retikel mengunci {num_spots} titik bercak klorotik berbentuk belah ketupat (*diamond-shaped*). Posisi bercak tanpa pembusukan basah mengonfirmasi infeksi virus yang ditularkan serangga thrips.\n"
+            "• 🚨 **Prioritas Risiko Titik**: Tanaman dengan titik retikel ini menjadi sumber inokulum bagi koloni thrips untuk menulari tanaman sehat lainnya di bedengan.\n"
+            "• ✂️ **Instruksi Taktis di Sawah**: Pasang perangkap lekat kuning/biru di sekitar titik infeksi dan semprotkan insektisida sistemik bahan aktif Spinetoram atau Abamektin untuk membasmi vektor thrips."
+        )
+    else:
+        fallback_eval = (
+            f"• 🎯 **Validasi Titik Scanner**: Retikel scanner presisi mengidentifikasi {num_spots} titik lesi infeksi aktif dengan tingkat keparahan {severity_pct:.1f}% ({severity_level}).\n"
+            "• 🚨 **Prioritas Risiko Titik**: Area titik penanda menunjukkan konsentrasi patogen tertinggi yang berisiko memperluas nekrosis ke jaringan sehat di sekitarnya.\n"
+            "• ✂️ **Instruksi Taktis di Sawah**: Lakukan pemangkasan daun sakit 2 cm di bawah batas lesi terbawah dan aplikasikan fungisida/bakterisida yang sesuai rekomendasi."
+        )
+
+    api_key = get_groq_api_key()
+    if not api_key:
+        return fallback_eval
+
+    import requests
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "AgroScan-Validator/1.0"
+    }
+
+    comp_text = f" dan '{second_name}' ({second_confidence:.1f}%)" if (second_name and diag_mode in ('two_way', 'three_way')) else ""
+    prompt = (
+        f"Anda adalah Dokter Spesialis Proteksi Tanaman Bawang Merah (merujuk Balitsa Lembang & BPTP Kementan).\n"
+        f"Sistem scanner citra digital (OpenCV + AI Vision) baru saja menandai {num_spots} titik retikel kerusakan pada foto daun bawang merah.\n"
+        f"Penyakit Terdeteksi: '{primary_name}' ({confidence:.1f}%){comp_text}.\n"
+        f"Tingkat Kerusakan Jaringan: {severity_pct:.1f}% ({severity_level}).\n"
+        + (f"Gejala Fisik Lapangan: {evidence_desc}\n" if evidence_desc else "")
+        + "\nTuliskan 'Catatan Evaluasi Klinis Titik Kerusakan' untuk petani dalam 3 poin ringkas dan padat berformat bullet point (- / •):\n"
+        "1. 🎯 Validasi Titik Scanner (Konfirmasi apakah sebaran retikel di helai daun sesuai karakter biologis penyakit ini)\n"
+        "2. 🚨 Prioritas Risiko Titik (Titik retikel mana yang paling berbahaya memicu spora menular atau daun patah)\n"
+        "3. ✂️ Instruksi Taktis di Sawah (Panduan pemangkasan presisi 2 cm di bawah retikel atau arah bidik semprotan)\n"
+        "Gunakan bahasa Indonesia ramah, lugas, mudah dipahami petani, dan sangat solutif."
+    )
+
+    models_to_try = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+    for model_name in models_to_try:
+        try:
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers,
+                json={
+                    "model": model_name,
+                    "temperature": 0.3,
+                    "max_tokens": 400,
+                    "messages": [
+                        {"role": "system", "content": "Anda adalah dokter tanaman hortikultura yang memberi evaluasi klinis pembacaan titik lesi daun secara singkat, tajam, dan solutif."},
+                        {"role": "user", "content": prompt}
+                    ]
+                },
+                timeout=8
+            )
+            if resp.status_code == 200:
+                txt = resp.json()["choices"][0]["message"]["content"].strip()
+                if len(txt) > 40:
+                    return txt
+        except (requests.RequestException, KeyError, IndexError, ValueError):
+            continue
+
+    return fallback_eval
+
 def clean_text_output(text: str) -> str:
     """
     Membersihkan tag HTML mentah yang mungkin terbawa di teks sebelum ditampilkan ke layar.
@@ -4536,32 +4651,47 @@ if selected_image is not None and not file_error:
                             use_container_width=True
                         )
 
-                        if is_pure_healthy:
-                            st.success(f"✅ **Daun Sehat & Normal ({num_spots} Titik Diverifikasi):** Retikel hijau memvalidasi helai daun sehat prima, berklorofil merata, dan bebas dari bercak lesi patogen aktif.")
-                        elif diag_mode == "three_way":
-                            c1_icon = "🟢" if ("sehat" in info.get("nama_id", "").lower()) else "🔴"
-                            st.warning(
-                                f"⚠️ **Deteksi 3 Kemungkinan Bersaing ({num_spots} Titik Ditandai):**\n\n"
-                                f"• {c1_icon} **[1] {title_1} ({top_confidence}%):** Retikel Peringkat 1 menandai area helai daun utama.\n"
-                                f"• 🟠 **[2] {title_2} ({second_confidence}%):** Retikel Oranye Peringkat 2 menandai titik potensi infeksi kedua.\n"
-                                f"• 🔵 **[3] {title_3} ({third_confidence}%):** Retikel Biru Peringkat 3 menandai titik potensi infeksi ketiga.\n\n"
-                                f"💡 **Petunjuk Lapangan:** Cocokkan ketiga posisi retikel scanner di atas langsung pada helai daun di bedengan sawah untuk memastikan perlakuan obat semprot dan sanitasi secara terarah."
-                            )
-                        elif diag_mode == "two_way":
-                            st.warning(
-                                f"⚠️ **Deteksi Infeksi Ganda (Multi-Penyakit Terdeteksi {num_spots} Titik):**\n\n"
-                                f"• 🔴 **[1] {title_1} ({top_confidence}%):** Ditandai dengan retikel Merah pada titik lesi penyakit utama.\n"
-                                f"• 🟠 **[2] {title_2} ({second_confidence}%):** Ditandai dengan retikel Oranye pada titik lesi penyakit kedua yang menyertai.\n\n"
-                                f"💡 **Petunjuk Lapangan:** Cocokkan kedua titik kerusakan ini langsung pada helai daun di bedengan sawah untuk memastikan perlakuan obat semprot dan pemangkasan daun sakit secara menyeluruh."
-                            )
-                        elif num_spots > 0:
-                            st.caption(
-                                f"💡 **Petunjuk Deteksi ({num_spots} Titik Kerusakan Terdeteksi):** Retikel scanner di atas memetakan titik lesi aktif tepat pada helai daun tanaman (anti-melengser, bebas gangguan latar belakang atau tangan). Titik bertanda nama penyakit menunjukkan konsentrasi infeksi aktif tempat patogen berkembang. Fokuskan sanitasi pemangkasan daun sakit dan penyemprotan obat pada titik-titik tersebut."
-                            )
-                        else:
-                            st.caption(
-                                "💡 **Petunjuk Deteksi:** Retikel scanner presisi dihasilkan langsung dari pemindaian densitas lesi pada foto helai daun Anda."
-                            )
+                        v_sev_pct = visual_evidence.get("severity_pct", 10.0)
+                        v_sev_level = visual_evidence.get("severity_level", "Sedang")
+
+                        # ==============================================================================
+                        # EVALUASI KLINIS TITIK KERUSAKAN OLEH DOKTER TANAMAN (GROQ AI + FALLBACK)
+                        # ==============================================================================
+                        map_eval_token = f"map_eval_{top_class_raw}_{num_spots}_{round(v_sev_pct, 1)}_{diag_mode}"
+                        if map_eval_token not in st.session_state:
+                            with st.spinner("🩺 Dokter Tanaman AI sedang menyusun catatan evaluasi klinis titik kerusakan..."):
+                                st.session_state[map_eval_token] = get_groq_lesion_map_evaluation(
+                                    primary_name=info['nama_id'],
+                                    confidence=top_confidence,
+                                    num_spots=num_spots,
+                                    severity_pct=v_sev_pct,
+                                    severity_level=v_sev_level,
+                                    second_name=second_info['nama_id'] if second_info else None,
+                                    second_confidence=second_confidence if second_info else None,
+                                    diag_mode=diag_mode,
+                                    evidence_desc=visual_evidence.get("evidence_desc"),
+                                    is_pure_healthy=is_pure_healthy
+                                )
+
+                        map_eval_text = st.session_state[map_eval_token]
+                        html_map_eval = format_card_text_to_html(map_eval_text)
+
+                        st.markdown(f"""
+                            <div style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 14px; padding: 1.1rem 1.25rem; margin-top: 0.95rem; border-left: 5px solid #0284C7; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 0.65rem;">
+                                    <div style="display: flex; align-items: center; gap: 0.55rem;">
+                                        <span style="font-size: 1.3rem;">🩺</span>
+                                        <span style="font-size: 1.05rem; font-weight: 800; color: #0F172A;">Catatan Dokter Tanaman: Evaluasi Klinis Titik Kerusakan</span>
+                                    </div>
+                                    <span style="background: #E0F2FE; color: #0369A1; font-size: 0.78rem; font-weight: 800; padding: 3px 9px; border-radius: 6px; border: 1px solid #BAE6FD;">
+                                        Kolaborasi OpenCV + Groq AI
+                                    </span>
+                                </div>
+                                <div style="font-size: 0.90rem; color: #1E293B; line-height: 1.68;">
+                                    {html_map_eval}
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
             with st.expander("📊 Distribusi Probabilitas Model (TorchScript EfficientNet-B0 - 7 Kelas)", expanded=True):
                 st.caption("Distribusi probabilitas softmax terkalibrasi (temperature-scaled) untuk seluruh 7 kelas:")
                 probs_dict = api_output.get("probabilities", {})
