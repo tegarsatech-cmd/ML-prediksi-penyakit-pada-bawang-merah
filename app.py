@@ -3214,25 +3214,42 @@ def consult_gemini_visual_assistant(
     third_confidence: float | None = None,
     is_pure_healthy: bool = False,
     visual_evidence: dict | None = None,
-    conf_threshold: float = 65.0
-) -> tuple[bool, str, bool, str]:
+    conf_threshold: float = 65.0,
+    primary_key: str = "",
+    second_key: str = "",
+    third_key: str = "",
+    primary_info: dict | None = None,
+    second_info: dict | None = None,
+    third_info: dict | None = None
+) -> tuple[bool, str, bool, str, int]:
     """
-    Asisten Visual Gemini AI (Verifikasi 2 Langkah: Keaslian Tanaman Bawang & Ciri Lesi Daun):
-    Langkah 1: Verifikasi Keaslian Tanaman Bawang (Validasi Botani Allium cepa vs Wajah/Daun Non-Bawang/Benda).
-    Langkah 2: Verifikasi Lesi Visual & Validasi Gejala Penyakit Nyata.
+    Asisten Visual Gemini AI (Verifikasi 2 Langkah: Keaslian Botani & Pemecah Mandiri 2-3 Kemungkinan):
+    Langkah 1: Verifikasi Keaslian Botani Allium cepa vs Non-Bawang/Wajah/Benda.
+    Langkah 2: Pemecahan Diagnosa Mandiri: Jika terdapat 2-3 kemungkinan bersaing dari EfficientNet,
+               Gemini mengamati langsung foto daun dan secara independen menetapkan 1 pilihan terbaik
+               berdasarkan bukti fisik lesi (bukan berdasarkan skor prediksi tertinggi model awal).
 
     Returns:
-        is_shallot_valid (bool): True jika foto terverifikasi daun bawang merah, False jika wajah/benda/daun lain.
-        clean_text (str): Teks penjelasan analisis visual.
+        is_shallot_valid (bool): True jika foto terverifikasi daun bawang merah.
+        clean_text (str): Teks penjelasan analisis klinis visual.
         is_from_gemini (bool): True jika berhasil dianalisis dengan Gemini Vision.
         badge_src_label (str): Label sumber verifikasi.
+        selected_choice_idx (int): Indeks kandidat terpilih (1, 2, atau 3).
     """
     conf_th_pct = conf_threshold * 100.0 if conf_threshold <= 1.0 else conf_threshold
 
-    # Fallback default berbasis standar fitopatologi Balitsa
+    c1_meta = primary_info or CLASS_METADATA.get(primary_key or primary_name, {})
+    c2_meta = second_info or (CLASS_METADATA.get(second_key or second_name, {}) if second_name else None)
+    c3_meta = third_info or (CLASS_METADATA.get(third_key or third_name, {}) if third_name else None)
+
+    c1_ciri = c1_meta.get("ciri_lapangan", "Periksa kondisi helai daun dan bercak secara teliti.")
+    c2_ciri = c2_meta.get("ciri_lapangan", "") if c2_meta else ""
+    c3_ciri = c3_meta.get("ciri_lapangan", "") if c3_meta else ""
+
+    # Fallback default berbasis standar fitopatologi Balitsa (Mode Offline)
     if is_pure_healthy:
         fallback = "✅ Verifikasi Diagnosa: Karakteristik helai daun hijau segar merata dan berlilin alami mengonfirmasi tanaman berada dalam kondisi sehat prima bebas infeksi patogen aktif."
-        return True, fallback, False, "🌱 Verifikasi Mandiri Balitsa"
+        return True, fallback, False, "🌱 Verifikasi Mandiri Balitsa", 1
 
     if diag_mode == "three_way" and second_name and third_name:
         fallback = f"💡 Verifikasi Lapangan: Terdeteksi sebaran probabilitas antara {primary_name} ({confidence:.1f}%), {second_name} ({second_confidence or 0:.1f}%), dan {third_name} ({third_confidence or 0:.1f}%). Disarankan mengamati 3 titik fokus gejala fisik di kebun sebelum menentukan tindakan semprot."
@@ -3246,7 +3263,7 @@ def consult_gemini_visual_assistant(
 
     api_key = get_gemini_api_key()
     if not api_key or image is None:
-        return True, fallback, False, "🌱 Verifikasi Mandiri Balitsa"
+        return True, fallback, False, "🌱 Verifikasi Mandiri Balitsa", 1
 
     try:
         # Resize dan kompres gambar hemat token (~384x384, ~30KB)
@@ -3256,41 +3273,61 @@ def consult_gemini_visual_assistant(
         img_copy.save(buf, format="JPEG", quality=75)
         b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
 
-        candidates_text = f"- Pilihan 1: {primary_name} ({confidence:.1f}%)\n"
-        if second_name:
-            candidates_text += f"- Pilihan 2: {second_name} ({second_confidence or 0:.1f}%)\n"
-        if third_name:
-            candidates_text += f"- Pilihan 3: {third_name} ({third_confidence or 0:.1f}%)\n"
+        is_multi_candidate = bool((diag_mode in ("two_way", "three_way") or confidence < 60.0) and second_name)
 
-        is_multi_candidate = (diag_mode in ("two_way", "three_way") or confidence < 60.0)
         if is_multi_candidate:
-            disease_context = (
-                f"Sistem mendeteksi kemungkinan penyakit:\n{candidates_text}\n"
-                "TUGAS UTAMA: Jadilah PENJELAS PENYAKIT YANG SESUNGGUHNYA. "
-                "Berdasarkan pengamatan visual nyata dari gejala lesi pada helai daun foto, tentukan dan jelaskan secara langsung "
-                "penyakit mana yang sesungguhnya dialami oleh tanaman dan alasan visualnya. Jangan mengulang daftar pilihan, langsung jelaskan penyakit yang terkonfirmasi.\n"
+            candidates_text = f"- PILIHAN 1: {primary_name}\n  Gejala Khas: {c1_ciri}\n\n"
+            candidates_text += f"- PILIHAN 2: {second_name}\n  Gejala Khas: {c2_ciri}\n\n"
+            if third_name:
+                candidates_text += f"- PILIHAN 3: {third_name}\n  Gejala Khas: {c3_ciri}\n\n"
+
+            task_instructions = (
+                "2. PEMECAHAN KASUS & SATU DIAGNOSA DEFINITIF:\n"
+                "Model komputer awal (EfficientNet) mendeteksi kemiripan gejala di lapangan dan membagi prediksi ke dalam pilihan kandidat berikut:\n\n"
+                f"{candidates_text}"
+                "PERHATIAN KHUSUS & MANDAT UTAMA DARI PETANI:\n"
+                "• JANGAN memilih hanya karena nomor Pilihan 1 atau persentase awal! Urutan awal model seringkali terkecoh oleh kemiripan lesi daun.\n"
+                "• JANGAN memberikan jawaban ganda, ragu-ragu, atau mengambang. Anda WAJIB MEMILIH TEPAT 1 (SATU) PILIHAN yang menurut Anda paling benar berdasarkan pengamatan visual langsung pada foto daun.\n"
+                "• Amati foto helai daun secara mandiri & saksama:\n"
+                "  * Apakah terdapat bercak oval melekuk cincin konsentris keunguan/gelap di badan daun (Bercak Ungu / Trotol)?\n"
+                "  * Apakah ujung helai daun mengering kecokelatan merambat ke bawah seperti terbakar (Hawar Daun / Kering Ujung)?\n"
+                "  * Apakah helai daun meliuk-liuk abnormal/memilin dan menguning pucat layu (Layu Moler / Inul)?\n"
+                "  * Apakah tampak bintil/pustul serbuk spora oranye kemerahan (Karat Daun / Rust)?\n"
+                "  * Apakah tampak bercak belah ketupat warna kuning jerami (Iris Yellow Spot Virus)?\n"
+                "  * Apakah ada lapisan kapang berbulu beledu kelabu di pagi hari (Embun Bulu / Downy Mildew)?\n"
+                "  * Ataukah daun hijau segar normal tanpa lesi (Daun Sehat)?\n\n"
+                "FORMAT KELUARAN WAJIB (Ikuti persis 3 baris berikut):\n"
+                "Baris 1: STATUS: VALID_BAWANG\n"
+                "Baris 2: PILIHAN_FINAL: [Tuliskan persis angka 1, 2, atau 3 sesuai pilihan Anda, misal: 2]\n"
+                "Baris 3: PENJELASAN: [Jelaskan penyakit mana yang Anda pilih, bukti visual fisik spesifik apa yang terlihat pada foto daun, dan mengapa pilihan kandidat lainnya dikesampingkan]"
             )
         else:
-            disease_context = (
-                f"Prediksi penyakit terdeteksi: {primary_name} ({confidence:.1f}%).\n"
-                "TUGAS: Berikan penjelasan klinis ringkas 1-2 kalimat mengonfirmasi ciri lesi daun yang terlihat.\n"
+            task_instructions = (
+                "2. KONFIRMASI DIAGNOSA KLINIS:\n"
+                f"Prediksi penyakit terdeteksi: {primary_name}.\n"
+                f"Karakteristik: {c1_ciri}\n\n"
+                "TUGAS: Berikan penjelasan klinis ringkas 1-2 kalimat mengonfirmasi ciri lesi daun yang tampak pada foto.\n\n"
+                "FORMAT KELUARAN WAJIB:\n"
+                "Baris 1: STATUS: VALID_BAWANG\n"
+                "Baris 2: PILIHAN_FINAL: 1\n"
+                "Baris 3: PENJELASAN: [Penjelasan klinis langsung mengonfirmasi kesesuaian lesi daun]"
             )
 
         prompt_text = (
-            "Anda adalah Ahli Fitopatologi Tanaman Spesialis Daun Bawang Merah (Allium cepa).\n"
-            "Lakukan verifikasi kelayakan foto dan penjelasan klinis dengan aturan berikut:\n\n"
+            "Anda adalah Ahli Fitopatologi Tanaman Spesialis Daun Bawang Merah (Allium cepa) dengan keahlian diagnosa lapangan tingkat tinggi.\n\n"
             "1. KELAYAKAN FOTO:\n"
-            "- Jika foto menampilkan daun bawang merah (termasuk yang dipegang tangan petani atau berlatar tanah/pot/kebun sawah), nyatakan LAYAK DIAGNOSA.\n"
-            "Format baris pertama: STATUS: VALID_BAWANG\n"
-            f"Format baris kedua: PENJELASAN: (Tuliskan penjelasan klinis langsung)\n"
-            f"{disease_context}\n"
-            "- TOLAK FOTO JIKA: Menampilkan wajah/tubuh manusia murni, perabotan, pakaian, kendaraan, hewan, atau daun tanaman lain non-bawang.\n"
-            "Format baris pertama: STATUS: BUKAN_BAWANG\n"
-            "Format baris kedua: PENJELASAN: (Jelaskan secara tegas objek apa yang terlihat dan mengapa tidak layak didiagnosa sebagai daun bawang merah)\n\n"
-            "PENTING: Jawaban Anda HARUS diawali persis dengan 'STATUS: VALID_BAWANG' atau 'STATUS: BUKAN_BAWANG', lalu baris berikutnya 'PENJELASAN: ' diikuti kalimat penjelasan yang utuh dan lengkap tanpa tanda kurung siku."
+            "- Jika foto menampilkan daun tanaman bawang merah (baik di kebun/sawah, pot, maupun dipegang tangan petani dengan gejala penyakit), nyatakan: STATUS: VALID_BAWANG\n"
+            "- TOLAK FOTO JIKA: Menampilkan wajah/tubuh manusia murni, perabotan, pakaian, kendaraan, hewan, atau daun tanaman lain non-bawang. Nyatakan: STATUS: BUKAN_BAWANG\n\n"
+            f"{task_instructions}\n\n"
+            "PENTING: Jawaban Anda HARUS diawali persis dengan 'STATUS: VALID_BAWANG' atau 'STATUS: BUKAN_BAWANG', baris kedua 'PILIHAN_FINAL: [nomor]', lalu baris ketiga 'PENJELASAN: ' tanpa tanda kurung siku."
         )
 
-        models_to_try = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+        models_to_try = [
+            "gemini-flash-lite-latest",
+            "gemini-flash-latest",
+            "gemini-3-flash-preview",
+            "gemini-2.5-flash"
+        ]
         for m in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
             payload = {
@@ -3304,17 +3341,11 @@ def consult_gemini_visual_assistant(
                 ],
                 "generationConfig": {
                     "temperature": 0.1,
-                    "maxOutputTokens": 800,
-                    "thinkingConfig": {"thinkingBudget": 0}
+                    "maxOutputTokens": 800
                 }
             }
             try:
-                r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8.0)
-                # Fallback tanpa thinkingConfig jika model mengembalikan 400
-                if r.status_code == 400:
-                    payload["generationConfig"].pop("thinkingConfig", None)
-                    r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8.0)
-
+                r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=12.0)
                 if r.status_code == 200:
                     data = r.json()
                     candidates = data.get("candidates", [])
@@ -3322,8 +3353,6 @@ def consult_gemini_visual_assistant(
                         raw_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
                         if len(raw_text) >= 5:
                             is_shallot_valid = True
-                            clean_text = raw_text
-
                             upper_text = raw_text.upper()
                             if "STATUS: BUKAN_BAWANG" in upper_text or "STATUS: BUKAN" in upper_text:
                                 is_shallot_valid = False
@@ -3332,30 +3361,77 @@ def consult_gemini_visual_assistant(
                             elif "BUKAN DAUN BAWANG" in upper_text or "WAJAH MANUSIA" in upper_text or "BUKAN MERUPAKAN TANAMAN" in upper_text:
                                 is_shallot_valid = False
 
-                            if "PENJELASAN:" in raw_text:
-                                clean_text = raw_text.split("PENJELASAN:", 1)[1].strip()
-                            elif "STATUS:" in raw_text:
-                                lines_no_status = [l for l in raw_text.splitlines() if not l.strip().upper().startswith("STATUS:")]
+                            # Parse PILIHAN_FINAL (Keputusan Mandiri Definitif 1 dari 2-3 Pilihan)
+                            selected_choice_idx = 1
+
+                            # 1. Deteksi pola langsung PILIHAN_FINAL / DIAGNOSA_FINAL / PILIHAN TERPILIH
+                            m_final = re.search(r'(?:PILIHAN_FINAL|PILIHAN TERPILIH|DIAGNOSA_FINAL|PILIHAN|OPSI TERPILIH|VONIS FINAL)\s*[:=]\s*\[?\s*([123])\b', raw_text, re.IGNORECASE)
+                            if m_final:
+                                selected_choice_idx = int(m_final.group(1))
+                            else:
+                                # 2. Periksa baris per baris
+                                for line in raw_text.splitlines():
+                                    line_s = line.strip().lower()
+                                    if any(k in line_s for k in ('pilihan_final', 'pilihan terpilih', 'diagnosa_final')):
+                                        m_n = re.search(r'\b([123])\b', line_s)
+                                        if m_n:
+                                            selected_choice_idx = int(m_n.group(1))
+                                            break
+                                else:
+                                    # 3. Analisis semantik cerdas (penegasan kandidat vs eliminasi)
+                                    tl = raw_text.lower()
+                                    m_aff = re.search(r'(?:pilihan|kandidat|opsi)\s*([123])\s*(?:yang dipilih|dipilih|terpilih|paling tepat|sesuai|benar|ditetapkan)', tl)
+                                    if m_aff:
+                                        selected_choice_idx = int(m_aff.group(1))
+                                    else:
+                                        c1_elim = any(re.search(pat, tl) for pat in [
+                                            r'(?:pilihan 1|kandidat 1)[^\.\n]*(?:dikesampingkan|bukan|tereliminasi|gugur|kurang tepat)',
+                                            r'(?:tidak tampak|bukan merupakan|tidak ditemukan)[^\.\n]*(?:pilihan 1|kandidat 1)'
+                                        ])
+                                        c2_sel = any(re.search(pat, tl) for pat in [
+                                            r'(?:pilihan 2|kandidat 2)[^\.\n]*(?:dipilih|tepat|sesuai|terkonfirmasi|khas)',
+                                            r'(?:menunjukkan|gejala khas|mengarah pada)[^\.\n]*(?:pilihan 2|kandidat 2)'
+                                        ])
+                                        c3_sel = any(re.search(pat, tl) for pat in [
+                                            r'(?:pilihan 3|kandidat 3)[^\.\n]*(?:dipilih|tepat|sesuai|terkonfirmasi|khas)',
+                                            r'(?:menunjukkan|gejala khas|mengarah pada)[^\.\n]*(?:pilihan 3|kandidat 3)'
+                                        ])
+                                        if c3_sel:
+                                            selected_choice_idx = 3
+                                        elif c2_sel or (c1_elim and c2_meta):
+                                            selected_choice_idx = 2
+                                        elif "pilihan 3" in tl and not any(kw in tl for kw in ["bukan pilihan 3", "pilihan 3 dikesampingkan"]):
+                                            selected_choice_idx = 3
+                                        elif "pilihan 2" in tl and not any(kw in tl for kw in ["bukan pilihan 2", "pilihan 2 dikesampingkan"]):
+                                            selected_choice_idx = 2
+
+                            # Parse PENJELASAN
+                            clean_text = raw_text
+                            if "PENJELASAN:" in raw_text.upper():
+                                clean_text = re.split(r'PENJELASAN\s*:', raw_text, flags=re.IGNORECASE)[-1].strip()
+                            else:
+                                lines_no_status = [
+                                    l for l in raw_text.splitlines()
+                                    if not any(re.match(r'^\s*(?:\*{0,2})' + pfx, l, re.IGNORECASE) for pfx in ('STATUS', 'PILIHAN_FINAL', 'PILIHAN TERPILIH', 'DIAGNOSA_FINAL'))
+                                ]
                                 clean_text = "\n".join(lines_no_status).strip()
 
-                            # Bersihkan artefak formatting seperti kurung siku dan markdown berlebih
                             clean_text = clean_text.replace("[", "").replace("]", "").strip()
-                            clean_text = re.sub(r'^(?:PENJELASAN\s*:\s*)+', '', clean_text, flags=re.IGNORECASE).strip()
+                            clean_text = re.sub(r'^(?:[\*#\s]*PENJELASAN[\*#\s]*:\s*)+', '', clean_text, flags=re.IGNORECASE).strip()
 
-                            # Safeguard anti-terpotong: jika teks terlalu pendek (< 15 karakter)
                             if len(clean_text) < 15:
                                 if not is_shallot_valid:
                                     clean_text = "Foto yang diunggah tidak memperlihatkan karakteristik helai daun bawang merah (Allium cepa) yang memenuhi syarat kelayakan diagnosa klinis."
                                 else:
-                                    clean_text = f"Analisis visual mengonfirmasi gejala klinis yang paling sesuai dengan indikasi {primary_name} pada helai daun bawang merah."
+                                    clean_text = f"Analisis visual lapangan mengonfirmasi bahwa karakteristik fisik lesi daun paling selaras dengan indikasi {primary_name}."
 
-                            return is_shallot_valid, clean_text, True, "🩺 Verifikasi Klinis Terpadu"
+                            return is_shallot_valid, clean_text, True, "🩺 Verifikasi Klinis Terpadu", selected_choice_idx
             except Exception:
                 continue
     except Exception:
         pass
 
-    return True, fallback, False, "🌱 Verifikasi Standar Balitsa"
+    return True, fallback, False, "🌱 Verifikasi Standar Balitsa", 1
 
 
 def get_groq_auxiliary_second_opinion(*args, **kwargs):
@@ -4674,9 +4750,12 @@ if selected_image is not None and not file_error:
 
         # Jalankan Verifikasi 2 Langkah jika ada keraguan atau kecurigaan non-bawang
         opinion_cache_key = f"second_opinion_{current_img_sig}"
+        is_resolved_by_gemini = False
+        initial_candidates_summary = []
+
         if needs_2step_verification:
             if opinion_cache_key not in st.session_state:
-                with st.spinner("🔍 Memverifikasi karakteristik botani & keabsahan gejala daun..."):
+                with st.spinner("🔍 Memverifikasi karakteristik botani & memecahkan diagnosa daun..."):
                     st.session_state[opinion_cache_key] = consult_gemini_visual_assistant(
                         image=selected_image,
                         primary_name=info['nama_id'],
@@ -4688,9 +4767,20 @@ if selected_image is not None and not file_error:
                         third_confidence=third_confidence if (third_info) else None,
                         is_pure_healthy=is_pure_healthy,
                         visual_evidence=visual_evidence,
-                        conf_threshold=conf_threshold
+                        conf_threshold=conf_threshold,
+                        primary_key=top_class_raw,
+                        second_key=second_class_raw,
+                        third_key=third_class_raw,
+                        primary_info=info,
+                        second_info=second_info,
+                        third_info=third_info
                     )
-            is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
+            opinion_res = st.session_state[opinion_cache_key]
+            is_shallot_valid = opinion_res[0]
+            second_opinion_text = opinion_res[1]
+            is_from_gemini = opinion_res[2]
+            badge_src_label = opinion_res[3]
+            gemini_choice_idx = opinion_res[4] if len(opinion_res) > 4 else 1
 
             # JIKA TERBUKTI BUKAN DAUN BAWANG / TIDAK LAYAK DIAGNOSA:
             if not is_shallot_valid:
@@ -4737,6 +4827,35 @@ if selected_image is not None and not file_error:
                     st.rerun()
                 st.stop()
 
+            # EVALUASI RESOLUSI PEMILIHAN 1 JAWABAN OLEH GEMINI AI DARI 2-3 KEMUNGKINAN:
+            if is_from_gemini and (diag_mode in ("two_way", "three_way") or is_ragu_ragu):
+                initial_candidates_summary = [info['nama_id']]
+                if second_info:
+                    initial_candidates_summary.append(second_info['nama_id'])
+                if third_info:
+                    initial_candidates_summary.append(third_info.get('nama_id', third_class_raw))
+
+                if gemini_choice_idx == 2 and second_info:
+                    chosen_winner = second_info
+                    chosen_key = second_class_raw
+                elif gemini_choice_idx == 3 and third_info:
+                    chosen_winner = third_info
+                    chosen_key = third_class_raw
+                else:
+                    chosen_winner = info
+                    chosen_key = top_class_raw
+
+                info = chosen_winner
+                metadata = chosen_winner
+                top_class_raw = chosen_key
+                is_pure_healthy = bool(chosen_winner.get("is_healthy", False))
+                is_healthy = is_pure_healthy
+                is_pest = bool(chosen_winner.get("status") == "pest")
+                diag_mode = "resolved"
+                is_differential = False
+                has_three_diseases = False
+                is_resolved_by_gemini = True
+
         # ==============================================================================
         # KASUS: FOTO VALID (LOLOS LANGSUNG / TERVERIFIKASI SISTEM PAKAR)
         # ==============================================================================
@@ -4754,7 +4873,69 @@ if selected_image is not None and not file_error:
         is_healthy = is_pure_healthy
         is_pest = info.get("status") == "pest"
 
-        if diag_mode == "three_way":
+        if diag_mode == "resolved":
+            # ------------------------------------------------------------------
+            # TAMPILAN 1 VONIS TUNGGAL DEFINITIF HASIL PEMECAHAN MANDIRI GEMINI AI
+            # ------------------------------------------------------------------
+            if is_pure_healthy:
+                card_border = "#16a34a"
+                tag_bg = "#16a34a"
+                tag_text = "✅ TERKONFIRMASI: DAUN SEHAT & PRIMA"
+                box_bg = "#f0fdf4"
+                box_border = "#bbf7d0"
+                box_title_color = "#15803d"
+                box_text_color = "#14532d"
+            elif is_pest:
+                card_border = "#ea580c"
+                tag_bg = "#ea580c"
+                tag_text = "🐛 KEPUTUSAN FINAL: SERANGAN HAMA"
+                box_bg = "#fff7ed"
+                box_border = "#fed7aa"
+                box_title_color = "#c2410c"
+                box_text_color = "#7c2d12"
+            else:
+                card_border = "#7c3aed"
+                tag_bg = "#7c3aed"
+                tag_text = "🏆 KEPUTUSAN FINAL VERIFIKASI LAPANGAN"
+                box_bg = "#f5f3ff"
+                box_border = "#ddd6fe"
+                box_title_color = "#6d28d9"
+                box_text_color = "#2e1065"
+
+            cand_str = " vs ".join([f"<strong>{c_name}</strong>" for c_name in initial_candidates_summary]) if initial_candidates_summary else ""
+
+            st.markdown(f"""
+                <div style="background: #ffffff; border: 2.5px solid {card_border}; border-radius: 16px; padding: 18px 20px; box-shadow: 0 4px 16px rgba(124, 58, 237, 0.08); margin-bottom: 1.2rem;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                        <span style="background: {tag_bg}; color: #ffffff; font-weight: 800; font-size: 0.80rem; padding: 4px 10px; border-radius: 8px;">
+                            {tag_text}
+                        </span>
+                        <span style="background: #ede9fe; color: #6d28d9; font-size: 0.78rem; font-weight: 800; padding: 3px 12px; border-radius: 999px; border: 1px solid #c4b5fd;">
+                            🩺✨ Keputusan Mandiri Gemini Vision
+                        </span>
+                    </div>
+                    <div style="font-size: 1.55rem; font-weight: 800; color: #0f172a; line-height: 1.25; margin-bottom: 4px;">
+                        {info['nama_id']}
+                    </div>
+                    <div style="font-size: 0.95rem; color: #64748b; font-style: italic; margin-bottom: 12px;">
+                        {info.get('latin', '')}
+                    </div>
+                    <div style="background: {box_bg}; border: 1.5px solid {box_border}; border-radius: 12px; padding: 13px 16px; margin-bottom: 14px;">
+                        <div style="font-size: 0.86rem; font-weight: 800; color: {box_title_color}; margin-bottom: 5px;">
+                            💡 Pemecahan Mandiri dari 2–3 Kemungkinan Bersaing:
+                        </div>
+                        <div style="font-size: 0.90rem; color: {box_text_color}; line-height: 1.6;">
+                            {second_opinion_text}
+                        </div>
+                    </div>
+                    <div style="font-size: 0.88rem; color: #475569; line-height: 1.5; padding-top: 6px; border-top: 1px dashed #e2e8f0;">
+                        🔍 <strong>Ciri Khas di Sawah:</strong> {info.get('ciri_lapangan', '-')}<br>
+                        {f"<span style='color: #64748b; font-size: 0.82rem;'>⚡ <em>Dievaluasi secara mandiri dari kemungkinan awal: {cand_str}</em></span>" if cand_str else ""}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        elif diag_mode == "three_way":
             # ------------------------------------------------------------------
             # TAMPILAN 3 KEMUNGKINAN BERSAING (PERINGKAT 1, 2, & 3)
             # ------------------------------------------------------------------
@@ -4928,7 +5109,9 @@ if selected_image is not None and not file_error:
             col_csave_yes, col_csave_no = st.columns(2)
             with col_csave_yes:
                 if st.button("✅ Ya, Simpan Sekarang", type="primary", use_container_width=True, key=f"btn_act_save_yes_{current_img_sig}"):
-                    if diag_mode == "three_way":
+                    if is_resolved_by_gemini or diag_mode == "resolved":
+                        rec_name = f"{info['nama_id']} (Terkonfirmasi Gemini AI)"
+                    elif diag_mode == "three_way":
                         rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) | {second_info['nama_id']} ({second_confidence:.1f}%) | {third_info.get('nama_id', third_class_raw)} ({third_confidence:.1f}%)"
                     elif diag_mode == "two_way":
                         rec_name = f"{info['nama_id']} ({top_confidence:.1f}%) & {second_info['nama_id']} ({second_confidence:.1f}%)"
@@ -4944,7 +5127,7 @@ if selected_image is not None and not file_error:
                         notes=info.get("ciri_lapangan", "-"),
                         location="Kebun Bawang",
                         image=selected_image,
-                        visual_details=visual_evidence.get("evidence_desc", "") if visual_evidence else info.get("ciri_lapangan", "-")
+                        visual_details=second_opinion_text if (is_resolved_by_gemini or diag_mode == "resolved") else (visual_evidence.get("evidence_desc", "") if visual_evidence else info.get("ciri_lapangan", "-"))
                     )
                     st.session_state[saved_key] = True
                     st.session_state[confirm_save_key] = False
@@ -5002,13 +5185,17 @@ if selected_image is not None and not file_error:
         # ==============================================================================
         # VERIFIKASI KLINIS: PENJELAS PENYAKIT SESUNGGUHNYA
         # HANYA ditampilkan jika prediksi EfficientNet ragu-ragu (<60%) atau
-        # menjawab 2-3 kemungkinan bersaing (two_way / three_way).
+        # menjawab 2-3 kemungkinan bersaing (two_way / three_way) dan belum dipecahkan mandiri oleh Gemini.
         # Jika EfficientNet mantap (score >= 60% dan single mode), kartu verifikasi TIDAK DIMUNCULKAN
         # karena pembacaan skor tunggal EfficientNet sudah mencukupi secara definitif.
         # ==============================================================================
-        show_verification_card = (top_confidence < 60.0 or diag_mode in ("two_way", "three_way"))
+        show_verification_card = ((top_confidence < 60.0 or diag_mode in ("two_way", "three_way")) and not is_resolved_by_gemini and diag_mode != "resolved")
         if show_verification_card and opinion_cache_key in st.session_state:
-            is_shallot_valid, second_opinion_text, is_from_gemini, badge_src_label = st.session_state[opinion_cache_key]
+            op_data = st.session_state[opinion_cache_key]
+            is_shallot_valid = op_data[0]
+            second_opinion_text = op_data[1]
+            is_from_gemini = op_data[2]
+            badge_src_label = op_data[3]
 
             if is_from_gemini:
                 card_bg = "#FAF5FF"
