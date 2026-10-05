@@ -4480,7 +4480,7 @@ if not model_loaded:
 # ==============================================================================
 # 7. LANGKAH 1: AMBIL / MASUKKAN FOTO DAUN (SINGLE COLUMN MOBILE FIRST)
 # ==============================================================================
-MAX_FILE_SIZE_MB = 5
+MAX_FILE_SIZE_MB = 15
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 st.markdown("""
@@ -4615,6 +4615,16 @@ st.caption("💡 **Petunjuk Foto Bagus:** Foto daun dari dekat (jarak 10-20 cm),
 if selected_image is not None and not file_error:
     # 1. Normalisasi orientasi EXIF & konversi RGB dari kamera smartphone / galeri
     raw_input_img = ImageOps.exif_transpose(selected_image).convert("RGB")
+
+    # Batas pengaman memori: jika dimensi foto kamera sangat besar (> 2048 px),
+    # padatkan secara proporsional ke 2048 px dengan Lanczos agar ramah memori namun tetap super tajam.
+    raw_w, raw_h = raw_input_img.size
+    if max(raw_w, raw_h) > 2048:
+        scale_raw = 2048.0 / float(max(raw_w, raw_h))
+        raw_input_img = raw_input_img.resize(
+            (int(round(raw_w * scale_raw)), int(round(raw_h * scale_raw))),
+            Image.Resampling.LANCZOS
+        )
 
     # 2. VALIDASI KEASLIAN FOTO DILAKUKAN PADA FOTO ASLI (RAW INPUT)!
     # Sangat penting: Foto asli adalah ground truth. Validasi harus memeriksa foto asli agar wajah manusia
