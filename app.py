@@ -4146,110 +4146,114 @@ with st.sidebar:
     st.divider()
 
     default_conf_pct = int(round(float(meta_config.get("conf_threshold", 0.65)) * 100))
-    st.markdown("### ⚙️ Validasi Foto Bawang")
-    st.caption("Pilih preset cepat atau geser slider sesuai kondisi foto lapangan:")
+    conf_threshold = default_conf_pct / 100.0
+    min_leaf_ratio = 0.50
+    min_leaf_ratio_pct = 50
 
-    current_conf = st.session_state.get("conf_slider", default_conf_pct)
-    current_leaf = st.session_state.get("leaf_slider", 50)
+    with st.expander("⚙️ Pengaturan Sensitivitas & Validasi (Opsional)", expanded=False):
+        st.caption("Pilih preset cepat atau atur slider sesuai kondisi foto di lapangan:")
 
-    # Tombol Preset Cepat Langsung Sinkron ke Web (Vertikal Lebar Penuh: 100% Bebas Terpotong di Semua HP & Layar)
-    if st.button(
-        "🌾 Standar",
-        help="Preset Standar Sawah (Keyakinan 65% | Validasi 50% | Lolos >=60%, Toleransi 47%-59%, Tolak <47%)",
-        type="primary" if (current_conf == 65 and current_leaf == 50) else "secondary",
-        use_container_width=True,
-        key="btn_preset_standar"
-    ):
-        st.session_state["pending_conf_slider"] = 65
-        st.session_state["pending_leaf_slider"] = 50
-        st.rerun()
+        current_conf = st.session_state.get("conf_slider", default_conf_pct)
+        current_leaf = st.session_state.get("leaf_slider", 50)
 
-    if st.button(
-        "☁️ Toleran Sawah",
-        help="Preset Toleran Sawah / Redup (Keyakinan 50% | Validasi 45% | Lolos >=55%, Toleransi 42%-54%, Tolak <42%)",
-        type="primary" if (current_conf == 50 and current_leaf == 45) else "secondary",
-        use_container_width=True,
-        key="btn_preset_redup"
-    ):
-        st.session_state["pending_conf_slider"] = 50
-        st.session_state["pending_leaf_slider"] = 45
-        st.rerun()
+        # Tombol Preset Cepat Langsung Sinkron ke Web (Vertikal Lebar Penuh: 100% Bebas Terpotong di Semua HP & Layar)
+        if st.button(
+            "🌾 Standar",
+            help="Preset Standar Sawah (Keyakinan 65% | Validasi 50% | Lolos >=60%, Toleransi 47%-59%, Tolak <47%)",
+            type="primary" if (current_conf == 65 and current_leaf == 50) else "secondary",
+            use_container_width=True,
+            key="btn_preset_standar"
+        ):
+            st.session_state["pending_conf_slider"] = 65
+            st.session_state["pending_leaf_slider"] = 50
+            st.rerun()
 
-    if st.button(
-        "🔬 Ketat Lab",
-        help="Preset Super Ketat Lab (Keyakinan 80% | Validasi 55% | Lolos >=65%, Toleransi 52%-64%, Tolak <52%)",
-        type="primary" if (current_conf == 80 and current_leaf == 55) else "secondary",
-        use_container_width=True,
-        key="btn_preset_ketat"
-    ):
-        st.session_state["pending_conf_slider"] = 80
-        st.session_state["pending_leaf_slider"] = 55
-        st.rerun()
+        if st.button(
+            "☁️ Toleran Sawah",
+            help="Preset Toleran Sawah / Redup (Keyakinan 50% | Validasi 45% | Lolos >=55%, Toleransi 42%-54%, Tolak <42%)",
+            type="primary" if (current_conf == 50 and current_leaf == 45) else "secondary",
+            use_container_width=True,
+            key="btn_preset_redup"
+        ):
+            st.session_state["pending_conf_slider"] = 50
+            st.session_state["pending_leaf_slider"] = 45
+            st.rerun()
 
-    # Inisialisasi default jika belum ada di session_state
-    if "conf_slider" not in st.session_state:
-        st.session_state["conf_slider"] = default_conf_pct
-    if "leaf_slider" not in st.session_state:
-        st.session_state["leaf_slider"] = 50
+        if st.button(
+            "🔬 Ketat Lab",
+            help="Preset Super Ketat Lab (Keyakinan 80% | Validasi 55% | Lolos >=65%, Toleransi 52%-64%, Tolak <52%)",
+            type="primary" if (current_conf == 80 and current_leaf == 55) else "secondary",
+            use_container_width=True,
+            key="btn_preset_ketat"
+        ):
+            st.session_state["pending_conf_slider"] = 80
+            st.session_state["pending_leaf_slider"] = 55
+            st.rerun()
 
-    conf_threshold_pct = st.slider(
-        "Batas Keyakinan / Confidence Threshold (%)",
-        min_value=20,
-        max_value=90,
-        step=5,
-        key="conf_slider",
-        help="Jika kepastian model di bawah nilai ini, foto akan ditandai 'Tidak yakin, foto kurang jelas atau bukan daun bawang'."
-    )
-    conf_threshold = conf_threshold_pct / 100.0
+        # Inisialisasi default jika belum ada di session_state
+        if "conf_slider" not in st.session_state:
+            st.session_state["conf_slider"] = default_conf_pct
+        if "leaf_slider" not in st.session_state:
+            st.session_state["leaf_slider"] = 50
 
-    # Kriteria dinamis real-time untuk Batas Keyakinan
-    if conf_threshold_pct < 55:
-        c_badge_bg = "#fefce8"
-        c_badge_border = "#eab308"
-        c_badge_color = "#713f12"
-        c_badge_txt = f"🟡 <strong>Mode Sensitif ({conf_threshold_pct}%):</strong> Menerima foto sore/mendung & gejala bercak dini yang masih tipis."
-    elif conf_threshold_pct <= 72:
-        c_badge_bg = "#f0fdf4"
-        c_badge_border = "#22c55e"
-        c_badge_color = "#14532d"
-        c_badge_txt = f"🟢 <strong>Standar Sawah ({conf_threshold_pct}%):</strong> Keseimbangan optimal untuk pemantauan harian di bedengan (Rekomendasi)."
-    else:
-        c_badge_bg = "#fef2f2"
-        c_badge_border = "#ef4444"
-        c_badge_color = "#7f1d1d"
-        c_badge_txt = f"🔴 <strong>Mode Super Ketat ({conf_threshold_pct}%):</strong> Hanya menerima foto sangat tajam & tanpa sedikit pun keraguan."
+        conf_threshold_pct = st.slider(
+            "Batas Keyakinan / Confidence Threshold (%)",
+            min_value=20,
+            max_value=90,
+            step=5,
+            key="conf_slider",
+            help="Jika kepastian model di bawah nilai ini, foto akan ditandai 'Tidak yakin, foto kurang jelas atau bukan daun bawang'."
+        )
+        conf_threshold = conf_threshold_pct / 100.0
 
-    st.markdown(
-        f"<div style='background: {c_badge_bg}; border-left: 4px solid {c_badge_border}; color: {c_badge_color}; padding: 6px 10px; border-radius: 6px; font-size: 0.77rem; margin-top: -6px; margin-bottom: 12px; line-height: 1.4;'>"
-        f"{c_badge_txt}"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+        # Kriteria dinamis real-time untuk Batas Keyakinan
+        if conf_threshold_pct < 55:
+            c_badge_bg = "#fefce8"
+            c_badge_border = "#eab308"
+            c_badge_color = "#713f12"
+            c_badge_txt = f"🟡 <strong>Mode Sensitif ({conf_threshold_pct}%):</strong> Menerima foto sore/mendung & gejala bercak dini yang masih tipis."
+        elif conf_threshold_pct <= 72:
+            c_badge_bg = "#f0fdf4"
+            c_badge_border = "#22c55e"
+            c_badge_color = "#14532d"
+            c_badge_txt = f"🟢 <strong>Standar Sawah ({conf_threshold_pct}%):</strong> Keseimbangan optimal untuk pemantauan harian di bedengan (Rekomendasi)."
+        else:
+            c_badge_bg = "#fef2f2"
+            c_badge_border = "#ef4444"
+            c_badge_color = "#7f1d1d"
+            c_badge_txt = f"🔴 <strong>Mode Super Ketat ({conf_threshold_pct}%):</strong> Hanya menerima foto sangat tajam & tanpa sedikit pun keraguan."
 
-    min_leaf_ratio_pct = st.slider(
-        "Sensitivitas Validasi Daun Bawang (%)",
-        min_value=30,
-        max_value=70,
-        value=50,
-        step=1,
-        key="leaf_slider",
-        help="Batas standar validasi daun bawang merah (Default 50%). Lolos langsung >= (Sensitivitas + 10)%, toleransi verifikasi 2 langkah [(Sensitivitas - 3)% s/d (Sensitivitas + 9)%], dan ditolak langsung < (Sensitivitas - 3)%."
-    )
-    min_leaf_ratio = min_leaf_ratio_pct / 100.0
+        st.markdown(
+            f"<div style='background: {c_badge_bg}; border-left: 4px solid {c_badge_border}; color: {c_badge_color}; padding: 6px 10px; border-radius: 6px; font-size: 0.77rem; margin-top: -6px; margin-bottom: 12px; line-height: 1.4;'>"
+            f"{c_badge_txt}"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
-    # Kriteria dinamis real-time untuk Sensitivitas Daun
-    s_base = float(min_leaf_ratio_pct)
-    s_pass = s_base + 10.0
-    s_tol = s_base - 3.0
+        min_leaf_ratio_pct = st.slider(
+            "Sensitivitas Validasi Daun Bawang (%)",
+            min_value=30,
+            max_value=70,
+            value=50,
+            step=1,
+            key="leaf_slider",
+            help="Batas standar validasi daun bawang merah (Default 50%). Lolos langsung >= (Sensitivitas + 10)%, toleransi verifikasi 2 langkah [(Sensitivitas - 3)% s/d (Sensitivitas + 9)%], dan ditolak langsung < (Sensitivitas - 3)%."
+        )
+        min_leaf_ratio = min_leaf_ratio_pct / 100.0
 
-    st.markdown(
-        f"<div style='background: #f0fdf4; border-left: 4px solid #16a34a; color: #14532d; padding: 6px 10px; border-radius: 6px; font-size: 0.77rem; margin-top: -6px; margin-bottom: 8px; line-height: 1.45;'>"
-        f"🟢 <strong>Lolos Langsung:</strong> &ge; {s_pass:.0f}%<br>"
-        f"🟡 <strong>Verifikasi 2 Langkah:</strong> {s_tol:.0f}% s/d {s_pass-0.1:.0f}%<br>"
-        f"🔴 <strong>Ditolak Langsung:</strong> &lt; {s_tol:.0f}% (Wajib Foto Ulang)"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+        # Kriteria dinamis real-time untuk Sensitivitas Daun
+        s_base = float(min_leaf_ratio_pct)
+        s_pass = s_base + 10.0
+        s_tol = s_base - 3.0
+
+        st.markdown(
+            f"<div style='background: #f0fdf4; border-left: 4px solid #16a34a; color: #14532d; padding: 6px 10px; border-radius: 6px; font-size: 0.77rem; margin-top: -6px; margin-bottom: 8px; line-height: 1.45;'>"
+            f"🟢 <strong>Lolos Langsung:</strong> &ge; {s_pass:.0f}%<br>"
+            f"🟡 <strong>Verifikasi 2 Langkah:</strong> {s_tol:.0f}% s/d {s_pass-0.1:.0f}%<br>"
+            f"🔴 <strong>Ditolak Langsung:</strong> &lt; {s_tol:.0f}% (Wajib Foto Ulang)"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
     st.divider()
     st.markdown("### 📋 Riwayat Pemeriksaan")
