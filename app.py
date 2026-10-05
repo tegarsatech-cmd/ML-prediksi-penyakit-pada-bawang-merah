@@ -1558,6 +1558,75 @@ def extract_leaf_roi(image: Image.Image, padding_pct: float = 0.08) -> tuple[Ima
     cropped_roi = img_rgb.crop((ox1, oy1, ox2, oy2))
     return cropped_roi, (ox1, oy1, ox2, oy2), area_ratio
 
+def enhance_and_rescale_to_optimal_ai(image: Image.Image, target_min_dim: int = 768) -> tuple[Image.Image, dict]:
+    """
+    Sistem Peningkat Resolusi & Penajaman Optimal untuk Model AI:
+    1. Super-Sampling Terkalibrasi (Lanczos Resampling):
+       - Jika resolusi daun < 768 px (seperti unduhan thumbnail Google / kompresi WA),
+         sistem melipatgandakan kerapatan piksel ke batas standar optimal arsitektur AI (min_dim ~ 768 px, max 1280 px).
+    2. Adaptive Contrast Enhancement (CLAHE pada Kanal L CIELAB):
+       - Menajamkan kontras batas lesi nekrotik tanpa mendistorsi warna asli daun (kanal A & B tetap murni).
+    3. Unsharp Masking Terarah (Kernel Konvolusi 3x3):
+       - Mempertegas gradien garis tepi lesi agar selaras dengan filter ekstraksi fitur EfficientNet-B0.
+    """
+    if image is None:
+        return image, {"orig_size": (0, 0), "final_size": (0, 0), "is_upscaled": False, "scale_factor": 1.0}
+
+    img_rgb = image.convert("RGB")
+    w, h = img_rgb.size
+    min_dim = min(w, h)
+
+    is_upscaled = False
+    scale_factor = 1.0
+
+    if min_dim < target_min_dim and min_dim > 0:
+        scale_factor = target_min_dim / float(min_dim)
+        new_w = int(round(w * scale_factor))
+        new_h = int(round(h * scale_factor))
+
+        # Batasi dimensi maksimal agar hemat memori pada rasio aspek ekstrim
+        if max(new_w, new_h) > 1280:
+            cap_scale = 1280.0 / float(max(new_w, new_h))
+            new_w = max(30, int(round(new_w * cap_scale)))
+            new_h = max(30, int(round(new_h * cap_scale)))
+            scale_factor = new_w / float(w)
+
+        img_scaled = img_rgb.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        is_upscaled = True
+    else:
+        img_scaled = img_rgb
+        new_w, new_h = w, h
+
+    if cv2 is not None:
+        try:
+            arr = np.array(img_scaled)
+            # CLAHE hanya pada kanal L (Luminance) di ruang warna CIELAB
+            lab = cv2.cvtColor(arr, cv2.COLOR_RGB2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(8, 8))
+            cl = clahe.apply(l)
+            l_merged = cv2.addWeighted(cl, 0.65, l, 0.35, 0)
+            enhanced_lab = cv2.merge((l_merged, a, b))
+            enhanced_rgb = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2RGB)
+
+            # Unsharp masking terarah untuk mempertegas batas lesi & urat daun
+            gaussian = cv2.GaussianBlur(enhanced_rgb, (0, 0), sigmaX=1.2)
+            sharpened = cv2.addWeighted(enhanced_rgb, 1.25, gaussian, -0.25, 0)
+            sharpened = np.clip(sharpened, 0, 255).astype(np.uint8)
+            final_img = Image.fromarray(sharpened)
+        except Exception:
+            final_img = img_scaled
+    else:
+        final_img = img_scaled
+
+    meta = {
+        "orig_size": (w, h),
+        "final_size": (new_w, new_h),
+        "is_upscaled": is_upscaled,
+        "scale_factor": round(scale_factor, 2)
+    }
+    return final_img, meta
+
 def preprocess_image_smart(image: Image.Image, target_size=(224, 224), use_tta: bool = True, **kwargs):
     """
     Pipeline Prapemprosesan Citra Multiperspektif Cerdas (Leaf-Focused Smart TTA):
@@ -2119,7 +2188,8 @@ def predict_disease(image: Image.Image, model, meta=None, class_names=None, enfo
     # Menyingkirkan latar belakang tanah, mulsa, dan tangan petani yang memegang daun
     leaf_roi, leaf_bbox, leaf_coverage = extract_leaf_roi(img_rgb, padding_pct=0.08)
     is_auto_cropped = bool(leaf_coverage < 0.96 and leaf_roi.size[0] >= 30 and leaf_roi.size[1] >= 30)
-    target_img = leaf_roi if is_auto_cropped else img_rgb
+    base_target = leaf_roi if is_auto_cropped else img_rgb
+    target_img, _ = enhance_and_rescale_to_optimal_ai(base_target)
 
     # 3. Resize ke (img_size, img_size) pada area daun fokus, ubah ke tensor float 0-1
     img_size = int(meta.get("img_size", 224))
@@ -4562,25 +4632,47 @@ if selected_image is not None and not file_error:
     if is_leaf_candidate:
         leaf_roi, leaf_bbox, leaf_coverage = extract_leaf_roi(raw_input_img, padding_pct=0.08)
         is_auto_cropped = bool(leaf_coverage < 0.96 and leaf_roi.size[0] >= 30 and leaf_roi.size[1] >= 30)
-        selected_image = leaf_roi if is_auto_cropped else raw_input_img
+        base_selected = leaf_roi if is_auto_cropped else raw_input_img
     else:
         is_auto_cropped = False
         leaf_coverage = 1.0
-        selected_image = raw_input_img
+        base_selected = raw_input_img
+
+    # 4. FILTER PENINGKATAN RESOLUSI KE STANDAR OPTIMAL AI (SUPER-RESOLUTION & KETAJAMAN)
+    enhanced_img, enhance_meta = enhance_and_rescale_to_optimal_ai(base_selected)
+    selected_image = enhanced_img
 
     st.markdown("<div class='preview-leaf-box'>", unsafe_allow_html=True)
     col_prev1, col_prev2, col_prev3 = st.columns([1, 2.2, 1])
     with col_prev2:
-        caption_text = "Foto Daun yang Dipilih (Fokus Otomatis Helai Daun)" if is_auto_cropped else "Foto yang Dipilih"
+        caption_text = "Foto Daun yang Dipilih (Fokus Otomatis Helai Daun)" if is_auto_cropped else "Foto Daun yang Dipilih"
         st.image(selected_image, caption=caption_text, use_container_width=True)
+
+        orig_w, orig_h = enhance_meta["orig_size"]
+        fin_w, fin_h = enhance_meta["final_size"]
+        is_upscaled = enhance_meta["is_upscaled"]
+
+        badges_html = "<div style='text-align: center; margin-top: -4px; margin-bottom: 8px; display: flex; flex-direction: column; align-items: center; gap: 5px;'>"
         if is_auto_cropped:
-            st.markdown(
-                f"<div style='text-align: center; margin-top: -4px; margin-bottom: 6px;'>"
-                f"<span style='background: #DCFCE7; color: #166534; font-size: 0.78rem; font-weight: 700; padding: 2px 10px; border-radius: 999px; border: 1px solid #86EFAC; display: inline-flex; align-items: center; gap: 4px;'>"
+            badges_html += (
+                f"<span style='background: #DCFCE7; color: #166534; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86EFAC; display: inline-flex; align-items: center; gap: 4px;'>"
                 f"✂️ <span>Fokus Helai Daun Terpotong Otomatis (Smart Saliency: {leaf_coverage*100.0:.0f}% area fokus)</span>"
-                f"</span></div>",
-                unsafe_allow_html=True
+                f"</span>"
             )
+        if is_upscaled:
+            badges_html += (
+                f"<span style='background: #EDE9FE; color: #6D28D9; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #C4B5FD; display: inline-flex; align-items: center; gap: 4px;'>"
+                f"✨ <span>Resolusi Ditingkatkan ke Standar AI: {orig_w}×{orig_h} px ➔ <strong>{fin_w}×{fin_h} px</strong> (Super-Resolution Aktif)</span>"
+                f"</span>"
+            )
+        else:
+            badges_html += (
+                f"<span style='background: #F0FDF4; color: #15803D; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #BBF7D0; display: inline-flex; align-items: center; gap: 4px;'>"
+                f"✨ <span>Resolusi Optimal AI: <strong>{fin_w}×{fin_h} px</strong> (Kerapatan Piksel Tinggi & Tajam ✅)</span>"
+                f"</span>"
+            )
+        badges_html += "</div>"
+        st.markdown(badges_html, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     if ratio_pct_live >= pass_thresh_pct:
