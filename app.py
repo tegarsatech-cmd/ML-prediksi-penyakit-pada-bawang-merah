@@ -1847,8 +1847,8 @@ def validate_onion_image(image: Image.Image, api_key: str | None = None, min_rat
       Ditolak tegas demi menjaga akurasi diagnosa dan meminta pengguna mengambil foto ulang yang benar.
     """
     base_thresh = float(min_ratio * 100.0) if min_ratio <= 1.0 else float(min_ratio)
-    pass_thresh = base_thresh + 10.0
-    tolerance_thresh = base_thresh - 3.0
+    pass_thresh = base_thresh
+    tolerance_thresh = max(15.0, base_thresh - 5.0)
 
     score = compute_shallot_leaf_score(image)
     ratio = score / 100.0
@@ -1859,7 +1859,7 @@ def validate_onion_image(image: Image.Image, api_key: str | None = None, min_rat
         score_zone = "passed"
         is_borderline_delegated = False
         is_too_low = False
-        reason = f"Score kanopi daun ({score:.1f}%) memenuhi syarat lolos langsung (>= {pass_thresh:.0f}%)."
+        reason = f"Score kanopi daun ({score:.1f}%) memenuhi batas kelayakan (>= {pass_thresh:.0f}%)."
     elif score >= tolerance_thresh:
         score_zone = "borderline"
         is_too_low = False
@@ -1934,27 +1934,28 @@ def inspect_visual_leaf_symptoms(
         }
 
     try:
-        img = image.convert("RGB")
-        w, h = img.size
-        max_dim = 640
-        if max(w, h) > max_dim:
-            scale = max_dim / float(max(w, h))
-            new_w, new_h = max(int(w * scale), 10), max(int(h * scale), 10)
-            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        thumb = image.convert("RGB").resize((320, 320))
+        arr = np.array(thumb, dtype=np.float32)
+        r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
 
-        img_np = np.array(img, dtype=np.uint8)
-        r = img_np[:, :, 0].astype(np.float32)
-        g = img_np[:, :, 1].astype(np.float32)
-        b = img_np[:, :, 2].astype(np.float32)
-
-        # 1. Hitung ExG dan HSV
+        # 1. Indeks Vegetasi Botani Klorofil Daun (Excess Green & HSV) persis formula kanopi
         exg = 2.0 * g - r - b
-        hsv = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
-        h_deg = hsv[:, :, 0].astype(np.float32) * 2.0  # Rentang 0 - 360 derajat
-        s_val = hsv[:, :, 1].astype(np.float32) / 255.0  # Rentang 0.0 - 1.0
-        v_val = hsv[:, :, 2].astype(np.float32) / 255.0  # Rentang 0.0 - 1.0
+        cmax = np.maximum(np.maximum(r, g), b)
+        cmin = np.minimum(np.minimum(r, g), b)
+        delta = np.where(cmax - cmin == 0, 1.0, cmax - cmin)
 
-        # 2. Deteksi Kulit Manusia (Tangan/Jari Petani)
+        h_deg = np.zeros_like(delta)
+        mask_r = (cmax == r) & (cmax > cmin)
+        h_deg[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta[mask_r]) % 6.0)
+        mask_g = (cmax == g) & (cmax > cmin)
+        h_deg[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta[mask_g]) + 2.0)
+        mask_b = (cmax == b) & (cmax > cmin)
+        h_deg[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta[mask_b]) + 4.0)
+
+        s_val = np.where(cmax == 0, 0.0, (cmax - cmin) / np.where(cmax == 0, 1.0, cmax))
+        v_val = cmax / 255.0
+
+        # Deteksi kulit manusia (tangan petani)
         is_skin = (
             (h_deg >= 6.0) & (h_deg <= 26.0) &
             (s_val >= 0.18) & (s_val <= 0.55) &
@@ -1963,80 +1964,43 @@ def inspect_visual_leaf_symptoms(
             (np.abs(r - g) < 85)
         )
 
-        # 3. Mask Jaringan Klorofil Hijau Sehat Murni (Daun Segar)
-        is_green_leaf = (
-            ((exg > 5.0) | ((h_deg >= 32.0) & (h_deg <= 160.0) & (s_val >= 0.15))) &
-            (v_val >= 0.12) &
-            (v_val <= 0.96) &
+        # A. Dedaunan Hijau Botani Klorofil Aktif (Persis formula kanopi)
+        is_green = (
+            (h_deg >= 36.0) & (h_deg <= 165.0) &
+            (s_val >= 0.12) & (v_val >= 0.10) &
+            (exg > 6.0) & (g > r * 1.03) & (g > b * 1.03) &
             (~is_skin)
         )
 
-        # Bersihkan noise kecil pada mask daun hijau
-        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        green_clean = cv2.morphologyEx(is_green_leaf.astype(np.uint8), cv2.MORPH_OPEN, kernel_small)
-        green_count = int(np.count_nonzero(green_clean))
+        # B. Dedaunan Menguning Klorotik & Lesi Bercak Daun (Hanya yang melekat pada daun hijau)
+        kernel_leaf = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+        green_expanded = cv2.dilate(is_green.astype(np.uint8), kernel_leaf)
 
-        if green_count < 100:
-            return {
-                "has_visual_evidence": True,
-                "evidence_disease": target_disease or "Inconclusive",
-                "suspected_rust": False,
-                "override_applied": False,
-                "severity_pct": 0.0,
-                "severity_level": "Nihil / Bersih (0%)",
-                "rust_pct": 0.0,
-                "purple_pct": 0.0,
-                "xantho_pct": 0.0,
-                "healthy_pct": 100.0,
-                "num_spots_detected": 0,
-                "evidence_desc": f"Gejala infeksi {target_disease} belum menunjukkan lesi kerusakan masif pada helai daun.",
-                "overlay_img": image
-            }
+        # Daun menguning / pucuk hawar kering yang bersebelahan dengan daun hijau
+        is_yellow = (
+            (h_deg >= 22.0) & (h_deg < 50.0) &
+            (s_val >= 0.18) & (v_val >= 0.15) &
+            (g > b * 1.15) & (r > b * 1.10) &
+            (green_expanded > 0) &
+            (~is_green)
+        )
 
-        # 4. Deteksi Spektral Kandidat Lesi Penyakit (Nekrotik, Klorotik, Kering Ujung, Bercak Ungu, Karat)
-        is_not_bg = (v_val >= 0.08) & (~((v_val > 0.96) & (s_val < 0.08))) & (~is_skin)
+        # Lesi bercak nekrotik (bercak ungu, antraknosa, karat) yang melekat langsung pada helai daun
+        is_lesion = (
+            (h_deg >= 8.0) & (h_deg < 35.0) &
+            (s_val >= 0.10) & (v_val >= 0.10) &
+            (r > g) & (r > b * 1.10) &
+            (green_expanded > 0) &
+            (~is_green)
+        )
 
-        name_lower = f"{target_disease} {secondary_disease} {tertiary_disease}".lower()
-        candidate_lesion = np.zeros(h_deg.shape, dtype=bool)
+        # Hitung Persentase Luas Kerusakan Daun dan Jaringan Hijau (Opsi A)
+        px_green = int(np.count_nonzero(is_green))
+        px_damage = int(np.count_nonzero(is_yellow | is_lesion))
+        total_leaf = px_green + px_damage
 
-        # a. Kering Ujung / Hawar Daun (Kuning kecokelatan kusam)
-        if "hawar" in name_lower or "stemphylium" in name_lower or "colletotrichum" in name_lower or not ("trotol" in name_lower or "rust" in name_lower):
-            candidate_lesion |= ((h_deg >= 14.0) & (h_deg <= 48.0) & (s_val >= 0.12) & (v_val >= 0.15) & (r >= b * 1.10))
-        # b. Bercak Ungu / Trotol (Cokelat gelap, keunguan melekuk konsentris)
-        if "trotol" in name_lower or "bercak" in name_lower or "alternaria" in name_lower:
-            candidate_lesion |= (((h_deg <= 16.0) | (h_deg >= 260.0) | ((h_deg >= 16.0) & (h_deg <= 30.0) & (v_val < 0.40))) & (r > g * 0.95) & (s_val >= 0.10) & (v_val >= 0.08) & (v_val <= 0.70))
-        # c. Layu Moler / Klorosis Pucat (Kuning pucat memilin)
-        if "moler" in name_lower or "fusarium" in name_lower or "inul" in name_lower:
-            candidate_lesion |= ((h_deg >= 26.0) & (h_deg <= 55.0) & (s_val >= 0.15) & (v_val >= 0.25) & (exg < 15.0))
-        # d. Karat Daun / Rust (Pustul oranye kemerahan)
-        if "rust" in name_lower or "karat" in name_lower:
-            candidate_lesion |= ((h_deg >= 8.0) & (h_deg <= 28.0) & (s_val >= 0.22) & (v_val >= 0.15) & (r > g * 1.05))
-        # e. Lesi nekrotik gelap umum pada helai
-        candidate_lesion |= ((s_val >= 0.12) & (v_val >= 0.10) & (v_val <= 0.60) & (r > b) & (exg < 0.0))
-
-        # Filter: Hanya piksel yang bukan hijau sehat
-        candidate_lesion &= (is_not_bg & (~green_clean.astype(bool)))
-
-        # 5. KUNCI AKURASI: KONEKTIVITAS SPASIAL KE HELAI DAUN (SOLUSI 2)
-        # Menghubungkan lesi dan mengisi celah/ujung daun, sekaligus mengabaikan tanah/background jauh
-        kernel_leaf_zone = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
-        leaf_zone = cv2.dilate(green_clean, kernel_leaf_zone)
-        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-        leaf_closed = cv2.morphologyEx(green_clean, cv2.MORPH_CLOSE, kernel_close)
-        leaf_zone = cv2.bitwise_or(leaf_zone, leaf_closed)
-
-        valid_lesion = candidate_lesion & (leaf_zone > 0)
-        kernel_les_clean = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        valid_lesion_clean = cv2.morphologyEx(valid_lesion.astype(np.uint8), cv2.MORPH_OPEN, kernel_les_clean)
-
-        # 6. HITUNG PERSENTASE NYATA (AKURAT & TANPA BATAS PAKSA 3.5%)
-        green_pixels = int(np.count_nonzero(green_clean))
-        lesion_pixels = int(np.count_nonzero(valid_lesion_clean))
-        total_leaf_pixels = green_pixels + lesion_pixels
-
-        if total_leaf_pixels > 0:
-            raw_sev = (lesion_pixels / float(total_leaf_pixels)) * 100.0
-            severity_pct = round(min(max(raw_sev, 0.0), 98.0), 1)
+        if total_leaf > 0:
+            severity_pct = round((px_damage / float(total_leaf)) * 100.0, 1)
             healthy_pct = round(100.0 - severity_pct, 1)
         else:
             severity_pct = 0.0
