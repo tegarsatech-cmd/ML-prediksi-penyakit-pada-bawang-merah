@@ -1942,75 +1942,109 @@ def inspect_visual_leaf_symptoms(
             new_w, new_h = max(int(w * scale), 10), max(int(h * scale), 10)
             img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-        img_np = np.array(img, dtype=np.float32)
-        r, g, b = img_np[:, :, 0], img_np[:, :, 1], img_np[:, :, 2]
+        img_np = np.array(img, dtype=np.uint8)
+        r = img_np[:, :, 0].astype(np.float32)
+        g = img_np[:, :, 1].astype(np.float32)
+        b = img_np[:, :, 2].astype(np.float32)
+
+        # 1. Hitung ExG dan HSV
         exg = 2.0 * g - r - b
+        hsv = cv2.cvtColor(img_np, cv2.COLOR_RGB2HSV)
+        h_deg = hsv[:, :, 0].astype(np.float32) * 2.0  # Rentang 0 - 360 derajat
+        s_val = hsv[:, :, 1].astype(np.float32) / 255.0  # Rentang 0.0 - 1.0
+        v_val = hsv[:, :, 2].astype(np.float32) / 255.0  # Rentang 0.0 - 1.0
 
-        cmax = np.maximum(np.maximum(r, g), b)
-        cmin = np.minimum(np.minimum(r, g), b)
-        delta = np.where(cmax - cmin == 0, 1.0, cmax - cmin)
-
-        h_arr = np.zeros_like(delta)
-        mask_r = (cmax == r) & (cmax > cmin)
-        h_arr[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta[mask_r]) % 6.0)
-        mask_g = (cmax == g) & (cmax > cmin)
-        h_arr[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta[mask_g]) + 2.0)
-        mask_b = (cmax == b) & (cmax > cmin)
-        h_arr[mask_b] = 60.0 * (((r[mask_b] - g[mask_b]) / delta[mask_b]) + 4.0)
-
-        s_arr = np.where(cmax == 0, 0.0, (cmax - cmin) / np.where(cmax == 0, 1.0, cmax))
-        v_arr = cmax / 255.0
-
+        # 2. Deteksi Kulit Manusia (Tangan/Jari Petani)
         is_skin = (
-            (h_arr >= 6.0) & (h_arr <= 26.0) &
-            (s_arr >= 0.18) & (s_arr <= 0.55) &
-            (v_arr >= 0.35) & (v_arr <= 0.90) &
+            (h_deg >= 6.0) & (h_deg <= 26.0) &
+            (s_val >= 0.18) & (s_val <= 0.55) &
+            (v_val >= 0.35) & (v_val <= 0.90) &
             (r > g * 1.12) & (g > b * 1.08) &
             (np.abs(r - g) < 85)
         )
 
-        is_plant = ((exg > 0) | ((h_arr >= 20.0) & (h_arr <= 165.0) & (s_arr >= 0.12))) & (~is_skin)
-        total_plant = int(np.count_nonzero(is_plant))
+        # 3. Mask Jaringan Klorofil Hijau Sehat Murni (Daun Segar)
+        is_green_leaf = (
+            ((exg > 5.0) | ((h_deg >= 32.0) & (h_deg <= 160.0) & (s_val >= 0.15))) &
+            (v_val >= 0.12) &
+            (v_val <= 0.96) &
+            (~is_skin)
+        )
 
-        if total_plant < 100:
+        # Bersihkan noise kecil pada mask daun hijau
+        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        green_clean = cv2.morphologyEx(is_green_leaf.astype(np.uint8), cv2.MORPH_OPEN, kernel_small)
+        green_count = int(np.count_nonzero(green_clean))
+
+        if green_count < 100:
             return {
                 "has_visual_evidence": True,
                 "evidence_disease": target_disease or "Inconclusive",
                 "suspected_rust": False,
                 "override_applied": False,
-                "severity_pct": 5.0,
-                "severity_level": "Ringan (< 10%)",
+                "severity_pct": 0.0,
+                "severity_level": "Nihil / Bersih (0%)",
                 "rust_pct": 0.0,
                 "purple_pct": 0.0,
                 "xantho_pct": 0.0,
-                "healthy_pct": 95.0,
+                "healthy_pct": 100.0,
                 "num_spots_detected": 0,
-                "evidence_desc": f"Gejala infeksi {target_disease} teridentifikasi pada helai daun.",
+                "evidence_desc": f"Gejala infeksi {target_disease} belum menunjukkan lesi kerusakan masif pada helai daun.",
                 "overlay_img": image
             }
 
+        # 4. Deteksi Spektral Kandidat Lesi Penyakit (Nekrotik, Klorotik, Kering Ujung, Bercak Ungu, Karat)
+        is_not_bg = (v_val >= 0.08) & (~((v_val > 0.96) & (s_val < 0.08))) & (~is_skin)
+
         name_lower = f"{target_disease} {secondary_disease} {tertiary_disease}".lower()
-        is_les = np.zeros(h_arr.shape, dtype=bool)
+        candidate_lesion = np.zeros(h_deg.shape, dtype=bool)
 
-        if "rust" in name_lower or "karat" in name_lower:
-            is_les |= ((h_arr >= 7.0) & (h_arr <= 28.0) & (r > g * 1.08) & (s_arr >= 0.22) & (v_arr >= 0.15) & (v_arr <= 0.85))
+        # a. Kering Ujung / Hawar Daun (Kuning kecokelatan kusam)
+        if "hawar" in name_lower or "stemphylium" in name_lower or "colletotrichum" in name_lower or not ("trotol" in name_lower or "rust" in name_lower):
+            candidate_lesion |= ((h_deg >= 14.0) & (h_deg <= 48.0) & (s_val >= 0.12) & (v_val >= 0.15) & (r >= b * 1.10))
+        # b. Bercak Ungu / Trotol (Cokelat gelap, keunguan melekuk konsentris)
         if "trotol" in name_lower or "bercak" in name_lower or "alternaria" in name_lower:
-            is_les |= (((h_arr <= 16.0) | (h_arr >= 265.0)) & (r > g * 1.05) & (s_arr >= 0.15) & (v_arr >= 0.08) & (v_arr <= 0.70))
-        if "hawar" in name_lower or "stemphylium" in name_lower or "colletotrichum" in name_lower:
-            is_les |= ((h_arr >= 18.0) & (h_arr <= 42.0) & (s_arr >= 0.12) & (v_arr >= 0.15) & (g >= r * 0.70))
+            candidate_lesion |= (((h_deg <= 16.0) | (h_deg >= 260.0) | ((h_deg >= 16.0) & (h_deg <= 30.0) & (v_val < 0.40))) & (r > g * 0.95) & (s_val >= 0.10) & (v_val >= 0.08) & (v_val <= 0.70))
+        # c. Layu Moler / Klorosis Pucat (Kuning pucat memilin)
         if "moler" in name_lower or "fusarium" in name_lower or "inul" in name_lower:
-            is_les |= ((h_arr >= 26.0) & (h_arr <= 50.0) & (s_arr >= 0.15) & (v_arr >= 0.20))
-        if "virus" in name_lower or "iysv" in name_lower or "mildew" in name_lower or "embun" in name_lower:
-            is_les |= ((h_arr >= 25.0) & (h_arr <= 55.0) & (s_arr >= 0.12) & (v_arr >= 0.30))
+            candidate_lesion |= ((h_deg >= 26.0) & (h_deg <= 55.0) & (s_val >= 0.15) & (v_val >= 0.25) & (exg < 15.0))
+        # d. Karat Daun / Rust (Pustul oranye kemerahan)
+        if "rust" in name_lower or "karat" in name_lower:
+            candidate_lesion |= ((h_deg >= 8.0) & (h_deg <= 28.0) & (s_val >= 0.22) & (v_val >= 0.15) & (r > g * 1.05))
+        # e. Lesi nekrotik gelap umum pada helai
+        candidate_lesion |= ((s_val >= 0.12) & (v_val >= 0.10) & (v_val <= 0.60) & (r > b) & (exg < 0.0))
 
-        if not np.any(is_les):
-            is_les = (h_arr >= 10.0) & (h_arr <= 45.0) & (s_arr >= 0.15) & (v_arr >= 0.12)
+        # Filter: Hanya piksel yang bukan hijau sehat
+        candidate_lesion &= (is_not_bg & (~green_clean.astype(bool)))
 
-        les_pixels = int(np.count_nonzero(is_les & is_plant))
-        severity_pct = round(min(max((les_pixels / total_plant) * 100.0, 3.5), 92.0), 1)
-        healthy_pct = round(max(100.0 - severity_pct, 5.0), 1)
+        # 5. KUNCI AKURASI: KONEKTIVITAS SPASIAL KE HELAI DAUN (SOLUSI 2)
+        # Menghubungkan lesi dan mengisi celah/ujung daun, sekaligus mengabaikan tanah/background jauh
+        kernel_leaf_zone = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
+        leaf_zone = cv2.dilate(green_clean, kernel_leaf_zone)
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        leaf_closed = cv2.morphologyEx(green_clean, cv2.MORPH_CLOSE, kernel_close)
+        leaf_zone = cv2.bitwise_or(leaf_zone, leaf_closed)
 
-        if severity_pct < 10.0:
+        valid_lesion = candidate_lesion & (leaf_zone > 0)
+        kernel_les_clean = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        valid_lesion_clean = cv2.morphologyEx(valid_lesion.astype(np.uint8), cv2.MORPH_OPEN, kernel_les_clean)
+
+        # 6. HITUNG PERSENTASE NYATA (AKURAT & TANPA BATAS PAKSA 3.5%)
+        green_pixels = int(np.count_nonzero(green_clean))
+        lesion_pixels = int(np.count_nonzero(valid_lesion_clean))
+        total_leaf_pixels = green_pixels + lesion_pixels
+
+        if total_leaf_pixels > 0:
+            raw_sev = (lesion_pixels / float(total_leaf_pixels)) * 100.0
+            severity_pct = round(min(max(raw_sev, 0.0), 98.0), 1)
+            healthy_pct = round(100.0 - severity_pct, 1)
+        else:
+            severity_pct = 0.0
+            healthy_pct = 100.0
+
+        if severity_pct == 0.0:
+            severity_level = "Nihil / Bersih (0%)"
+        elif severity_pct < 10.0:
             severity_level = "Sangat Ringan (< 10%)"
         elif severity_pct < 25.0:
             severity_level = "Ringan (10% - 25%)"
