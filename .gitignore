@@ -9,7 +9,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Streamlit secrets & env files
+# Streamlit secrets & env files (JANGAN DIHAPUS - ini yang menyembunyikan API key!)
 .streamlit/secrets.toml
 .streamlit/*
 !.streamlit/config.toml
