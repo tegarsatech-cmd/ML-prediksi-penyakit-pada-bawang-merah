@@ -3805,16 +3805,16 @@ with st.sidebar:
     gemini_ok = bool(active_gemini_key and len(active_gemini_key) > 15)
 
     st.markdown(f"""
-        <div style="background: #FFFFFF; border-radius: 8px; padding: 8px 10px; margin: 0.2rem 0 0.75rem 0; border: 1px solid #CBD5E1; font-size: 0.78rem;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="font-weight: 600; color: #334155;">Engine Validasi Visual:</span>
-                <span style="color: {'#15803D' if gemini_ok else '#B91C1C'}; font-weight: 700;">
+        <div style="background: #FFFFFF; border-radius: 8px; padding: 8px 10px; margin: 0.2rem 0 0.75rem 0; border: 1px solid #CBD5E1; font-size: 0.75rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #F1F5F9; gap: 6px;">
+                <span style="font-weight: 600; color: #334155; white-space: nowrap;">Validasi Visual:</span>
+                <span style="color: {'#15803D' if gemini_ok else '#B91C1C'}; font-weight: 700; white-space: nowrap;">
                     {'Aktif (Verifikasi)' if gemini_ok else 'Standby'}
                 </span>
             </div>
-            <div style="display: flex; align-items: center; justify-content: space-between;">
-                <span style="font-weight: 600; color: #334155;">Engine Resep Agronomi:</span>
-                <span style="color: {'#15803D' if groq_ok else '#B91C1C'}; font-weight: 700;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                <span style="font-weight: 600; color: #334155; white-space: nowrap;">Resep Agronomi:</span>
+                <span style="color: {'#15803D' if groq_ok else '#B91C1C'}; font-weight: 700; white-space: nowrap;">
                     {'Aktif (Rekomendasi)' if groq_ok else 'Mode Standar'}
                 </span>
             </div>
