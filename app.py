@@ -80,16 +80,16 @@ st.markdown("""
     h2 { font-size: 1.4rem !important; line-height: 1.35 !important; }
     h3 { font-size: 1.15rem !important; line-height: 1.4 !important; }
 
-    /* 2. Header Banner: Earthy Forest Green with Authentic Shallot Field Photo & Contrast Scrim */
+    /* 2. Header Banner: Natural Agricultural Photo, Clear and Bright (No Green Tint Overlay) */
     .farmer-hero {
-        background-color: #0F2D1A;
-        border: 1.5px solid #16532D;
+        background-color: #1E293B;
+        border: 1px solid rgba(255, 255, 255, 0.25);
         border-radius: 12px;
         padding: 1.6rem 1.4rem;
         color: #FFFFFF !important;
         text-align: left;
         margin-bottom: 1.25rem;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
         position: relative;
         overflow: hidden;
     }
@@ -104,18 +104,18 @@ st.markdown("""
         -webkit-text-fill-color: #FFFFFF !important;
         margin: 0 0 0.35rem 0 !important;
         line-height: 1.25 !important;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.65) !important;
+        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85), 0 1px 2px rgba(0, 0, 0, 0.9) !important;
     }
     .farmer-hero p,
     div.farmer-hero p,
     [data-testid="stMarkdownContainer"] .farmer-hero p {
         font-size: 0.95rem !important;
-        color: #F1F5F9 !important;
-        -webkit-text-fill-color: #F1F5F9 !important;
+        color: #F8FAFC !important;
+        -webkit-text-fill-color: #F8FAFC !important;
         margin: 0 0 0.85rem 0 !important;
         line-height: 1.5 !important;
         font-weight: 500 !important;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85) !important;
     }
     .hero-meta-bar {
         display: flex;
@@ -123,18 +123,20 @@ st.markdown("""
         gap: 8px;
         align-items: center;
         padding-top: 0.65rem;
-        border-top: 1px solid rgba(255, 255, 255, 0.25);
+        border-top: 1px solid rgba(255, 255, 255, 0.3);
     }
     .hero-meta-badge {
-        background: rgba(0, 0, 0, 0.35) !important;
-        color: #F8FAFC !important;
-        -webkit-text-fill-color: #F8FAFC !important;
+        background: rgba(15, 23, 42, 0.60) !important;
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
         padding: 4px 10px;
         border-radius: 6px;
         font-size: 0.78rem;
         font-weight: 600;
         border: 1px solid rgba(255, 255, 255, 0.35) !important;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
     }
 
     /* 3. Step Headers: Semantic, High Contrast & Accessible */
@@ -647,7 +649,7 @@ if os.path.exists(_banner_file):
         <style>
         .farmer-hero {{
             background-image: 
-                linear-gradient(135deg, rgba(15, 45, 26, 0.88) 0%, rgba(20, 60, 35, 0.82) 50%, rgba(15, 23, 42, 0.86) 100%),
+                linear-gradient(180deg, rgba(15, 23, 42, 0.40) 0%, rgba(15, 23, 42, 0.15) 40%, rgba(15, 23, 42, 0.55) 100%),
                 url("data:image/jpeg;base64,{_b64}") !important;
             background-size: cover !important;
             background-position: center 35% !important;
@@ -4153,8 +4155,8 @@ with st.sidebar:
 # ==============================================================================
 st.markdown("""
     <div class="farmer-hero">
-        <h1 style="color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.65) !important;">Dokter Tanaman Bawang Merah</h1>
-        <p style="color: #F1F5F9 !important; -webkit-text-fill-color: #F1F5F9 !important; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important;">Sistem identifikasi 7 kondisi daun dan rekomendasi penanganan langsung di lapangan</p>
+        <h1 style="color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85), 0 1px 2px rgba(0, 0, 0, 0.9) !important;">Dokter Tanaman Bawang Merah</h1>
+        <p style="color: #F8FAFC !important; -webkit-text-fill-color: #F8FAFC !important; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85) !important;">Sistem identifikasi 7 kondisi daun dan rekomendasi penanganan langsung di lapangan</p>
         <div class="hero-meta-bar">
             <span class="hero-meta-badge" style="color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important;">EfficientNet-B0 TorchScript</span>
             <span class="hero-meta-badge" style="color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important;">Standar Balitsa & BPTP Kementan RI</span>
