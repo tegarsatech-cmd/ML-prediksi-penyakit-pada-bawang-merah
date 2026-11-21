@@ -80,30 +80,42 @@ st.markdown("""
     h2 { font-size: 1.4rem !important; line-height: 1.35 !important; }
     h3 { font-size: 1.15rem !important; line-height: 1.4 !important; }
 
-    /* 2. Header Banner: Earthy Forest Green, Dignified & Authoritative */
+    /* 2. Header Banner: Earthy Forest Green with Authentic Shallot Field Photo & Contrast Scrim */
     .farmer-hero {
-        background-color: #16532D;
-        border: 1.5px solid #14532D;
+        background-color: #0F2D1A;
+        border: 1.5px solid #16532D;
         border-radius: 12px;
-        padding: 1.5rem 1.4rem;
+        padding: 1.6rem 1.4rem;
         color: #FFFFFF !important;
         text-align: left;
         margin-bottom: 1.25rem;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        position: relative;
+        overflow: hidden;
     }
-    .farmer-hero h1 {
+    .farmer-hero,
+    .farmer-hero h1,
+    .farmer-hero h1 span,
+    div.farmer-hero h1,
+    [data-testid="stMarkdownContainer"] .farmer-hero h1 {
         font-size: 1.75rem !important;
         font-weight: 800 !important;
         color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
         margin: 0 0 0.35rem 0 !important;
         line-height: 1.25 !important;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.65) !important;
     }
-    .farmer-hero p {
+    .farmer-hero p,
+    div.farmer-hero p,
+    [data-testid="stMarkdownContainer"] .farmer-hero p {
         font-size: 0.95rem !important;
-        color: #E2E8F0 !important;
+        color: #F1F5F9 !important;
+        -webkit-text-fill-color: #F1F5F9 !important;
         margin: 0 0 0.85rem 0 !important;
         line-height: 1.5 !important;
         font-weight: 500 !important;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important;
     }
     .hero-meta-bar {
         display: flex;
@@ -111,16 +123,18 @@ st.markdown("""
         gap: 8px;
         align-items: center;
         padding-top: 0.65rem;
-        border-top: 1px solid rgba(255, 255, 255, 0.2);
+        border-top: 1px solid rgba(255, 255, 255, 0.25);
     }
     .hero-meta-badge {
-        background: rgba(255, 255, 255, 0.15);
-        color: #F8FAFC;
-        padding: 3px 10px;
+        background: rgba(0, 0, 0, 0.35) !important;
+        color: #F8FAFC !important;
+        -webkit-text-fill-color: #F8FAFC !important;
+        padding: 4px 10px;
         border-radius: 6px;
         font-size: 0.78rem;
         font-weight: 600;
-        border: 1px solid rgba(255, 255, 255, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.35) !important;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
     }
 
     /* 3. Step Headers: Semantic, High Contrast & Accessible */
@@ -622,6 +636,27 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# Injeksi gambar latar banner sawah teruji ramah petani
+_banner_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "banner_sawah.jpg")
+if os.path.exists(_banner_file):
+    try:
+        with open(_banner_file, "rb") as _bf:
+            _b64 = base64.b64encode(_bf.read()).decode("utf-8")
+        st.markdown(f"""
+        <style>
+        .farmer-hero {{
+            background-image: 
+                linear-gradient(135deg, rgba(15, 45, 26, 0.88) 0%, rgba(20, 60, 35, 0.82) 50%, rgba(15, 23, 42, 0.86) 100%),
+                url("data:image/jpeg;base64,{_b64}") !important;
+            background-size: cover !important;
+            background-position: center 35% !important;
+            background-repeat: no-repeat !important;
+        }}
+        </style>
+        """, unsafe_allow_html=True)
+    except Exception:
+        pass
 
 # Permintaan Izin Kamera Otomatis Saat Web Baru Diakses (Mencegah Munculnya Dialog Error Bahasa Inggris)
 st.html("""
@@ -4118,11 +4153,11 @@ with st.sidebar:
 # ==============================================================================
 st.markdown("""
     <div class="farmer-hero">
-        <h1>Dokter Tanaman Bawang Merah</h1>
-        <p>Sistem identifikasi 7 kondisi daun dan rekomendasi penanganan langsung di lapangan</p>
+        <h1 style="color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.65) !important;">Dokter Tanaman Bawang Merah</h1>
+        <p style="color: #F1F5F9 !important; -webkit-text-fill-color: #F1F5F9 !important; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important;">Sistem identifikasi 7 kondisi daun dan rekomendasi penanganan langsung di lapangan</p>
         <div class="hero-meta-bar">
-            <span class="hero-meta-badge">EfficientNet-B0 TorchScript</span>
-            <span class="hero-meta-badge">Standar Balitsa & BPTP Kementan RI</span>
+            <span class="hero-meta-badge" style="color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important;">EfficientNet-B0 TorchScript</span>
+            <span class="hero-meta-badge" style="color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important;">Standar Balitsa & BPTP Kementan RI</span>
         </div>
     </div>
 """, unsafe_allow_html=True)
