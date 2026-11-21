@@ -39,937 +39,582 @@ st.set_page_config(
 # Custom Styling (CSS) - Kontras Tinggi Maksimal Ramah Petani di Bawah Terik Matahari
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     
-    /* 1. Paksa Latar Belakang Seluruh Layar Menjadi Terang Bersih (Anti-Gelap) */
-    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
-        background-color: #F4F6F9 !important;
+    /* 1. Global Base & Clean Agricultural Background (WCAG AA Compliant) */
+    html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
+        background-color: #F8FAFC !important;
         color: #0F172A !important;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
     }
 
-    /* Responsif Menyeluruh untuk Segala Perangkat (HP 360px-430px, Tablet 768px, Laptop 1080p+) */
+    /* Container Spacing & Layout */
     .main .block-container {
         width: 100% !important;
-        padding-top: 1.2rem !important;
+        max-width: 840px !important;
+        padding-top: 1.5rem !important;
         padding-bottom: 3.5rem !important;
+        padding-left: 1.25rem !important;
+        padding-right: 1.25rem !important;
         transition: all 0.2s ease-in-out;
     }
 
-    /* Layar Ponsel Cerdas (di bawah 640px) */
-    @media (max-width: 640px) {
-        .main .block-container {
-            max-width: 100% !important;
-            padding-left: 0.85rem !important;
-            padding-right: 0.85rem !important;
-        }
-        .farmer-hero {
-            padding: 1.3rem 1rem !important;
-            border-radius: 16px !important;
-        }
-        .farmer-hero h1 {
-            font-size: 1.65rem !important;
-        }
-        .farmer-hero p {
-            font-size: 0.98rem !important;
-        }
-        .status-disease-name {
-            font-size: 1.55rem !important;
-        }
-        div.stButton > button {
-            min-height: 50px !important;
-            font-size: 1.02rem !important;
-        }
-        /* Tombol di dalam kolom (Mode Switcher Kamera & Galeri, Aksi Simpan) anti-crop & proporsional */
-        div[data-testid="column"] div.stButton > button {
-            min-height: 44px !important;
-            font-size: 0.88rem !important;
-            padding: 0.35rem 0.5rem !important;
-            border-radius: 10px !important;
-        }
-        div[data-testid="column"] div.stButton > button p {
-            font-size: 0.88rem !important;
-            line-height: 1.25 !important;
-            white-space: normal !important;
-            word-break: break-word !important;
-            margin: 0 !important;
-        }
-        /* Tombol sidebar di mobile */
-        [data-testid="stSidebar"] div.stButton > button {
-            min-height: 38px !important;
-            font-size: 0.84rem !important;
-            padding: 0.35rem 0.5rem !important;
-            border-radius: 8px !important;
-        }
-        [data-testid="stSidebar"] div.stButton > button p {
-            font-size: 0.84rem !important;
-            margin: 0 !important;
-        }
-        .card-ai-step {
-            padding: 1.1rem !important;
-        }
-        .card-rejection {
-            padding: 1.15rem 1rem !important;
-            border-radius: 14px !important;
-        }
-        .card-rejection-title {
-            font-size: 1.35rem !important;
-            line-height: 1.3 !important;
-        }
-        .card-rejection-reason {
-            font-size: 0.95rem !important;
-            padding: 0.75rem 0.9rem !important;
-        }
-    }
-
-    /* Layar Tablet & iPad (641px - 1024px) */
-    @media (min-width: 641px) and (max-width: 1024px) {
-        .main .block-container {
-            max-width: 760px !important;
-            padding-left: 1.5rem !important;
-            padding-right: 1.5rem !important;
-        }
-        .farmer-hero h1 {
-            font-size: 1.9rem !important;
-        }
-        div.stButton > button {
-            min-height: 58px !important;
-        }
-    }
-
-    /* Layar Laptop & Desktop Monitor (> 1024px) */
-    @media (min-width: 1025px) {
-        .main .block-container {
-            max-width: 840px !important;
-            padding-left: 2rem !important;
-            padding-right: 2rem !important;
-        }
-        .farmer-hero h1 {
-            font-size: 2.15rem !important;
-        }
-        div.stButton > button {
-            min-height: 60px !important;
-        }
-    }
-
-    /* Anti-Crop & Responsive Metric Card Styling */
-    .metric-anti-crop {
-        background: #FFFFFF !important;
-        border: 1.5px solid #CBD5E1 !important;
-        border-radius: 14px !important;
-        padding: 0.85rem 1rem !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: center !important;
-        min-height: 88px !important;
-        box-sizing: border-box !important;
-        word-break: break-word !important;
-        overflow: visible !important;
-    }
-    .metric-anti-crop-label {
-        font-size: 0.82rem !important;
-        font-weight: 700 !important;
-        color: #475569 !important;
-        margin-bottom: 4px !important;
-        line-height: 1.25 !important;
-    }
-    .metric-anti-crop-val {
-        font-size: 1.30rem !important;
-        font-weight: 900 !important;
-        line-height: 1.2 !important;
-        word-break: break-word !important;
-        overflow: visible !important;
-    }
-    .metric-anti-crop-delta {
-        font-size: 0.78rem !important;
-        font-weight: 700 !important;
-        margin-top: 4px !important;
-        line-height: 1.2 !important;
-        word-break: break-word !important;
-    }
-
-    /* Universal Anti-Crop Override untuk Streamlit Metric */
-    [data-testid="stMetric"] {
-        background: #FFFFFF !important;
-        border: 1.5px solid #CBD5E1 !important;
-        border-radius: 14px !important;
-        padding: 0.75rem 0.95rem !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
-        overflow: visible !important;
-        word-break: break-word !important;
-    }
-    [data-testid="stMetricValue"] {
-        font-size: 1.22rem !important;
-        white-space: normal !important;
-        word-break: break-word !important;
-        overflow: visible !important;
-        line-height: 1.25 !important;
-        color: #0F172A !important;
-    }
-    [data-testid="stMetricLabel"] {
-        font-size: 0.85rem !important;
-        white-space: normal !important;
-        word-break: break-word !important;
-        color: #475569 !important;
-    }
-    [data-testid="stMetricDelta"] {
-        white-space: normal !important;
-        word-break: break-word !important;
-    }
-    /* 2. Standar Tipografi Kontras Tinggi (Minimal 18px) */
-    html, body, .stApp, .main {
-        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
-    }
-    p, label, input, textarea {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 18px;
+    /* Typography Scale & Hierarchy */
+    p, span, label, div {
         color: #0F172A;
+    }
+    p {
+        font-size: 0.98rem;
+        line-height: 1.6;
+        margin-bottom: 0.75rem;
     }
     h1, h2, h3, h4, h5, h6 {
         font-family: 'Plus Jakarta Sans', sans-serif !important;
         color: #0F172A !important;
         font-weight: 800 !important;
+        letter-spacing: -0.02em;
     }
+    h1 { font-size: 1.85rem !important; line-height: 1.3 !important; }
+    h2 { font-size: 1.4rem !important; line-height: 1.35 !important; }
+    h3 { font-size: 1.15rem !important; line-height: 1.4 !important; }
 
-    /* Header Banner Utama Ramah Petani */
+    /* 2. Header Banner: Earthy Forest Green, Dignified & Authoritative */
     .farmer-hero {
-        background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%);
-        border-radius: 20px;
-        padding: 1.6rem 1.3rem;
+        background-color: #16532D;
+        border: 1.5px solid #14532D;
+        border-radius: 12px;
+        padding: 1.5rem 1.4rem;
         color: #FFFFFF !important;
-        text-align: center;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 8px 20px -3px rgba(27, 94, 32, 0.4);
-        border: 2px solid #14532D;
+        text-align: left;
+        margin-bottom: 1.25rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
     .farmer-hero h1 {
-        font-size: 2rem !important;
-        font-weight: 900 !important;
+        font-size: 1.75rem !important;
+        font-weight: 800 !important;
         color: #FFFFFF !important;
-        margin: 0 !important;
+        margin: 0 0 0.35rem 0 !important;
         line-height: 1.25 !important;
     }
     .farmer-hero p {
-        font-size: 1.1rem !important;
-        color: #E8F5E9 !important;
-        margin-top: 0.5rem !important;
-        margin-bottom: 0 !important;
-        font-weight: 600 !important;
+        font-size: 0.95rem !important;
+        color: #E2E8F0 !important;
+        margin: 0 0 0.85rem 0 !important;
+        line-height: 1.5 !important;
+        font-weight: 500 !important;
+    }
+    .hero-meta-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding-top: 0.65rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .hero-meta-badge {
+        background: rgba(255, 255, 255, 0.15);
+        color: #F8FAFC;
+        padding: 3px 10px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        border: 1px solid rgba(255, 255, 255, 0.25);
     }
 
-    /* Judul Langkah (Step Header) Putih Berbingkai Hijau */
+    /* 3. Step Headers: Semantic, High Contrast & Accessible */
     .step-header {
         display: flex;
         align-items: center;
-        gap: 0.9rem;
+        gap: 0.75rem;
         background-color: #FFFFFF !important;
-        border: 2px solid #CBD5E1 !important;
-        border-left: 8px solid #1B5E20 !important;
-        padding: 0.9rem 1.1rem;
-        border-radius: 14px;
-        margin: 1.8rem 0 1rem 0;
-        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+        border: 1px solid #CBD5E1 !important;
+        border-left: 5px solid #16532D !important;
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        margin: 1.75rem 0 0.85rem 0;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
     }
     .step-num {
-        background-color: #1B5E20 !important;
+        background-color: #16532D !important;
         color: #FFFFFF !important;
-        font-weight: 900;
-        font-size: 1.25rem;
-        width: 42px;
-        height: 42px;
-        border-radius: 50%;
+        font-weight: 800;
+        font-size: 0.92rem;
+        min-width: 28px;
+        height: 28px;
+        border-radius: 6px;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
     }
     .step-title {
-        font-size: 1.3rem !important;
-        font-weight: 900 !important;
-        color: #0F172A !important;
-        margin: 0;
-    }
-
-    /* 3. Tombol Ramah Jempol (Thumb-Friendly Buttons) */
-    div.stButton > button {
-        min-height: 56px !important;
         font-size: 1.15rem !important;
         font-weight: 800 !important;
-        border-radius: 14px !important;
-        padding: 0.75rem 1.2rem !important;
-        width: 100% !important;
-        cursor: pointer !important;
-        transition: all 0.15s ease-in-out !important;
+        color: #0F172A !important;
+        margin: 0 !important;
     }
 
-    /* Tombol Utama Periksa Daun (Hijau Daun Tua Tegas #1B5E20 - Teks Putih Terang) */
-    div.stButton > button[kind="primary"], div.stButton > button[data-testid="stBaseButton-primary"] {
-        background-color: #1B5E20 !important;
+    /* 4. Thumb-Friendly Interactive Buttons (R-39, R-32, R-03) */
+    div.stButton > button {
+        min-height: 48px !important;
+        font-size: 0.95rem !important;
+        font-weight: 700 !important;
+        border-radius: 8px !important;
+        padding: 0.65rem 1.1rem !important;
+        width: 100% !important;
+        cursor: pointer !important;
+        transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.08s ease !important;
+        letter-spacing: normal !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    div.stButton > button:focus-visible {
+        outline: 2px solid #16532D !important;
+        outline-offset: 2px !important;
+    }
+
+    /* Primary Button: Solid Forest Green */
+    div.stButton > button[kind="primary"], 
+    div.stButton > button[data-testid="stBaseButton-primary"] {
+        background-color: #16532D !important;
         color: #FFFFFF !important;
-        border: 2px solid #14532D !important;
-        font-size: 1.25rem !important;
-        min-height: 60px !important;
-        box-shadow: 0 6px 14px -2px rgba(27, 94, 32, 0.4) !important;
+        border: 1.5px solid #14532D !important;
+        box-shadow: 0 1px 3px rgba(22, 83, 45, 0.2) !important;
     }
     div.stButton > button[kind="primary"] * {
         color: #FFFFFF !important;
-        font-weight: 900 !important;
+        font-weight: 700 !important;
     }
     div.stButton > button[kind="primary"]:hover {
         background-color: #14532D !important;
+        border-color: #052E16 !important;
+    }
+    div.stButton > button[kind="primary"]:active {
+        background-color: #052E16 !important;
+        transform: scale(0.99) !important;
     }
 
-    /* Tombol Standar / Sekunder (Latar Putih, Border Gelap, Teks Hitam) */
-    div.stButton > button[kind="secondary"], div.stButton > button[data-testid="stBaseButton-secondary"] {
+    /* Secondary Button: Solid White with Slate Border */
+    div.stButton > button[kind="secondary"], 
+    div.stButton > button[data-testid="stBaseButton-secondary"] {
         background-color: #FFFFFF !important;
         color: #0F172A !important;
-        border: 2px solid #64748B !important;
+        border: 1.5px solid #CBD5E1 !important;
     }
     div.stButton > button[kind="secondary"] * {
         color: #0F172A !important;
-        font-weight: 800 !important;
+        font-weight: 600 !important;
+    }
+    div.stButton > button[kind="secondary"]:hover {
+        background-color: #F8FAFC !important;
+        border-color: #94A3B8 !important;
+    }
+    div.stButton > button[kind="secondary"]:active {
+        background-color: #F1F5F9 !important;
+        transform: scale(0.99) !important;
     }
 
-    /* Tombol Alternatif Obat (Biru Segar Tegas - Teks Putih Terang) */
+    /* Action / Alternative Button: Deep Sky Accent */
     .btn-alt-obat div.stButton > button {
-        background-color: #0284C7 !important;
+        background-color: #0369A1 !important;
         color: #FFFFFF !important;
-        border: 2px solid #0369A1 !important;
-        font-size: 1.15rem !important;
-        min-height: 56px !important;
-        box-shadow: 0 4px 10px rgba(2, 132, 199, 0.3) !important;
+        border: 1.5px solid #0284C7 !important;
+        font-size: 0.95rem !important;
+        box-shadow: 0 1px 3px rgba(3, 105, 161, 0.2) !important;
     }
     .btn-alt-obat div.stButton > button * {
         color: #FFFFFF !important;
-        font-weight: 800 !important;
+        font-weight: 700 !important;
     }
     .btn-alt-obat div.stButton > button:hover {
-        background-color: #0369A1 !important;
+        background-color: #0284C7 !important;
     }
 
-    /* Tombol Khusus Sidebar (Responsif, Pas di Kolom, Anti-Meluber & Terbaca Sempurna di Semua Perangkat) */
+    /* Sidebar Buttons */
     [data-testid="stSidebar"] div.stButton > button,
     [data-testid="stSidebar"] .stDownloadButton > button {
-        min-height: 40px !important;
+        min-height: 42px !important;
         font-size: 0.88rem !important;
-        font-weight: 700 !important;
-        padding: 0.45rem 0.65rem !important;
-        border-radius: 9px !important;
-        white-space: normal !important;
-        word-break: normal !important;
-        line-height: 1.25 !important;
-        overflow: hidden !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
+        font-weight: 600 !important;
+        padding: 0.45rem 0.75rem !important;
+        border-radius: 8px !important;
         margin-bottom: 4px !important;
     }
-    [data-testid="stSidebar"] div.stButton > button p,
-    [data-testid="stSidebar"] .stDownloadButton > button p {
-        font-size: 0.88rem !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        line-height: 1.25 !important;
-        white-space: normal !important;
-        word-break: normal !important;
-    }
 
-    /* 4. Tab Navigasi Kamera & Galeri (Kontras Jelas) */
+    /* 5. Clean Tab Navigation */
     .stTabs [data-baseweb="tab-list"] {
         background-color: #E2E8F0 !important;
-        border-radius: 14px !important;
-        padding: 6px !important;
-        gap: 8px !important;
+        border-radius: 10px !important;
+        padding: 4px !important;
+        gap: 6px !important;
     }
     .stTabs [data-baseweb="tab"] {
         background-color: transparent !important;
         color: #334155 !important;
-        font-weight: 700 !important;
-        font-size: 1.05rem !important;
-        border-radius: 10px !important;
-        padding: 10px 18px !important;
+        font-weight: 600 !important;
+        font-size: 0.95rem !important;
+        border-radius: 8px !important;
+        padding: 8px 16px !important;
         border: none !important;
+        cursor: pointer !important;
     }
     .stTabs [aria-selected="true"] {
         background-color: #FFFFFF !important;
-        color: #1B5E20 !important;
-        font-weight: 900 !important;
-        box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.12) !important;
-    }
-    .stTabs [data-baseweb="tab"] * {
-        color: inherit !important;
+        color: #16532D !important;
+        font-weight: 800 !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
     }
 
-    /* 5. Kartu Status Diagnosa Kontras Tinggi */
+    /* 6. Diagnosis Status Cards: Grounded, High Contrast & Purposeful */
     .status-card-healthy {
-        background-color: #E8F5E9 !important;
-        border: 3px solid #2E7D32 !important;
-        border-radius: 18px !important;
-        padding: 1.4rem !important;
-        margin: 1.2rem 0 !important;
-        box-shadow: 0 6px 14px rgba(46, 125, 50, 0.15) !important;
+        background-color: #F0FDF4 !important;
+        border: 2px solid #86EFAC !important;
+        border-radius: 12px !important;
+        padding: 1.25rem 1.35rem !important;
+        margin: 1rem 0 !important;
     }
     .status-card-healthy * {
-        color: #1B5E20 !important;
+        color: #15803D !important;
     }
     .status-card-healthy .status-disease-name {
-        color: #1B5E20 !important;
-        font-size: 1.85rem !important;
-        font-weight: 900 !important;
-        margin: 0.3rem 0;
+        color: #16532D !important;
+        font-size: 1.65rem !important;
+        font-weight: 800 !important;
+        margin: 0.25rem 0 0.4rem 0 !important;
+        line-height: 1.25 !important;
     }
 
     .status-card-disease {
-        background-color: #FFEBEE !important;
-        border: 3px solid #C62828 !important;
-        border-radius: 18px !important;
-        padding: 1.4rem !important;
-        margin: 1.2rem 0 !important;
-        box-shadow: 0 6px 14px rgba(198, 40, 40, 0.15) !important;
+        background-color: #FEF2F2 !important;
+        border: 2px solid #FCA5A5 !important;
+        border-radius: 12px !important;
+        padding: 1.25rem 1.35rem !important;
+        margin: 1rem 0 !important;
     }
     .status-card-disease * {
-        color: #B71C1C !important;
+        color: #B91C1C !important;
     }
     .status-card-disease .status-disease-name {
-        color: #B71C1C !important;
-        font-size: 1.85rem !important;
-        font-weight: 900 !important;
-        margin: 0.3rem 0;
+        color: #991B1B !important;
+        font-size: 1.65rem !important;
+        font-weight: 800 !important;
+        margin: 0.25rem 0 0.4rem 0 !important;
+        line-height: 1.25 !important;
     }
 
     .status-card-pest {
-        background-color: #FFF3E0 !important;
-        border: 3px solid #E65100 !important;
-        border-radius: 18px !important;
-        padding: 1.4rem !important;
-        margin: 1.2rem 0 !important;
-        box-shadow: 0 6px 14px rgba(230, 81, 0, 0.15) !important;
+        background-color: #FFF7ED !important;
+        border: 2px solid #FED7AA !important;
+        border-radius: 12px !important;
+        padding: 1.25rem 1.35rem !important;
+        margin: 1rem 0 !important;
     }
     .status-card-pest * {
-        color: #BF360C !important;
+        color: #C2410C !important;
     }
     .status-card-pest .status-disease-name {
-        color: #BF360C !important;
-        font-size: 1.85rem !important;
-        font-weight: 900 !important;
-        margin: 0.3rem 0;
+        color: #9A3412 !important;
+        font-size: 1.65rem !important;
+        font-weight: 800 !important;
+        margin: 0.25rem 0 0.4rem 0 !important;
+        line-height: 1.25 !important;
     }
 
     .status-badge {
         display: inline-block !important;
-        padding: 0.45rem 1.1rem !important;
-        border-radius: 10px !important;
-        font-weight: 900 !important;
-        font-size: 1rem !important;
-        letter-spacing: 0.03em !important;
-        margin-bottom: 0.6rem !important;
-        color: #FFFFFF !important;
+        padding: 3px 10px !important;
+        border-radius: 6px !important;
+        font-weight: 700 !important;
+        font-size: 0.82rem !important;
+        letter-spacing: 0.02em !important;
+        margin-bottom: 0.45rem !important;
     }
-    .badge-healthy-tag { background-color: #2E7D32 !important; color: #FFFFFF !important; }
-    .badge-disease-tag { background-color: #C62828 !important; color: #FFFFFF !important; }
-    .badge-pest-tag { background-color: #E65100 !important; color: #FFFFFF !important; }
-
+    .badge-healthy-tag {
+        background-color: #DCFCE7 !important;
+        color: #166534 !important;
+        border: 1px solid #86EFAC !important;
+    }
+    .badge-disease-tag {
+        background-color: #FEE2E2 !important;
+        color: #991B1B !important;
+        border: 1px solid #FCA5A5 !important;
+    }
+    .badge-pest-tag {
+        background-color: #FFEDD5 !important;
+        color: #9A3412 !important;
+        border: 1px solid #FED7AA !important;
+    }
     .status-confidence-text {
-        font-size: 1.3rem !important;
-        font-weight: 800 !important;
+        font-size: 1.15rem !important;
+        font-weight: 700 !important;
     }
 
-    /* 6. 3 Kartu Panduan Dokter Tanaman (Putih Bersih dengan Border Tebal & Teks Gelap) */
+    /* 7. Agronomy Guidance Cards: Clean, Distinct Left Borders (Step 3) */
     .card-ai-step {
         background-color: #FFFFFF !important;
-        border-radius: 16px !important;
-        padding: 1.3rem 1.4rem !important;
-        margin-bottom: 1.3rem !important;
-        border: 2px solid #CBD5E1 !important;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05) !important;
+        border-radius: 10px !important;
+        padding: 1.15rem 1.25rem !important;
+        margin-bottom: 0.85rem !important;
+        border: 1px solid #CBD5E1 !important;
     }
     .card-ai-red {
-        border-left: 9px solid #DC2626 !important;
+        border-left: 5px solid #B91C1C !important;
     }
     .card-ai-red .card-ai-title {
-        color: #B91C1C !important;
-        font-size: 1.35rem !important;
-        font-weight: 900 !important;
+        color: #991B1B !important;
+        font-size: 1.15rem !important;
+        font-weight: 800 !important;
     }
     .card-ai-blue {
-        border-left: 9px solid #2563EB !important;
+        border-left: 5px solid #0284C7 !important;
     }
     .card-ai-blue .card-ai-title {
-        color: #1D4ED8 !important;
-        font-size: 1.35rem !important;
-        font-weight: 900 !important;
+        color: #0369A1 !important;
+        font-size: 1.15rem !important;
+        font-weight: 800 !important;
     }
     .card-ai-green {
-        border-left: 9px solid #16A34A !important;
+        border-left: 5px solid #16A34A !important;
     }
     .card-ai-green .card-ai-title {
         color: #15803D !important;
-        font-size: 1.35rem !important;
-        font-weight: 900 !important;
+        font-size: 1.15rem !important;
+        font-weight: 800 !important;
     }
-
     .card-ai-sub {
-        font-size: 0.98rem !important;
-        color: #4B5563 !important;
-        margin-bottom: 0.75rem !important;
-        font-weight: 700 !important;
+        font-size: 0.85rem !important;
+        color: #64748B !important;
+        margin-bottom: 0.7rem !important;
+        font-weight: 600 !important;
     }
     .card-ai-body {
-        font-size: 1.1rem !important;
-        line-height: 1.75 !important;
-        color: #0F172A !important;
-        font-weight: 500 !important;
+        font-size: 0.95rem !important;
+        line-height: 1.65 !important;
+        color: #1E293B !important;
     }
     .card-ai-body p {
-        margin: 0.5rem 0 !important;
-        color: #0F172A !important;
-        line-height: 1.75 !important;
+        margin: 0.4rem 0 !important;
+        color: #1E293B !important;
+        line-height: 1.65 !important;
+        font-size: 0.95rem !important;
     }
     .card-ai-body ul, .card-ai-body ol {
-        margin: 0.5rem 0 !important;
-        padding-left: 1.35rem !important;
+        margin: 0.4rem 0 !important;
+        padding-left: 1.3rem !important;
     }
     .card-ai-body li {
-        margin-bottom: 0.45rem !important;
-        color: #0F172A !important;
-        line-height: 1.7 !important;
+        margin-bottom: 0.35rem !important;
+        color: #1E293B !important;
+        line-height: 1.6 !important;
     }
     .card-ai-body strong {
         color: #0F172A !important;
-        font-weight: 800 !important;
+        font-weight: 700 !important;
     }
 
-    /* 7. Input File & Kamera */
+    /* 8. Rejection Alerts & Status Indicators */
+    .card-rejection {
+        background-color: #FEF2F2 !important;
+        border: 1.5px solid #EF4444 !important;
+        border-radius: 10px !important;
+        padding: 1.1rem 1.25rem !important;
+        margin: 0.85rem 0 !important;
+    }
+    .card-rejection-title {
+        color: #991B1B !important;
+        font-size: 1.15rem !important;
+        font-weight: 800 !important;
+    }
+    .card-rejection-desc {
+        color: #7F1D1D !important;
+        font-size: 0.92rem !important;
+        line-height: 1.6 !important;
+    }
+
+    /* 9. Metric Cards Grid: Resilient, Anti-Crop & High Contrast */
+    .metric-anti-crop {
+        background: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 10px !important;
+        padding: 0.85rem 1rem !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        min-height: 84px !important;
+        box-sizing: border-box !important;
+    }
+    .metric-anti-crop-label {
+        font-size: 0.8rem !important;
+        font-weight: 700 !important;
+        color: #475569 !important;
+        margin-bottom: 2px !important;
+        line-height: 1.3 !important;
+    }
+    .metric-anti-crop-val {
+        font-size: 1.25rem !important;
+        font-weight: 800 !important;
+        line-height: 1.2 !important;
+    }
+    .metric-anti-crop-delta {
+        font-size: 0.76rem !important;
+        font-weight: 600 !important;
+        color: #64748B !important;
+        margin-top: 3px !important;
+        line-height: 1.3 !important;
+    }
+
+    /* Universal Streamlit Metric Override */
+    [data-testid="stMetric"] {
+        background: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 10px !important;
+        padding: 0.75rem 0.95rem !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.2rem !important;
+        color: #0F172A !important;
+        font-weight: 800 !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.82rem !important;
+        color: #475569 !important;
+        font-weight: 600 !important;
+    }
+
+    /* 10. Camera & File Upload Inputs */
     [data-testid="stFileUploader"] {
         background-color: #FFFFFF !important;
-        border: 2px dashed #64748B !important;
-        border-radius: 12px !important;
+        border: 1.5px dashed #94A3B8 !important;
+        border-radius: 10px !important;
         padding: 0.75rem !important;
-        width: 100% !important;
-        overflow: visible !important;
     }
-    [data-testid="stFileUploader"] * {
-        color: #0F172A !important;
+    [data-testid="stCameraInput"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 12px !important;
+        padding: 1rem !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
     }
-    [data-testid="stFileUploaderDropzone"] {
-        padding: 0.5rem !important;
-        background-color: transparent !important;
-        border: none !important;
-        width: 100% !important;
-        overflow: visible !important;
+    [data-testid="stCameraInput"] label,
+    [data-testid="stCameraInput"] [data-testid="stWidgetLabel"] {
+        display: none !important;
     }
-    [data-testid="stFileUploaderDropzone"] button {
-        white-space: normal !important;
-        word-break: break-word !important;
+    [data-testid="stCameraInput"] video,
+    [data-testid="stCameraInput"] img {
+        border-radius: 10px !important;
+        max-width: 100% !important;
+        max-height: 320px !important;
+        border: 1px solid #CBD5E1 !important;
+        margin: 0 auto 12px auto !important;
+    }
+    [data-testid="stCameraInput"] button {
+        min-height: 48px !important;
+        font-size: 0.95rem !important;
         font-weight: 700 !important;
         border-radius: 8px !important;
     }
 
-    /* 7. Input Kamera: Frame Bersih, Label Mandiri di Luar & Tombol Anti-Tabrakan */
-    [data-testid="stCameraInput"] {
-        background-color: #FFFFFF !important;
-        border: 2px solid #CBD5E1 !important;
-        border-radius: 16px !important;
-        padding: 1.2rem 1.1rem !important;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04) !important;
-        overflow: visible !important;
-        display: block !important;
-    }
-    [data-testid="stCameraInput"] * {
-        color: #0F172A !important;
-    }
-    /* Sembunyikan label internal stCameraInput karena sudah disediakan label mandiri yang rapi di luar */
-    [data-testid="stCameraInput"] label,
-    [data-testid="stCameraInput"] [data-testid="stWidgetLabel"] {
-        display: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-
-    /* Video Viewfinder & Foto Hasil Kamera (Proporsional & Tidak Menabrak Tombol) */
-    [data-testid="stCameraInput"] video {
-        border-radius: 14px !important;
-        display: block !important;
-        max-width: 100% !important;
-        max-height: 360px !important;
-        object-fit: cover !important;
-        margin: 0 auto 16px auto !important;
-        border: 1.5px solid #CBD5E1 !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-    }
-    [data-testid="stCameraInput"] img {
-        border-radius: 14px !important;
-        display: block !important;
-        max-width: 100% !important;
-        max-height: 360px !important;
-        object-fit: contain !important;
-        margin: 0 auto 16px auto !important;
-        border: 1.5px solid #CBD5E1 !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-    }
-
-    /* Tombol Take Photo & Clear Photo - Jarak Lega & Bersih (100% Anti-Tabrakan) */
-    [data-testid="stCameraInput"] button {
-        margin-top: 16px !important;
-        margin-bottom: 8px !important;
-        min-height: 52px !important;
-        font-size: 1.05rem !important;
-        font-weight: 800 !important;
-        border-radius: 12px !important;
-        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08) !important;
-        position: relative !important;
-        z-index: 10 !important;
-        display: block !important;
-        width: 100% !important;
-        max-width: 440px !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        clear: both !important;
-    }
-
-    /* 7a. Preview Foto Daun yang Dipilih: Rapi, Proporsional di Semua Perangkat (Anti-Kebesaran) */
+    /* Image Preview Container */
     .preview-leaf-box {
         display: flex;
         justify-content: center;
         align-items: center;
-        margin: 0.5rem auto 1.1rem auto;
+        margin: 0.5rem auto 1rem auto;
         text-align: center;
     }
-    .preview-leaf-box [data-testid="stImage"] {
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-    .preview-leaf-box [data-testid="stImage"] img,
-    div[data-testid="stImage"]:has(img[alt*="Foto Daun yang Dipilih"]) img {
-        max-height: 340px !important;
-        max-width: 380px !important;
+    .preview-leaf-box [data-testid="stImage"] img {
+        max-height: 320px !important;
+        max-width: 360px !important;
         width: auto !important;
         height: auto !important;
         object-fit: contain !important;
-        border-radius: 14px !important;
-        border: 2px solid #CBD5E1 !important;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.08) !important;
+        border-radius: 10px !important;
+        border: 1.5px solid #CBD5E1 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
         margin: 0 auto !important;
     }
-    .preview-leaf-box [data-testid="stImageCaption"] {
-        text-align: center !important;
-        margin-top: 6px !important;
-        font-weight: 600 !important;
-        color: #64748B !important;
-    }
-    @media (max-width: 768px) {
-        .preview-leaf-box [data-testid="stImage"] img,
-        div[data-testid="stImage"]:has(img[alt*="Foto Daun yang Dipilih"]) img {
-            max-height: 240px !important;
-            max-width: 86% !important;
-        }
-    }
 
-
-    /* Ikon Ganti Kamera Depan/Belakang di HP / Mobile (Wajib Hitam Pekat, Kontras Tinggi & Tidak Samar) */
-    [data-testid="stCameraInput"] button:not([kind="primary"]) svg,
-    [data-testid="stCameraInput"] button:not([kind="primary"]) path,
-    [data-testid="stCameraInput"] button[aria-label*="switch" i] svg,
-    [data-testid="stCameraInput"] button[aria-label*="switch" i] path,
-    [data-testid="stCameraInput"] button[aria-label*="camera" i] svg,
-    [data-testid="stCameraInput"] button[aria-label*="camera" i] path,
-    [data-testid="stCameraInput"] button[title*="switch" i] svg,
-    [data-testid="stCameraInput"] button[title*="switch" i] path,
-    [data-testid="stCameraInput"] button[title*="camera" i] svg,
-    [data-testid="stCameraInput"] button[title*="camera" i] path,
-    [data-testid="stCameraInput"] [data-testid*="switch" i] svg,
-    [data-testid="stCameraInput"] [data-testid*="camera" i] svg {
-        color: #000000 !important;
-        fill: #000000 !important;
-        stroke: #000000 !important;
-        opacity: 1 !important;
-        filter: drop-shadow(0px 1px 1px rgba(255,255,255,0.9)) !important;
-    }
-    [data-testid="stCameraInput"] button:not([kind="primary"]) {
-        background-color: #FFFFFF !important;
-        border: 2px solid #000000 !important;
-        border-radius: 999px !important;
-        color: #000000 !important;
-        opacity: 1 !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.25) !important;
-    }
-
-    /* 7b. Penggantian Pesan Izin Kamera Bawaan Streamlit (Anti-Bahasa Inggris & Ramah Petani) */
-    [data-testid="stCameraInput"] a[href*="streamlit.io"],
-    [data-testid="stCameraInput"] a[href*="camera"],
-    [data-testid="stCameraInput"] a[href*="knowledge-base"] {
-        font-size: 0 !important;
-        display: inline-block !important;
-        margin-top: 4px !important;
-    }
-    [data-testid="stCameraInput"] a[href*="streamlit.io"]::before,
-    [data-testid="stCameraInput"] a[href*="camera"]::before,
-    [data-testid="stCameraInput"] a[href*="knowledge-base"]::before {
-        content: "👉 Panduan cara mengizinkan kamera di browser Anda";
-        font-size: 0.85rem !important;
-        font-weight: 700 !important;
-        color: #1B5E20 !important;
-        text-decoration: underline !important;
-    }
-    [data-testid="stCameraInput"] [data-testid="stCameraInputWebcamComponent"] > div:not([data-testid="stCameraInputWebcamStyledBox"]) p {
-        font-size: 0 !important;
-        line-height: 1.5 !important;
-        margin-top: 8px !important;
-    }
-    [data-testid="stCameraInput"] [data-testid="stCameraInputWebcamComponent"] > div:not([data-testid="stCameraInputWebcamStyledBox"]) p::before {
-        content: "📷 Aplikasi memerlukan izin akses kamera Anda untuk memindai daun:";
-        display: block !important;
-        font-size: 0.95rem !important;
-        font-weight: 800 !important;
-        color: #0F172A !important;
-        margin-bottom: 4px !important;
-    }
-
-    /* 8. Expander & Alert Umum */
+    /* 11. Expanders: Clean & Structured */
     [data-testid="stExpander"] {
         background-color: #FFFFFF !important;
-        border: 1.5px solid #CBD5E1 !important;
-        border-radius: 12px !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 10px !important;
         margin-bottom: 0.6rem !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.03) !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.02) !important;
     }
     [data-testid="stExpander"] summary {
         background-color: #F8FAFC !important;
-        padding: 0.5rem 0.85rem !important;
-        border-radius: 10px !important;
-        min-height: unset !important;
-        gap: 8px !important;
-    }
-    [data-testid="stExpander"] summary * {
-        color: #0F172A !important;
+        padding: 0.55rem 0.85rem !important;
+        border-radius: 9px !important;
         font-weight: 700 !important;
-        font-size: 0.88rem !important;
+        font-size: 0.9rem !important;
+        color: #0F172A !important;
+        cursor: pointer !important;
     }
     [data-testid="stExpanderDetails"] {
         background-color: #FFFFFF !important;
-        padding: 0.75rem 0.95rem !important;
-    }
-    [data-testid="stExpanderDetails"] * {
-        color: #0F172A !important;
+        padding: 0.85rem 1rem !important;
+        font-size: 0.92rem !important;
+        color: #1E293B !important;
+        line-height: 1.6 !important;
     }
 
-    /* Kotak Khusus Panduan & Kategori Sidebar (Lebih Lebar, Lega, Rapi, Teks Anti-Ngepas Garis) */
+    /* 12. Sidebar Styling */
+    [data-testid="stSidebar"] {
+        background-color: #F1F5F9 !important;
+        border-right: 1px solid #CBD5E1 !important;
+    }
     [data-testid="stSidebar"] [data-testid="stExpander"] {
         background-color: #FFFFFF !important;
-        border: 1.5px solid #CBD5E1 !important;
-        border-radius: 10px !important;
-        margin-bottom: 0.55rem !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.03) !important;
-        overflow: hidden !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 8px !important;
     }
     [data-testid="stSidebar"] [data-testid="stExpander"] summary {
-        background-color: #F8FAFC !important;
-        padding: 0.48rem 0.85rem !important;
-        border-radius: 9px !important;
-        min-height: unset !important;
-        gap: 8px !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stExpander"] summary * {
-        color: #0F172A !important;
-        font-weight: 700 !important;
-        font-size: 0.83rem !important;
-        line-height: 1.35 !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stExpander"] summary svg {
-        width: 15px !important;
-        height: 15px !important;
+        font-size: 0.82rem !important;
+        padding: 0.45rem 0.75rem !important;
     }
     [data-testid="stSidebar"] [data-testid="stExpanderDetails"] {
-        background-color: #FFFFFF !important;
-        padding: 0.85rem 1.15rem !important;
         font-size: 0.80rem !important;
-        box-sizing: border-box !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] * {
-        color: #1E293B !important;
-        font-size: 0.80rem !important;
-        line-height: 1.52 !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] ul {
-        margin: 4px 0 8px 18px !important;
-        padding-left: 2px !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] li {
-        margin-bottom: 0.38rem !important;
         line-height: 1.5 !important;
+        padding: 0.65rem 0.85rem !important;
     }
 
-    /* 8b. Perilaku Menu Sidebar: Tertutup Default & Hanya Keluar Saat Diklik */
-    /* Ketika Menu Ditutup (Collapsed) - 0px & Tersembunyi Total Bebas Halangan di Mobile Maupun Desktop */
-    [data-testid="stSidebar"][aria-expanded="false"],
-    section[data-testid="stSidebar"][aria-expanded="false"],
-    [data-testid="stSidebar"][aria-expanded="false"] > div {
-        min-width: 0 !important;
-        max-width: 0 !important;
-        width: 0 !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        border: none !important;
-        overflow: hidden !important;
-        pointer-events: none !important;
-    }
-
-    /* Ketika Menu Dibuka/Diklik (Expanded) - Tampil Berbatas Jelas & Proporsional */
-    [data-testid="stSidebar"][aria-expanded="true"] {
-        min-width: 340px !important;
-        max-width: 420px !important;
-        width: 360px !important;
-        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15) !important;
-        z-index: 99999 !important;
-    }
-    @media (min-width: 1025px) {
-        [data-testid="stSidebar"][aria-expanded="true"] {
-            min-width: 360px !important;
-            max-width: 440px !important;
-            width: 380px !important;
+    /* 13. Mobile Responsiveness (<640px) */
+    @media (max-width: 640px) {
+        .main .block-container {
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+            padding-top: 1rem !important;
         }
-    }
-    @media (max-width: 768px) {
-        [data-testid="stSidebar"][aria-expanded="true"] {
-            min-width: 280px !important;
-            max-width: 84vw !important;
-            width: 82vw !important;
-            box-shadow: 6px 0 25px rgba(0, 0, 0, 0.3) !important;
-            z-index: 999999 !important;
+        .farmer-hero {
+            padding: 1.25rem 1rem !important;
         }
-    }
-    [data-testid="stSidebar"][aria-expanded="true"], 
-    [data-testid="stSidebar"][aria-expanded="true"] > div {
-        background-color: #E2E8F0 !important;
-    }
-    [data-testid="stSidebar"] * {
-        color: #0F172A !important;
-    }
-
-    /* Tombol Pembuka Menu Sidebar (Jelas, Terlihat Indah, Mudah Ditekan di Mobile & Desktop) */
-    [data-testid="stExpandSidebarButton"],
-    header [data-testid="stExpandSidebarButton"] {
-        background-color: #FFFFFF !important;
-        border: 2px solid #1B5E20 !important;
-        border-radius: 12px !important;
-        padding: 6px 14px !important;
-        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12) !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        gap: 6px !important;
-        cursor: pointer !important;
-        transition: all 0.18s ease-in-out !important;
-        margin: 6px 0 0 8px !important;
-    }
-    [data-testid="stExpandSidebarButton"]:hover {
-        background-color: #F0FDF4 !important;
-        border-color: #14532D !important;
-        transform: translateY(-1px) !important;
-    }
-    [data-testid="stExpandSidebarButton"] svg {
-        fill: #1B5E20 !important;
-        color: #1B5E20 !important;
-        width: 20px !important;
-        height: 20px !important;
-    }
-    [data-testid="stExpandSidebarButton"]::after {
-        content: "Menu AgroScan";
-        font-size: 0.85rem !important;
-        font-weight: 800 !important;
-        color: #1B5E20 !important;
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
-    }
-
-    /* Tombol Penutup Menu Sidebar di Pojok Atas Sidebar */
-    [data-testid="stSidebarCollapseButton"] button {
-        background-color: #F1F5F9 !important;
-        border: 1.5px solid #CBD5E1 !important;
-        border-radius: 8px !important;
-        padding: 4px 8px !important;
-    }
-    [data-testid="stSidebarCollapseButton"] button svg {
-        fill: #0F172A !important;
-        color: #0F172A !important;
-    }
-
-    /* 9. Lindungi Font Icon Bawaan Streamlit agar TIDAK Berubah Jadi Teks Bertabrakan */
-    [data-testid="stIconMaterial"], 
-    .material-symbols-rounded, 
-    .material-symbols-outlined, 
-    [class*="material-symbols"], 
-    [class*="material-icons"] {
-        font-family: 'Material Symbols Rounded', 'Material Icons' !important;
-        font-style: normal !important;
-        font-weight: normal !important;
-        line-height: 1 !important;
-        letter-spacing: normal !important;
-        text-transform: none !important;
-        display: inline-block !important;
-        white-space: nowrap !important;
-        word-wrap: normal !important;
-        direction: ltr !important;
-        vertical-align: middle !important;
-    }
-
-    [data-testid="stExpander"] summary {
-        display: flex !important;
-        align-items: center !important;
-        gap: 12px !important;
-    }
-
-    /* 10. Kartu Validasi Penolakan (Foto Bukan Daun Bawang Merah) */
-    .card-rejection {
-        background-color: #FFFBEB !important;
-        border: 3px solid #F59E0B !important;
-        border-radius: 18px !important;
-        padding: 1.5rem !important;
-        margin: 1.5rem 0 !important;
-        box-shadow: 0 8px 18px rgba(245, 158, 11, 0.2) !important;
-    }
-    .card-rejection-badge {
-        display: inline-block !important;
-        background-color: #D97706 !important;
-        color: #FFFFFF !important;
-        font-weight: 900 !important;
-        padding: 0.4rem 1rem !important;
-        border-radius: 8px !important;
-        font-size: 0.95rem !important;
-        margin-bottom: 0.6rem !important;
-    }
-    .card-rejection-title {
-        color: #92400E !important;
-        font-size: 1.65rem !important;
-        font-weight: 900 !important;
-        margin: 0.3rem 0 0.6rem 0 !important;
-    }
-    .card-rejection-reason {
-        background-color: #FEF3C7 !important;
-        border-left: 6px solid #D97706 !important;
-        padding: 0.85rem 1.1rem !important;
-        border-radius: 8px !important;
-        color: #78350F !important;
-        font-weight: 700 !important;
-        font-size: 1.05rem !important;
-        margin-bottom: 1rem !important;
-    }
-    .card-rejection-desc {
-        color: #451A03 !important;
-        font-size: 1.05rem !important;
-        line-height: 1.7 !important;
-    }
-    .card-rejection-desc ul, .card-rejection-desc ol {
-        margin-top: 0.5rem !important;
-        padding-left: 1.4rem !important;
-    }
-    .card-rejection-desc li {
-        margin-bottom: 0.4rem !important;
-        color: #451A03 !important;
-        font-size: 1.05rem !important;
+        .farmer-hero h1 {
+            font-size: 1.45rem !important;
+        }
+        .status-disease-name {
+            font-size: 1.4rem !important;
+        }
+        div.stButton > button {
+            min-height: 48px !important;
+            font-size: 0.92rem !important;
+        }
+        .preview-leaf-box [data-testid="stImage"] img {
+            max-height: 240px !important;
+            max-width: 90% !important;
+        }
+        /* Mobile: Multi-column diagnosis cards stack cleanly */
+        .competing-cols [data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+            margin-bottom: 10px !important;
+        }
     }
 
     header[data-testid="stHeader"] {
@@ -1961,11 +1606,11 @@ def validate_onion_image(image: Image.Image, api_key: str | None = None, min_rat
         if bool(gemini_key):
             is_plant = True
             is_borderline_delegated = True
-            reason = f"Score kanopi daun ({score:.1f}%) di zona toleransi ({tolerance_thresh:.0f}%–{pass_thresh-0.1:.0f}%). Verifikasi kelayakan dialihkan ke Verifikasi Klinis 2 Langkah."
+            reason = f"Score kanopi daun ({score:.1f}%) di zona toleransi ({tolerance_thresh:.0f}%-{pass_thresh-0.1:.0f}%). Verifikasi kelayakan dialihkan ke Verifikasi Klinis 2 Langkah."
         else:
             is_plant = True
             is_borderline_delegated = False
-            reason = f"Score kanopi daun ({score:.1f}%) di zona toleransi ({tolerance_thresh:.0f}%–{pass_thresh-0.1:.0f}%)."
+            reason = f"Score kanopi daun ({score:.1f}%) di zona toleransi ({tolerance_thresh:.0f}%-{pass_thresh-0.1:.0f}%)."
     else:
         is_plant = False
         score_zone = "too_low"
@@ -3166,7 +2811,7 @@ def render_differential_comparison_html(data: dict) -> str:
     table_body = "".join(rows_list)
 
     html_out = (
-        f'<div style="background: #FFFFFF; border-radius: 16px; border: 2px solid #CBD5E1; padding: 1.25rem 1.35rem; margin: 1.2rem 0; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">'
+        f'<div style="background: #FFFFFF; border-radius: 10px; border: 2px solid #CBD5E1; padding: 1.25rem 1.35rem; margin: 1.2rem 0; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">'
         f'<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 0.65rem;">'
         f'<div style="display: flex; align-items: center; gap: 0.6rem;">'
         f'<span style="font-size: 1.4rem;">⚖️</span>'
@@ -3566,9 +3211,9 @@ def build_complete_practical_summary(info, second_info=None, is_differential=Fal
     summary = (
         "### Ringkasan Praktis Aksi Lapangan:\n"
         f"- **Tindakan Darurat 24 Jam Pertama:** Segera pangkas helai daun yang bergejala sekitar 2 cm di bawah batas lesi menggunakan pisau/gunting yang disterilkan alkohol 70% atau air sabun. Masukkan potongan ke dalam wadah tertutup dan musnahkan (bakar/kubur) jauh dari bedengan agar spora patogen tidak tertiup angin.\n"
-        f"- **Aplikasi Obat Semprot & Dosis:** Semprotkan obat pengendali {target_str} ({solusi_1}) dengan takaran dosis 1,5–2 sendok makan (20–25 gram/ml) per tangki 16 Liter di pagi hari (pukul 06.30–08.30 WIB) saat embun mengering atau sore teduh, dan selalu sertakan perekat/perata (surfactant) non-ionik.\n"
-        "- **Manajemen Air & Pemupukan:** Wajib STOP atau kurangi pupuk Nitrogen tunggal (Urea/ZA), berikan pupuk Kalium (KNO3 Putih / MKP 2–3 sendok/tangki) serta Kalsium-Boron untuk mempertebal lapisan kutikula lilin daun, dan kuras genangan parit hingga muka air 20–25 cm di bawah bedengan (sistem macak-macak).\n"
-        "- **Perlindungan Berkelanjutan:** Taburkan kapur dolomit 1–2 genggam/meter bila tanah masam (pH < 6.0) dan kocorkan agens hayati Trichoderma harzianum atau Bacillus subtilis pada sore hari secara rutin tiap 10–14 hari untuk mencegah infeksi patogen sekunder dari tanah."
+        f"- **Aplikasi Obat Semprot & Dosis:** Semprotkan obat pengendali {target_str} ({solusi_1}) dengan takaran dosis 1,5-2 sendok makan (20-25 gram/ml) per tangki 16 Liter di pagi hari (pukul 06.30-08.30 WIB) saat embun mengering atau sore teduh, dan selalu sertakan perekat/perata (surfactant) non-ionik.\n"
+        "- **Manajemen Air & Pemupukan:** Wajib STOP atau kurangi pupuk Nitrogen tunggal (Urea/ZA), berikan pupuk Kalium (KNO3 Putih / MKP 2-3 sendok/tangki) serta Kalsium-Boron untuk mempertebal lapisan kutikula lilin daun, dan kuras genangan parit hingga muka air 20-25 cm di bawah bedengan (sistem macak-macak).\n"
+        "- **Perlindungan Berkelanjutan:** Taburkan kapur dolomit 1-2 genggam/meter bila tanah masam (pH < 6.0) dan kocorkan agens hayati Trichoderma harzianum atau Bacillus subtilis pada sore hari secara rutin tiap 10-14 hari untuk mencegah infeksi patogen sekunder dari tanah."
     )
     return summary
 
@@ -3636,18 +3281,18 @@ def get_system_agronomy_recommendation(
     if is_healthy and not (is_three_way or is_differential):
         c1 = (
             "• Kondisi tanaman bawang merah sangat baik, segar optimal, dan tidak ditemukan lesi penyakit aktif.\n"
-            "• Lakukan pemantauan rutin 2–3 hari sekali terutama di waktu pagi saat embun menempel di helai daun.\n"
+            "• Lakukan pemantauan rutin 2-3 hari sekali terutama di waktu pagi saat embun menempel di helai daun.\n"
             "• Bersihkan gulma dan rumput liar di sekitar parit dan pematang yang berpotensi menjadi sarang serangga vektor."
         )
         c2 = (
             "• Tanaman sehat TIDAK memerlukan penyemprotan obat kimia sintetis atau fungisida kuratif.\n"
             "• Cukup semprotkan pupuk daun mikro lengkap atau asam amino berkonsentrasi rendah untuk menjaga ketahanan sel.\n"
-            "• Waktu aplikasi terbaik adalah pagi hari pukul 06.30 – 08.00 WIB saat stomata helai daun terbuka optimal."
+            "• Waktu aplikasi terbaik adalah pagi hari pukul 06.30 - 08.00 WIB saat stomata helai daun terbuka optimal."
         )
         c3 = (
-            "1. Pengaturan Parit & Tata Air: Pertahankan muka air parit 20–25 cm di bawah permukaan bedengan (kondisi macak-macak). Hindari kekeringan ekstrem maupun genangan air berlebih.\n"
+            "1. Pengaturan Parit & Tata Air: Pertahankan muka air parit 20-25 cm di bawah permukaan bedengan (kondisi macak-macak). Hindari kekeringan ekstrem maupun genangan air berlebih.\n"
             "2. Manajemen Pupuk: Teruskan pemupukan berimbang NPK 16-16-16 sesuai fase pertumbuhan umbi bawang.\n"
-            "3. Penguat Dinding Sel: Semprotkan pupuk Kalsium dan Silika cair secara berkala tiap 7–10 hari untuk memperkokoh lapisan lilin daun.\n"
+            "3. Penguat Dinding Sel: Semprotkan pupuk Kalsium dan Silika cair secara berkala tiap 7-10 hari untuk memperkokoh lapisan lilin daun.\n"
             "4. Perawatan Tanah: Lakukan penggemburan tepi bedengan secara hati-hati agar aerasi perakaran tetap gembur dan sehat.\n\n"
             "### Ringkasan Praktis Aksi Lapangan:\n"
             "- **Pemantauan Rutin:** Amati kondisi bedengan tanaman setiap 2-3 hari sekali di waktu pagi saat embun menempel.\n"
@@ -3700,7 +3345,7 @@ def get_system_agronomy_recommendation(
             "• Waktu Semprot: Pagi hari pukul 06.30 - 08.30 WIB saat stomata daun membuka sempurna."
         )
         c3 = (
-            "1. Manajemen Pupuk Khusus Masalah: Wajib STOP pupuk Nitrogen tunggal (Urea/ZA). Gantikan dengan pupuk Kalium (KNO3 Putih / MKP 2–3 sendok/tangki) untuk memperkokoh umbi dan helai daun.\n"
+            "1. Manajemen Pupuk Khusus Masalah: Wajib STOP pupuk Nitrogen tunggal (Urea/ZA). Gantikan dengan pupuk Kalium (KNO3 Putih / MKP 2-3 sendok/tangki) untuk memperkokoh umbi dan helai daun.\n"
             "2. Penguat Dinding Sel: Semprotkan pupuk Kalsium-Boron dan Silika cair berkala tiap 5-7 hari agar dinding sel tanaman kokoh dan kebal tembusan hifa jamur.\n"
             "3. Pemulihan Pasca Stres: Berikan asam amino atau ekstrak rumput laut konsentrasi ringan untuk meregenerasi sel daun yang rusak akibat patogen.\n"
             "4. Pengaturan Parit: Jaga kelembaban stabil, kuras parit jika air hujan tergenang agar perakaran tidak tercekik anaerob."
@@ -3712,7 +3357,7 @@ def get_system_agronomy_recommendation(
             "• Karantina Area Infeksi: Batasi lalu lintas pekerja dari bedengan yang terinfeksi ke bedengan yang masih sehat."
         )
         c2 = prefix_c2 + (
-            "• Aplikasi Agens Hayati & Bioprotektan: Aplikasikan jamur antagonis Trichoderma harzianum atau suspensi bakteri Bacillus subtilis (100–150 ml per tangki 16L) yang dikocorkan pada pangkal batang dan bedengan tanaman.\n"
+            "• Aplikasi Agens Hayati & Bioprotektan: Aplikasikan jamur antagonis Trichoderma harzianum atau suspensi bakteri Bacillus subtilis (100-150 ml per tangki 16L) yang dikocorkan pada pangkal batang dan bedengan tanaman.\n"
             "• PERINGATAN PENTING APLIKASI HAYATI: Jangan mencampur agens hayati Trichoderma/Bacillus dengan fungisida tembaga atau bakterisida kimia sintetis dalam tangki yang sama (beri jeda waktu minimal 4 hari).\n"
             "• Waktu Aplikasi Hayati: Sore hari (setelah pukul 16.00 WIB) saat sinar matahari tidak terik agar spora agens hayati bertahan hidup dan berkembang biak optimal di tanah."
         )
@@ -3749,15 +3394,15 @@ def get_system_agronomy_recommendation(
         c2 = prefix_c2 + (
             f"• Rekomendasi Bahan Aktif Resmi (Balitsa/Kementan): {info.get('solusi', 'Gunakan fungisida/bakterisida yang sesuai.')}\n"
             "• Pilihan Kontak & Sistemik: Gunakan fungisida kontak (Mankozeb 80% WP atau Propineb 70% WP) selang-seling dengan fungisida sistemik (Difenokonazol 250 EC atau Tebukonazol 430 SC) tiap 4-5 hari sekali untuk mencegah resistensi patogen.\n"
-            "• Takaran Dosis Aplikasi: 1,5 – 2 sendok makan (20 – 25 gram/ml) per tangki semprot standar 16 Liter air.\n"
-            "• Waktu Penyemprotan: Pagi hari pukul 06.00 – 08.30 WIB saat stomata daun terbuka, atau sore hari pukul 16.00 WIB saat cuaca teduh tidak terik.\n"
+            "• Takaran Dosis Aplikasi: 1,5 - 2 sendok makan (20 - 25 gram/ml) per tangki semprot standar 16 Liter air.\n"
+            "• Waktu Penyemprotan: Pagi hari pukul 06.00 - 08.30 WIB saat stomata daun terbuka, atau sore hari pukul 16.00 WIB saat cuaca teduh tidak terik.\n"
             "• Penambahan Perekat & Perata: Selalu campurkan perekat/perata (surfactant) non-ionik agar lapisan lilin daun bawang terbasahi secara merata."
         )
         c3 = (
-            "1. Pengaturan Parit & Tata Air: Atur muka air parit 20–25 cm di bawah permukaan bedengan (sistem macak-macak). Pastikan pembuangan drainase lancar dan jangan biarkan air hujan menggenang di parit sela bedengan.\n"
-            "2. Manajemen Pupuk Khusus Masalah: Wajib STOP atau kurangi pupuk Nitrogen tunggal (Urea/ZA) karena menyebabkan dinding sel daun sukulen (terlalu empuk berair) yang sangat rentan ditembus patogen. Gantikan dengan pupuk Kalium (KNO3 Putih / MKP 2–3 sendok/tangki) untuk memperkokoh umbi dan helai daun.\n"
+            "1. Pengaturan Parit & Tata Air: Atur muka air parit 20-25 cm di bawah permukaan bedengan (sistem macak-macak). Pastikan pembuangan drainase lancar dan jangan biarkan air hujan menggenang di parit sela bedengan.\n"
+            "2. Manajemen Pupuk Khusus Masalah: Wajib STOP atau kurangi pupuk Nitrogen tunggal (Urea/ZA) karena menyebabkan dinding sel daun sukulen (terlalu empuk berair) yang sangat rentan ditembus patogen. Gantikan dengan pupuk Kalium (KNO3 Putih / MKP 2-3 sendok/tangki) untuk memperkokoh umbi dan helai daun.\n"
             "3. Penguat Dinding Sel: Semprotkan pupuk Kalsium-Boron dan pupuk Silika cair secara berkala untuk mempertebal lapisan kutikula (lilin pelindung) helai daun sehingga spora dan bakteri tidak mudah menembus jaringan tanaman.\n"
-            "4. Perawatan Tanah & Agens Hayati: Jika tanah bedengan masam (pH < 6.0), taburkan kapur dolomit 1–2 genggam per meter bedengan untuk menetralkan keasaman. Campurkan agens hayati Trichoderma harzianum atau bakteri Bacillus subtilis bersama pupuk kandang matang untuk menekan populasi jamur patogen tular tanah."
+            "4. Perawatan Tanah & Agens Hayati: Jika tanah bedengan masam (pH < 6.0), taburkan kapur dolomit 1-2 genggam per meter bedengan untuk menetralkan keasaman. Campurkan agens hayati Trichoderma harzianum atau bakteri Bacillus subtilis bersama pupuk kandang matang untuk menekan populasi jamur patogen tular tanah."
         )
 
     # Tambahkan Ringkasan Praktis Tuntas di Bagian Akhir Kartu 3
@@ -4055,7 +3700,7 @@ def format_card_text_to_html(text: str) -> str:
         if is_bullet or is_numbered:
             content = re.sub(r'^([-*•]|\d+[\.\)])\s+', '', clean_line)
             # Bersihkan jika ada tanda minus ganda di awal konten
-            content = re.sub(r'^[-–]\s*', '', content).strip()
+            content = re.sub(r'^[--]\s*', '', content).strip()
             if not in_list:
                 output_lines.append('<ul style="margin: 0.5rem 0; padding-left: 1.35rem; list-style-type: disc;">')
                 in_list = True
@@ -4109,11 +3754,10 @@ if "pending_leaf_slider" in st.session_state:
 # ==============================================================================
 with st.sidebar:
     st.markdown("""
-        <div style='text-align: center; padding: 0.5rem 0;'>
-            <span style='font-size: 2.5rem;'>🧅</span>
-            <h2 style='margin: 0.1rem 0; color: #1b5e20; font-weight: 800;'>AgroScan</h2>
-            <p style='color: #64748b; font-size: 0.88rem; margin-bottom: 4px;'>Menu Pengaturan & Riwayat</p>
-            <span style='background-color: #dcfce7; color: #166534; padding: 3px 10px; border-radius: 999px; font-size: 0.76rem; font-weight: 800; border: 1px solid #86efac;'>v3.2.0 • 7-Kelas TorchScript</span>
+        <div style='padding: 0.25rem 0 0.75rem 0; border-bottom: 1px solid #CBD5E1; margin-bottom: 0.75rem;'>
+            <div style='font-size: 1.35rem; font-weight: 800; color: #16532D; margin: 0 0 2px 0;'>AgroScan</div>
+            <div style='color: #475569; font-size: 0.82rem; margin-bottom: 6px;'>Sistem Deteksi Daun Bawang Merah</div>
+            <span style='background-color: #DCFCE7; color: #166534; padding: 2px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; border: 1px solid #86EFAC;'>v3.2.0 • EfficientNet-B0 TorchScript</span>
         </div>
     """, unsafe_allow_html=True)
 
@@ -4124,17 +3768,17 @@ with st.sidebar:
     gemini_ok = bool(active_gemini_key and len(active_gemini_key) > 15)
 
     st.markdown(f"""
-        <div style="background: #F8FAFC; border-radius: 10px; padding: 8px 10px; margin: 0.3rem 0 0.8rem 0; border: 1px solid #E2E8F0; font-size: 0.80rem;">
+        <div style="background: #FFFFFF; border-radius: 8px; padding: 8px 10px; margin: 0.2rem 0 0.75rem 0; border: 1px solid #CBD5E1; font-size: 0.78rem;">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <span style="font-weight: 700; color: #334155;">🔬 Engine Validasi Visual:</span>
-                <span style="color: {'#16A34A' if gemini_ok else '#DC2626'}; font-weight: 800;">
-                    {'🟢 Aktif (Verifikasi)' if gemini_ok else '🟡 Standby'}
+                <span style="font-weight: 600; color: #334155;">Engine Validasi Visual:</span>
+                <span style="color: {'#15803D' if gemini_ok else '#B91C1C'}; font-weight: 700;">
+                    {'Aktif (Verifikasi)' if gemini_ok else 'Standby'}
                 </span>
             </div>
             <div style="display: flex; align-items: center; justify-content: space-between;">
-                <span style="font-weight: 700; color: #334155;">📋 Engine Resep Agronomi:</span>
-                <span style="color: {'#16A34A' if groq_ok else '#DC2626'}; font-weight: 800;">
-                    {'🟢 Aktif (Rekomendasi)' if groq_ok else '🟡 Mode Standar'}
+                <span style="font-weight: 600; color: #334155;">Engine Resep Agronomi:</span>
+                <span style="color: {'#15803D' if groq_ok else '#B91C1C'}; font-weight: 700;">
+                    {'Aktif (Rekomendasi)' if groq_ok else 'Mode Standar'}
                 </span>
             </div>
         </div>
@@ -4145,13 +3789,13 @@ with st.sidebar:
     # --------------------------------------------------------------------------
     # FITUR 1: BUKU PANDUAN PENGGUNAAN FITUR WEB (OPERASIONAL APLIKASI)
     # --------------------------------------------------------------------------
-    with st.expander("📖 Panduan Penggunaan Web", expanded=False):
+    with st.expander("Panduan Penggunaan Aplikasi", expanded=False):
         st.markdown("""
         <div style="font-size: 0.80rem; line-height: 1.5; color: #334155; padding: 2px 4px;">
         
         <strong style="color: #166534; font-size: 0.82rem;">📸 1. Pengambilan Foto:</strong>
         <ul style="margin: 3px 0 8px 16px; padding: 0;">
-            <li><strong>Jarak:</strong> 10–20 cm tegak lurus daun, fokus tajam & tidak blur.</li>
+            <li><strong>Jarak:</strong> 10-20 cm tegak lurus daun, fokus tajam & tidak blur.</li>
             <li><strong>Cahaya:</strong> Terang alami, hindari bayangan pekat & silau.</li>
             <li><strong>Posisi:</strong> Jangan tutupi bercak lesi dengan jari/tangan.</li>
         </ul>
@@ -4180,21 +3824,21 @@ with st.sidebar:
     # --------------------------------------------------------------------------
     # FITUR 2: PANDUAN & TOLOK UKUR VALIDASI FOTO (TERPISAH & DETAIL PERSEN)
     # --------------------------------------------------------------------------
-    with st.expander("🎯 Panduan Validasi Foto", expanded=False):
+    with st.expander("Panduan Validasi Foto", expanded=False):
         st.markdown("""
         <div style="font-size: 0.80rem; line-height: 1.5; color: #334155; padding: 2px 4px;">
         
         <strong style="color: #166534; font-size: 0.82rem;">📊 1. Batas Keyakinan Model:</strong>
         <ul style="margin: 3px 0 8px 16px; padding: 0;">
-            <li><strong style="color: #b45309;">40% – 55% (Redup/Dini):</strong> Foto sore, mendung, atau bercak tipis.</li>
+            <li><strong style="color: #b45309;">40% - 55% (Redup/Dini):</strong> Foto sore, mendung, atau bercak tipis.</li>
             <li><strong style="color: #15803d;">65% (Standar Balitsa - Rekomendasi):</strong> Pemantauan harian sawah.</li>
-            <li><strong style="color: #b91c1c;">75% – 90% (Super Ketat):</strong> Standar sertifikasi benih / makro.</li>
+            <li><strong style="color: #b91c1c;">75% - 90% (Super Ketat):</strong> Standar sertifikasi benih / makro.</li>
         </ul>
 
         <strong style="color: #166534; font-size: 0.82rem;">🍃 2. Sensitivitas Daun Bawang:</strong>
         <ul style="margin: 3px 0 2px 16px; padding: 0;">
             <li><strong style="color: #15803d;">&ge; 60% (Lolos Langsung):</strong> Daun bawang jelas langsung diproses tanpa verifikasi 2 langkah.</li>
-            <li><strong style="color: #b45309;">47% – 59% (Zona Toleransi):</strong> Bibit muda / daun kecil diizinkan verifikasi klinis 2 langkah.</li>
+            <li><strong style="color: #b45309;">47% - 59% (Zona Toleransi):</strong> Bibit muda / daun kecil diizinkan verifikasi klinis 2 langkah.</li>
             <li><strong style="color: #b91c1c;">&lt; 47% (Ditolak Langsung):</strong> Foto bukan daun bawang atau di bawah standar (wajib foto ulang).</li>
         </ul>
 
@@ -4211,7 +3855,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     # Tampilkan 7 Kategori yang Dideteksi di Sidebar (Lebih Lapang & Rapi)
-    with st.expander("📋 7 Kategori Deteksi AI", expanded=False):
+    with st.expander("Daftar 7 Kategori Deteksi Model", expanded=False):
         for item in SUPPORTED_DISEASES_7:
             status_color = "#15803d" if item["is_healthy"] else ("#b45309" if item["status"] == "virus" else "#b91c1c")
             tag_text = "SEHAT" if item["is_healthy"] else ("VIRUS" if item["status"] == "virus" else "PENYAKIT")
@@ -4234,7 +3878,7 @@ with st.sidebar:
     min_leaf_ratio = 0.50
     min_leaf_ratio_pct = 50
 
-    with st.expander("⚙️ Pengaturan Sensitivitas & Validasi (Opsional)", expanded=False):
+    with st.expander("Pengaturan Sensitivitas & Batas Keyakinan", expanded=False):
         st.caption("Pilih preset cepat atau atur slider sesuai kondisi foto di lapangan:")
 
         current_conf = st.session_state.get("conf_slider", default_conf_pct)
@@ -4242,7 +3886,7 @@ with st.sidebar:
 
         # Tombol Preset Cepat Langsung Sinkron ke Web (Vertikal Lebar Penuh: 100% Bebas Terpotong di Semua HP & Layar)
         if st.button(
-            "🌾 Standar",
+            "Standar Sawah",
             help="Preset Standar Sawah (Keyakinan 65% | Validasi 50% | Lolos >=60%, Toleransi 47%-59%, Tolak <47%)",
             type="primary" if (current_conf == 65 and current_leaf == 50) else "secondary",
             use_container_width=True,
@@ -4253,7 +3897,7 @@ with st.sidebar:
             st.rerun()
 
         if st.button(
-            "☁️ Toleran Sawah",
+            "Toleran Lapangan",
             help="Preset Toleran Sawah / Redup (Keyakinan 50% | Validasi 45% | Lolos >=55%, Toleransi 42%-54%, Tolak <42%)",
             type="primary" if (current_conf == 50 and current_leaf == 45) else "secondary",
             use_container_width=True,
@@ -4264,7 +3908,7 @@ with st.sidebar:
             st.rerun()
 
         if st.button(
-            "🔬 Ketat Lab",
+            "Ketat Presisi",
             help="Preset Super Ketat Lab (Keyakinan 80% | Validasi 55% | Lolos >=65%, Toleransi 52%-64%, Tolak <52%)",
             type="primary" if (current_conf == 80 and current_leaf == 55) else "secondary",
             use_container_width=True,
@@ -4340,13 +3984,13 @@ with st.sidebar:
         )
 
     st.divider()
-    st.markdown("### 📋 Riwayat Pemeriksaan")
+    st.markdown("### Riwayat Pemeriksaan")
     history_list = st.session_state.get('history', [])
     total_hist = len(history_list)
     st.write(f"Total Diagnosa Tersimpan: **{total_hist}**")
 
     if total_hist > 0:
-        with st.expander(f"📂 Daftar Riwayat Disimpan ({total_hist})", expanded=True):
+        with st.expander(f"Daftar Riwayat ({total_hist})", expanded=True):
             for idx, item in enumerate(reversed(history_list)):
                 actual_idx = total_hist - 1 - idx
                 confirm_del_single_key = f"confirm_del_item_{item.get('id', actual_idx)}_{actual_idx}"
@@ -4391,7 +4035,7 @@ with st.sidebar:
         # Unduh Laporan Excel Lengkap (.XLSX) dengan Foto Daun & Keterangan Analisis
         excel_bytes = generate_excel_history_report(history_list)
         st.download_button(
-            label="📊 Unduh Laporan Excel (.XLSX)",
+            label="Unduh Laporan Excel (.xlsx)",
             data=excel_bytes,
             file_name=f"riwayat_analisis_bawang_{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -4400,7 +4044,7 @@ with st.sidebar:
 
         is_confirming_del_all = st.session_state.get("confirm_del_all_hist", False)
         if not is_confirming_del_all:
-            if st.button("🗑️ Hapus Semua Riwayat", use_container_width=True, key="btn_trigger_del_all"):
+            if st.button("Hapus Semua Riwayat", use_container_width=True, key="btn_trigger_del_all"):
                 st.session_state["confirm_del_all_hist"] = True
                 st.rerun()
         else:
@@ -4416,13 +4060,13 @@ with st.sidebar:
             """, unsafe_allow_html=True)
             col_dall_yes, col_dall_no = st.columns(2)
             with col_dall_yes:
-                if st.button("🗑️ Ya, Hapus", type="primary", use_container_width=True, key="btn_yes_del_all"):
+                if st.button("Ya, Hapus Semua", type="primary", use_container_width=True, key="btn_yes_del_all"):
                     reset_all_history()
                     st.session_state["confirm_del_all_hist"] = False
                     st.toast("🗑️ Semua riwayat diagnosa berhasil dihapus.", icon="🗑️")
                     st.rerun()
             with col_dall_no:
-                if st.button("❌ Batal", use_container_width=True, key="btn_no_del_all"):
+                if st.button("Batal", use_container_width=True, key="btn_no_del_all"):
                     st.session_state["confirm_del_all_hist"] = False
                     st.toast("Penghapusan riwayat dibatalkan.", icon="ℹ️")
                     st.rerun()
@@ -4431,7 +4075,7 @@ with st.sidebar:
 
     is_confirming_cache = st.session_state.get("confirm_clear_cache", False)
     if not is_confirming_cache:
-        if st.button("🔄 Bersihkan Cache Sesi", use_container_width=True, key="btn_clear_cache_sidebar"):
+        if st.button("Bersihkan Cache Sesi", use_container_width=True, key="btn_clear_cache_sidebar"):
             st.session_state["confirm_clear_cache"] = True
             st.rerun()
     else:
@@ -4447,7 +4091,7 @@ with st.sidebar:
         """, unsafe_allow_html=True)
         col_c_yes, col_c_no = st.columns(2)
         with col_c_yes:
-            if st.button("🔄 Ya, Bersihkan", type="primary", use_container_width=True, key="btn_yes_clear_cache"):
+            if st.button("Ya, Bersihkan", type="primary", use_container_width=True, key="btn_yes_clear_cache"):
                 st.cache_resource.clear()
                 st.cache_data.clear()
                 if "has_inspected_current" in st.session_state:
@@ -4456,7 +4100,7 @@ with st.sidebar:
                 st.toast("🔄 Cache sesi berhasil dibersihkan!", icon="🔄")
                 st.rerun()
         with col_c_no:
-            if st.button("❌ Batal", use_container_width=True, key="btn_no_clear_cache"):
+            if st.button("Batal", use_container_width=True, key="btn_no_clear_cache"):
                 st.session_state["confirm_clear_cache"] = False
                 st.toast("Pembersihan cache dibatalkan.", icon="ℹ️")
                 st.rerun()
@@ -4474,17 +4118,16 @@ with st.sidebar:
 # ==============================================================================
 st.markdown("""
     <div class="farmer-hero">
-        <h1>🧅 Dokter Tanaman Bawang Merah</h1>
-        <p>Sistem Pakar Deteksi Dini 7 Kondisi & Penyakit Daun Bawang Merah Langsung di Sawah</p>
-        <div style="margin-top: 0.75rem; display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
-            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 4px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.35);">Versi 3.2.0 (TorchScript)</span>
-            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 4px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.35);">EfficientNet-B0 7-Kelas Presisi</span>
-            <span style="background: rgba(255,255,255,0.22); color: #ffffff; padding: 4px 14px; border-radius: 999px; font-size: 0.82rem; font-weight: 600; border: 1px solid rgba(255,255,255,0.35);">Standar Balitsa & BPTP Kementan</span>
+        <h1>Dokter Tanaman Bawang Merah</h1>
+        <p>Sistem identifikasi 7 kondisi daun dan rekomendasi penanganan langsung di lapangan</p>
+        <div class="hero-meta-bar">
+            <span class="hero-meta-badge">EfficientNet-B0 TorchScript</span>
+            <span class="hero-meta-badge">Standar Balitsa & BPTP Kementan RI</span>
         </div>
     </div>
 """, unsafe_allow_html=True)
 
-st.info("ℹ️ **Catatan:** Hasil diagnosis ini adalah alat bantu deteksi dini berbasis citra digital untuk petani.")
+st.info("Catatan: Hasil diagnosis ini merupakan alat bantu deteksi dini berbasis citra digital untuk petani di lapangan.")
 
 
 if not model_loaded:
@@ -4500,11 +4143,11 @@ MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 st.markdown("""
     <div class="step-header">
         <div class="step-num">1</div>
-        <div class="step-title">Ambil / Masukkan Foto Daun</div>
+        <div class="step-title">Ambil atau Masukkan Foto Daun</div>
     </div>
-    <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 12px 16px; margin: 10px 0 16px 0; color: #166534; font-size: 0.95rem;">
-        📸 <strong>Petunjuk Pengambilan Foto:</strong> Foto daun dari dekat, fokus, cahaya cukup.<br>
-        <span style="font-size: 0.88rem; color: #15803d;">⚠️ <strong>Penting:</strong> Model AI ini dilatih khusus dan <strong>hanya valid untuk foto DAUN</strong> tanaman bawang merah (bukan umbi di piring, tanah kosong, pot, atau daun tanaman lain).</span>
+    <div style="background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 10px; padding: 12px 14px; margin: 8px 0 14px 0; color: #166534; font-size: 0.92rem; line-height: 1.55;">
+        <strong>Petunjuk Pengambilan Foto:</strong> Ambil foto daun dari jarak dekat (10-20 cm), fokus tajam, dan pencahayaan terang alami.<br>
+        <span style="font-size: 0.84rem; color: #15803D;">Model ini dilatih khusus untuk <strong>helai daun bawang merah</strong> (bukan umbi, pot, tanah kosong, atau daun tanaman lain).</span>
     </div>
 """, unsafe_allow_html=True)
 
@@ -4518,7 +4161,7 @@ is_upload_mode = (st.session_state["input_source_mode"] == "upload")
 
 with col_src1:
     btn_cam = st.button(
-        "📸 Ambil Foto Kamera",
+        "Gunakan Kamera",
         type="primary" if is_cam_mode else "secondary",
         use_container_width=True,
         key="btn_switch_to_camera"
@@ -4532,7 +4175,7 @@ with col_src1:
 
 with col_src2:
     btn_upload = st.button(
-        "📁 Pilih dari Galeri",
+        "Pilih dari Galeri",
         type="primary" if is_upload_mode else "secondary",
         use_container_width=True,
         key="btn_switch_to_upload"
@@ -4552,20 +4195,19 @@ if is_cam_mode:
     
     # Kotak Bantuan Cepat Izin Kamera (Mencegah pesan blokir & memandu perizinan di browser)
     st.html("""
-    <div id="agro-cam-perm-box" style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 12px; padding: 10px 14px; margin: 6px 0 10px 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-        <div style="font-size: 0.86rem; color: #1E293B; line-height: 1.35;">
-            📷 <strong>Perizinan Kamera:</strong> Jika kamera belum aktif atau browser meminta izin:
+    <div id="agro-cam-perm-box" style="background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 10px; padding: 10px 14px; margin: 6px 0 10px 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+        <div style="font-size: 0.84rem; color: #1E293B; line-height: 1.4;">
+            <strong>Perizinan Kamera:</strong> Jika kamera belum aktif, aktifkan izin kamera pada browser:
         </div>
-        <button id="btn-agro-cam-perm" onclick="if(window.triggerAgroScanCameraPermission){window.triggerAgroScanCameraPermission();}" style="background-color: #1B5E20; color: #FFFFFF; border: 1.5px solid #14532D; border-radius: 8px; padding: 7px 14px; font-weight: 800; font-size: 0.84rem; cursor: pointer;">
-            🔓 Izinkan Kamera Sekarang
+        <button id="btn-agro-cam-perm" onclick="if(window.triggerAgroScanCameraPermission){window.triggerAgroScanCameraPermission();}" style="background-color: #16532D; color: #FFFFFF; border: 1px solid #14532D; border-radius: 6px; padding: 6px 14px; font-weight: 700; font-size: 0.82rem; cursor: pointer;">
+            Izinkan Kamera Sekarang
         </button>
     </div>
     """, unsafe_allow_javascript=True)
 
     st.markdown("""
-        <div style="font-weight: 800; font-size: 1.05rem; color: #0F172A; margin: 12px 0 10px 0; display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.25rem;">📸</span>
-            <span>Arahkan kamera dekat ke bagian daun yang sakit:</span>
+        <div style="font-weight: 700; font-size: 0.95rem; color: #0F172A; margin: 10px 0 8px 0;">
+            Arahkan kamera dekat ke bagian daun yang sakit:
         </div>
     """, unsafe_allow_html=True)
     cam_file = st.camera_input(
@@ -4574,7 +4216,7 @@ if is_cam_mode:
         key=cam_key
     )
     
-    with st.expander("ℹ️ Panduan Singkat Cara Mengizinkan Akses Kamera di Browser", expanded=False):
+    with st.expander("Panduan Singkat Izin Akses Kamera di Browser", expanded=False):
         st.markdown("""
         <div style="font-size: 0.80rem; line-height: 1.5; color: #334155; padding: 2px 4px;">
             <strong style="color: #166534;">📱 Google Chrome di HP Android:</strong>
@@ -4623,7 +4265,7 @@ elif is_upload_mode:
                 st.error(f"Gagal membuka berkas foto: {err}")
 
 # Tips Ringkas untuk Petani
-st.caption("💡 **Petunjuk Foto Bagus:** Foto daun dari dekat (jarak 10-20 cm), fokus, cahaya cukup tepat pada bercak daun yang bergejala.")
+st.caption("Petunjuk foto: Ambil foto daun dari jarak dekat (10-20 cm), fokus tajam, dan pencahayaan terang merata pada bagian bergejala.")
 
 # Tombol Pemeriksaan Utama & Pemrosesan
 if selected_image is not None and not file_error:
@@ -4676,23 +4318,23 @@ if selected_image is not None and not file_error:
         fin_w, fin_h = enhance_meta["final_size"]
         is_upscaled = enhance_meta["is_upscaled"]
 
-        badges_html = "<div style='text-align: center; margin-top: -4px; margin-bottom: 8px; display: flex; flex-direction: column; align-items: center; gap: 5px;'>"
+        badges_html = "<div style='text-align: center; margin-top: -2px; margin-bottom: 8px; display: flex; flex-direction: column; align-items: center; gap: 4px;'>"
         if is_auto_cropped:
             badges_html += (
-                f"<span style='background: #DCFCE7; color: #166534; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #86EFAC; display: inline-flex; align-items: center; gap: 4px;'>"
-                f"✂️ <span>Fokus Helai Daun Terpotong Otomatis (Smart Saliency: {leaf_coverage*100.0:.0f}% area fokus)</span>"
+                f"<span style='background: #DCFCE7; color: #166534; font-size: 0.78rem; font-weight: 600; padding: 2px 10px; border-radius: 6px; border: 1px solid #86EFAC;'>"
+                f"Fokus helai daun terdeteksi (area fokus: {leaf_coverage*100.0:.0f}%)"
                 f"</span>"
             )
         if is_upscaled:
             badges_html += (
-                f"<span style='background: #EDE9FE; color: #6D28D9; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #C4B5FD; display: inline-flex; align-items: center; gap: 4px;'>"
-                f"✨ <span>Resolusi Ditingkatkan ke Standar AI: {orig_w}×{orig_h} px ➔ <strong>{fin_w}×{fin_h} px</strong> (Super-Resolution Aktif)</span>"
+                f"<span style='background: #F1F5F9; color: #334155; font-size: 0.78rem; font-weight: 600; padding: 2px 10px; border-radius: 6px; border: 1px solid #CBD5E1;'>"
+                f"Resolusi disesuaikan untuk analisis: {orig_w}x{orig_h} px -> {fin_w}x{fin_h} px"
                 f"</span>"
             )
         else:
             badges_html += (
-                f"<span style='background: #F0FDF4; color: #15803D; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #BBF7D0; display: inline-flex; align-items: center; gap: 4px;'>"
-                f"✨ <span>Resolusi Optimal AI: <strong>{fin_w}×{fin_h} px</strong> (Kerapatan Piksel Tinggi & Tajam ✅)</span>"
+                f"<span style='background: #F1F5F9; color: #334155; font-size: 0.78rem; font-weight: 600; padding: 2px 10px; border-radius: 6px; border: 1px solid #CBD5E1;'>"
+                f"Dimensi citra: {fin_w}x{fin_h} px"
                 f"</span>"
             )
         badges_html += "</div>"
@@ -4704,27 +4346,27 @@ if selected_image is not None and not file_error:
         m_bg = "#f0fdf4"
         m_border = "#86efac"
         m_icon = "🟢"
-        m_status_title = f"MEMENUHI SYARAT VALIDASI ({ratio_pct_live:.1f}% >= {pass_thresh_pct:.0f}%)"
+        m_status_title = f"Memenuhi Syarat Validasi ({ratio_pct_live:.1f}% >= {pass_thresh_pct:.0f}%)"
         m_status_desc = "Score kanopi daun memenuhi standar kelayakan tinggi untuk langsung didiagnosa tanpa verifikasi 2 langkah."
     elif ratio_pct_live >= tolerance_thresh_pct:
         m_color = "#d97706"
         m_bg = "#fffbeb"
         m_border = "#fcd34d"
         m_icon = "🟡"
-        m_status_title = f"ZONA TOLERANSI: VERIFIKASI 2 LANGKAH ({ratio_pct_live:.1f}%)"
-        m_status_desc = f"Score kanopi daun ({ratio_pct_live:.1f}%) berada di zona toleransi ({tolerance_thresh_pct:.0f}%–{pass_thresh_pct-0.1:.0f}%). Sistem verifikasi klinis 2 langkah aktif untuk memvalidasi kelayakan objek tanaman."
+        m_status_title = f"Zona Toleransi: Verifikasi Klinis ({ratio_pct_live:.1f}%)"
+        m_status_desc = f"Score kanopi daun ({ratio_pct_live:.1f}%) berada di zona toleransi ({tolerance_thresh_pct:.0f}%-{pass_thresh_pct-0.1:.0f}%). Sistem verifikasi klinis 2 langkah aktif untuk memvalidasi kelayakan objek tanaman."
     else:
         m_color = "#dc2626"
         m_bg = "#fef2f2"
         m_border = "#fca5a5"
         m_icon = "🔴"
-        m_status_title = f"DI BAWAH SYARAT KELAYAKAN ({ratio_pct_live:.1f}% < {tolerance_thresh_pct:.0f}%)"
+        m_status_title = f"Di Bawah Syarat Kelayakan ({ratio_pct_live:.1f}% < {tolerance_thresh_pct:.0f}%)"
         m_status_desc = f"Score kanopi daun ({ratio_pct_live:.1f}%) di bawah batas minimal toleransi ({tolerance_thresh_pct:.0f}%). Foto bukan daun bawang atau belum memenuhi standar. Silakan ambil foto ulang yang benar."
 
     st.markdown(f"""
         <div style="background: {m_bg}; border: 1.5px solid {m_border}; border-radius: 12px; padding: 10px 14px; margin: 6px 0 14px 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 6px;">
-                <span style="font-weight: 700; color: #1e293b; font-size: 0.90rem;">🍃 Validasi Kanopi Daun:</span>
+                <span style="font-weight: 700; color: #1e293b; font-size: 0.90rem;">Validasi Kanopi Daun:</span>
                 <span style="font-weight: 800; color: {m_color}; font-size: 0.85rem;">{m_icon} {m_status_title}</span>
             </div>
             <div style="font-size: 0.82rem; color: #475569; margin-bottom: 6px; line-height: 1.45;">
@@ -4749,7 +4391,7 @@ if selected_image is not None and not file_error:
     current_img_sig = f"{selected_image.size}_{selected_image.mode}_{img_hash}"
     
     # Tombol Utama Periksa
-    btn_check = st.button("🔍 PERIKSA DAUN SEKARANG", type="primary", use_container_width=True, key="btn_inspect_main")
+    btn_check = st.button("Periksa Kondisi Daun", type="primary", use_container_width=True, key="btn_inspect_main")
     
     # Jika tombol ditekan, aktifkan pemeriksaan untuk gambar ini
     if btn_check:
@@ -4781,7 +4423,7 @@ if selected_image is not None and not file_error:
 
             st.error(f"❌ Foto Ditolak: Score Terdeteksi {detected_ratio:.1f}% (Di Bawah Batas Minimal Toleransi {curr_tolerance_pct:.0f}%)")
             st.markdown(f"""
-                <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
+                <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 10px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                         <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ FOTO DI BAWAH SYARAT KELAYAKAN</span>
                         <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Score Daun: {detected_ratio:.1f}% (Batas Minimal: {curr_tolerance_pct:.0f}%)</span>
@@ -4791,7 +4433,7 @@ if selected_image is not None and not file_error:
                         Sistem langsung menolak foto ini demi menjaga akurasi diagnosa karena foto bukan daun tanaman bawang merah atau kualitas foto belum memenuhi standar (misal: foto wajah/tubuh manusia, perabotan kamar, pakaian, latar tanah kosong tanpa tanaman, atau foto buram/terlalu jauh).<br><br>
                         <strong>📸 Petunjuk Pengambilan Foto yang Benar:</strong><br>
                         • <strong>Fokus Daun:</strong> Arahkan kamera tepat ke helai daun tanaman bawang merah asli di pot atau sawah.<br>
-                        • <strong>Jarak Ideal:</strong> Ambil foto dari jarak dekat (10–20 cm) dengan pencahayaan terang merata.<br>
+                        • <strong>Jarak Ideal:</strong> Ambil foto dari jarak dekat (10-20 cm) dengan pencahayaan terang merata.<br>
                         • <strong>Ketajaman:</strong> Pastikan helai daun terlihat tajam, fokus, dan tidak goyang atau buram.<br>
                         • <strong>Hindari Objek Lain:</strong> Hindari memotret wajah manusia, tangan polos mendominasi, ruangan, kasur/bantal, atau objek selain tanaman bawang.
                     </div>
@@ -4908,7 +4550,7 @@ if selected_image is not None and not file_error:
                     rejection_reason = "Foto yang diunggah tidak memperlihatkan karakteristik helai daun bawang merah (Allium cepa) yang memenuhi syarat kelayakan diagnosa klinis."
 
                 st.markdown(f"""
-                    <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
+                    <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 10px; border: 1.5px solid #EF4444; background: #FEF2F2; margin: 0.8rem 0;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                             <span style="background-color: #DC2626; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">❌ FOTO TIDAK MEMENUHI KELAYAKAN DIAGNOSA</span>
                             <span style="font-weight: 700; color: #991B1B; font-size: 0.92rem;">Verifikasi Klinis 2 Langkah</span>
@@ -4918,7 +4560,7 @@ if selected_image is not None and not file_error:
                             Sistem mendeteksi bahwa foto tidak memenuhi syarat kelayakan diagnosa tanaman daun bawang merah (Allium cepa). Diagnosa penyakit otomatis dan anjuran obat dihentikan demi menjaga akurasi.<br><br>
                             <strong>💡 Petunjuk Pengambilan Foto Layak Diagnosa:</strong><br>
                             • Pastikan objek yang difoto adalah tanaman daun bawang merah asli di pot atau bedengan sawah.<br>
-                            • Ambil foto dari jarak dekat (10–20 cm) dengan pencahayaan terang tepat pada helai daun yang bergejala.<br>
+                            • Ambil foto dari jarak dekat (10-20 cm) dengan pencahayaan terang tepat pada helai daun yang bergejala.<br>
                             • Hindari mengarahkan kamera ke wajah manusia murni, pakaian, perabotan, atau jenis tanaman lain.
                         </div>
                     </div>
@@ -4929,7 +4571,7 @@ if selected_image is not None and not file_error:
             if is_ragu_ragu and not is_from_gemini and top_confidence < conf_th_pct:
                 rec_conf_pct = max(35, int(np.floor(top_confidence)))
                 st.markdown(f"""
-                    <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 14px; border: 1.5px solid #F59E0B; background: #FFFBEB; margin: 0.8rem 0;">
+                    <div class="card-rejection" style="padding: 1.1rem 1.3rem; border-radius: 10px; border: 1.5px solid #F59E0B; background: #FFFBEB; margin: 0.8rem 0;">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                             <span style="background-color: #D97706; color: #FFFFFF; font-size: 0.78rem; font-weight: 800; padding: 3px 8px; border-radius: 6px;">⚠️ KEPUTUSAN MODEL RAGU-RAGU</span>
                             <span style="font-weight: 700; color: #92400E; font-size: 0.92rem;">Kepastian: {top_confidence:.1f}% (Batas Slider: {conf_th_pct:.0f}%)</span>
@@ -4998,7 +4640,7 @@ if selected_image is not None and not file_error:
             if is_pure_healthy:
                 card_border = "#16a34a"
                 tag_bg = "#16a34a"
-                tag_text = "✅ TERKONFIRMASI: DAUN SEHAT & PRIMA"
+                tag_text = "Terkonfirmasi: Daun Sehat & Normal"
                 box_bg = "#f0fdf4"
                 box_border = "#bbf7d0"
                 box_title_color = "#15803d"
@@ -5006,7 +4648,7 @@ if selected_image is not None and not file_error:
             elif is_pest:
                 card_border = "#ea580c"
                 tag_bg = "#ea580c"
-                tag_text = "🐛 KEPUTUSAN FINAL: SERANGAN HAMA"
+                tag_text = "Keputusan Final: Serangan Hama"
                 box_bg = "#fff7ed"
                 box_border = "#fed7aa"
                 box_title_color = "#c2410c"
@@ -5014,7 +4656,7 @@ if selected_image is not None and not file_error:
             else:
                 card_border = "#7c3aed"
                 tag_bg = "#7c3aed"
-                tag_text = "🏆 KEPUTUSAN FINAL VERIFIKASI LAPANGAN"
+                tag_text = "Keputusan Final: Verifikasi Lapangan"
                 box_bg = "#f5f3ff"
                 box_border = "#ddd6fe"
                 box_title_color = "#6d28d9"
@@ -5023,13 +4665,13 @@ if selected_image is not None and not file_error:
             cand_str = " vs ".join([f"<strong>{c_name}</strong>" for c_name in initial_candidates_summary]) if initial_candidates_summary else ""
 
             st.markdown(f"""
-                <div style="background: #ffffff; border: 2.5px solid {card_border}; border-radius: 16px; padding: 18px 20px; box-shadow: 0 4px 16px rgba(124, 58, 237, 0.08); margin-bottom: 1.2rem;">
+                <div style="background: #ffffff; border: 1.5px solid {card_border}; border-radius: 10px; padding: 18px 20px; box-shadow: 0 4px 16px rgba(124, 58, 237, 0.08); margin-bottom: 1.2rem;">
                     <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
                         <span style="background: {tag_bg}; color: #ffffff; font-weight: 800; font-size: 0.80rem; padding: 4px 10px; border-radius: 8px;">
                             {tag_text}
                         </span>
                         <span style="background: #ede9fe; color: #6d28d9; font-size: 0.78rem; font-weight: 800; padding: 3px 12px; border-radius: 999px; border: 1px solid #c4b5fd;">
-                            🩺✨ Keputusan Verifikasi Pakar Visual
+                            Verifikasi Pakar Visual
                         </span>
                     </div>
                     <div style="font-size: 1.55rem; font-weight: 800; color: #0f172a; line-height: 1.25; margin-bottom: 4px;">
@@ -5040,15 +4682,15 @@ if selected_image is not None and not file_error:
                     </div>
                     <div style="background: {box_bg}; border: 1.5px solid {box_border}; border-radius: 12px; padding: 13px 16px; margin-bottom: 14px;">
                         <div style="font-size: 0.86rem; font-weight: 800; color: {box_title_color}; margin-bottom: 5px;">
-                            💡 Pemecahan Mandiri dari 2–3 Kemungkinan Bersaing:
+                            Hasil Verifikasi dari Kemungkinan Bersaing:
                         </div>
                         <div style="font-size: 0.90rem; color: {box_text_color}; line-height: 1.6;">
                             {second_opinion_text}
                         </div>
                     </div>
                     <div style="font-size: 0.88rem; color: #475569; line-height: 1.5; padding-top: 6px; border-top: 1px dashed #e2e8f0;">
-                        🔍 <strong>Ciri Khas di Sawah:</strong> {info.get('ciri_lapangan', '-')}<br>
-                        {f"<span style='color: #64748b; font-size: 0.82rem;'>⚡ <em>Dievaluasi secara mandiri dari kemungkinan awal: {cand_str}</em></span>" if cand_str else ""}
+                        <strong>Ciri Khas di Sawah:</strong> {info.get('ciri_lapangan', '-')}<br>
+                        {f"<span style='color: #64748b; font-size: 0.82rem;'><em>Dievaluasi dari kemungkinan awal: {cand_str}</em></span>" if cand_str else ""}
                     </div>
                 </div>
             """, unsafe_allow_html=True)
@@ -5059,9 +4701,9 @@ if selected_image is not None and not file_error:
             # ------------------------------------------------------------------
             p1_is_h = ("sehat" in info.get("nama_id", "").lower())
             header_title = (
-                "⚠️ **Waspada Gejala Awal: Terdeteksi 3 Kemungkinan Bersaing**"
+                "**Waspada Gejala Awal: Terdeteksi 3 Kemungkinan Bersaing**"
                 if p1_is_h else
-                "🚨 **Terdeteksi 3 Kemungkinan Penyakit Bersaing**"
+                "**Terdeteksi 3 Kemungkinan Penyakit Bersaing**"
             )
             st.warning(
                 f"{header_title}\n\n"
@@ -5073,48 +4715,48 @@ if selected_image is not None and not file_error:
             col_top1, col_top2, col_top3 = st.columns(3)
             with col_top1:
                 b_color_1 = "#16a34a" if p1_is_h else "#dc2626"
-                badge_text_1 = "🥇 PREDIKSI TERPILIH (SEHAT)" if p1_is_h else "🥇 PERINGKAT 1"
+                badge_text_1 = "Kemungkinan 1 (Daun Sehat)" if p1_is_h else "Kemungkinan 1"
                 st.markdown(f"""
-                    <div style="background: #ffffff; border: 2.5px solid {b_color_1}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                    <div style="background: #ffffff; border: 1.5px solid {b_color_1}; border-radius: 10px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
                         <span style="background: {b_color_1}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_1}</span>
                         <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{info['nama_id']}</div>
                         <div style="font-size: 0.90rem; color: {b_color_1}; font-weight: 800; margin-bottom: 8px;">Kepastian: {top_confidence:.1f}%</div>
                         <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
-                            <strong>🔍 Ciri di Sawah:</strong><br>{info.get('ciri_lapangan', '-')}
+                            <strong>Ciri di Sawah:</strong><br>{info.get('ciri_lapangan', '-')}
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
 
             with col_top2:
                 b_color_2 = "#ea580c"
-                badge_text_2 = "🥈 PERINGKAT 2"
+                badge_text_2 = "Kemungkinan 2"
                 st.markdown(f"""
-                    <div style="background: #ffffff; border: 2.5px solid {b_color_2}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                    <div style="background: #ffffff; border: 1.5px solid {b_color_2}; border-radius: 10px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
                         <span style="background: {b_color_2}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_2}</span>
                         <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{second_info['nama_id']}</div>
                         <div style="font-size: 0.90rem; color: {b_color_2}; font-weight: 800; margin-bottom: 8px;">Kepastian: {second_confidence:.1f}%</div>
                         <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
-                            <strong>🔍 Ciri di Sawah:</strong><br>{second_info.get('ciri_lapangan', '-')}
+                            <strong>Ciri di Sawah:</strong><br>{second_info.get('ciri_lapangan', '-')}
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
 
             with col_top3:
                 b_color_3 = "#0284c7"
-                badge_text_3 = "🥉 PERINGKAT 3"
+                badge_text_3 = "Kemungkinan 3"
                 st.markdown(f"""
-                    <div style="background: #ffffff; border: 2.5px solid {b_color_3}; border-radius: 14px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                    <div style="background: #ffffff; border: 1.5px solid {b_color_3}; border-radius: 10px; padding: 14px; height: 100%; box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
                         <span style="background: {b_color_3}; color: #ffffff; font-weight: 800; font-size: 0.78rem; padding: 3px 8px; border-radius: 6px; width: fit-content; margin-bottom: 6px;">{badge_text_3}</span>
                         <div style="font-size: 1.15rem; font-weight: 800; color: #0f172a; margin-bottom: 4px; line-height: 1.3;">{third_info.get('nama_id', third_class_raw)}</div>
                         <div style="font-size: 0.90rem; color: {b_color_3}; font-weight: 800; margin-bottom: 8px;">Kepastian: {third_confidence:.1f}%</div>
                         <div style="font-size: 0.84rem; color: #475569; line-height: 1.45; margin-top: auto;">
-                            <strong>🔍 Ciri di Sawah:</strong><br>{third_info.get('ciri_lapangan', '-')}
+                            <strong>Ciri di Sawah:</strong><br>{third_info.get('ciri_lapangan', '-')}
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
 
             st.info(
-                "💡 **Panduan Identifikasi 3 Titik Gejala di Kebun:**\n\n"
+                "Panduan Identifikasi 3 Titik Gejala di Lapangan:\n\n"
                 "• **Titik [1] (Hijau/Merah):** Cek kondisi daun dominan apakah masih berklorofil tegar atau sudah berpusat lesi.\n\n"
                 f"• **Titik [2] (Oranye):** Cek apakah tampak gejala khas **{second_info['nama_id']}** (misal: ujung daun menguning kering atau bercak basah).\n\n"
                 f"• **Titik [3] (Biru):** Cek apakah tampak gejala **{third_info.get('nama_id', third_class_raw)}** (misal: garis klorosis virus atau bercak cincin jamur)."
@@ -5125,7 +4767,7 @@ if selected_image is not None and not file_error:
             # TAMPILAN 2 KEMUNGKINAN BERSAING (DIFERENSIAL)
             # ------------------------------------------------------------------
             st.warning(
-                f"⚠️ **Gejala Ganda / Memerlukan Konfirmasi Fisik**\n\n"
+                f"**Gejala Ganda / Memerlukan Konfirmasi Fisik**\n\n"
                 f"### Terdeteksi 2 Kemungkinan Penyakit Serupa\n\n"
                 f"Model visual menemukan kemiripan tinggi dengan selisih probabilitas tipis (hanya **{confidence_margin:.1f}%**). "
                 f"Petani disarankan mencocokkan ciri fisik langsung di kebun:"
@@ -5139,7 +4781,7 @@ if selected_image is not None and not file_error:
                     f"### {info['nama_id']}\n\n"
                     f"{latin_a}"
                     f"**Tingkat Kepastian:** `{top_confidence:.1f}%`\n\n"
-                    f"🔍 **Ciri di Sawah:**\n\n{info.get('ciri_lapangan', '-')}"
+                    f"**Ciri di Sawah:**\n\n{info.get('ciri_lapangan', '-')}"
                 )
             with col_diff2:
                 latin_b = f"*{second_info.get('latin', '')}*\n\n" if second_info.get("latin") else ""
@@ -5148,11 +4790,11 @@ if selected_image is not None and not file_error:
                     f"### {second_info['nama_id']}\n\n"
                     f"{latin_b}"
                     f"**Tingkat Kepastian:** `{second_confidence:.1f}%`\n\n"
-                    f"🔍 **Ciri di Sawah:**\n\n{second_info.get('ciri_lapangan', '-')}"
+                    f"**Ciri di Sawah:**\n\n{second_info.get('ciri_lapangan', '-')}"
                 )
 
             st.info(
-                "💡 **Kunci Pembeda Cepat di Lapangan:**\n\n"
+                "Kunci Pembeda di Lapangan:\n\n"
                 "Periksa helai bercak daun secara teliti:\n\n"
                 "• **Bakteri (Hawar Daun):** Biasanya tampak berlendir kebasah-basahan seperti tersiram air mendidih saat pagi hari lembap dan berbau busuk.\n\n"
                 "• **Jamur (Bercak Ungu / Trotol / Stemphylium / Karat):** Tampak bercak cincin konsentris kering, bertepung spora, atau bintil karat serbuk oranye."
@@ -5164,17 +4806,17 @@ if selected_image is not None and not file_error:
             if is_pure_healthy:
                 status_card_class = "status-card-healthy"
                 badge_class = "badge-healthy-tag"
-                badge_text = "✅ DAUN SEHAT & NORMAL"
+                badge_text = "Kondisi Daun Sehat & Normal"
                 conf_color = "#10b981"
             elif is_pest:
                 status_card_class = "status-card-pest"
                 badge_class = "badge-pest-tag"
-                badge_text = "🐛 SERANGAN HAMA TANAMAN"
+                badge_text = "Serangan Hama Tanaman"
                 conf_color = "#ea580c"
             else:
                 status_card_class = "status-card-disease"
                 badge_class = "badge-disease-tag"
-                badge_text = "🚨 DAUN TERSERANG PENYAKIT"
+                badge_text = "Daun Terserang Penyakit"
                 conf_color = "#dc2626"
 
             st.markdown(f"""
@@ -5185,7 +4827,7 @@ if selected_image is not None and not file_error:
                         Tingkat Kepastian: <span style="color: {conf_color}; font-size: 1.4rem;">{top_confidence:.1f}%</span>
                     </div>
                     <div style="font-size: 0.92rem; color: #475569; margin-top: 0.6rem; line-height: 1.5;">
-                        🔍 <strong>Ciri Khas di Sawah:</strong> {info.get('ciri_lapangan', '-')}
+                        <strong>Ciri Khas di Sawah:</strong> {info.get('ciri_lapangan', '-')}
                     </div>
                 </div>
             """, unsafe_allow_html=True)
@@ -5215,9 +4857,9 @@ if selected_image is not None and not file_error:
         if is_confirming_save:
             diag_target_name = info.get('nama_id', 'Penyakit Daun')
             st.markdown(f"""
-                <div style="background: #F0FDF4; border: 2px solid #22C55E; border-radius: 14px; padding: 14px 16px; margin: 0.9rem 0; box-shadow: 0 3px 10px rgba(34, 197, 94, 0.12);">
+                <div style="background: #F0FDF4; border: 2px solid #22C55E; border-radius: 10px; padding: 14px 16px; margin: 0.9rem 0; box-shadow: 0 3px 10px rgba(34, 197, 94, 0.12);">
                     <div style="font-weight: 800; color: #14532D; font-size: 1.02rem; margin-bottom: 4px;">
-                        📋 Konfirmasi Simpan Hasil Diagnosa
+                        Konfirmasi Simpan Hasil Diagnosa
                     </div>
                     <div style="color: #166534; font-size: 0.90rem; line-height: 1.55;">
                         Apakah Anda yakin ingin menyimpan hasil pemeriksaan <strong>{diag_target_name} ({top_confidence:.1f}%)</strong> beserta foto dan bukti analisisnya ke daftar Riwayat?
@@ -5226,7 +4868,7 @@ if selected_image is not None and not file_error:
             """, unsafe_allow_html=True)
             col_csave_yes, col_csave_no = st.columns(2)
             with col_csave_yes:
-                if st.button("✅ Ya, Simpan Sekarang", type="primary", use_container_width=True, key=f"btn_act_save_yes_{current_img_sig}"):
+                if st.button("Ya, Simpan Hasil", type="primary", use_container_width=True, key=f"btn_act_save_yes_{current_img_sig}"):
                     if is_resolved_by_gemini or diag_mode == "resolved":
                         rec_name = f"{info['nama_id']} (Terkonfirmasi Sistem Pakar)"
                     elif diag_mode == "three_way":
@@ -5252,7 +4894,7 @@ if selected_image is not None and not file_error:
                     st.toast("✅ Berhasil disimpan ke riwayat pemeriksaan!", icon="💾")
                     st.rerun()
             with col_csave_no:
-                if st.button("❌ Batal Simpan", use_container_width=True, key=f"btn_act_save_no_{current_img_sig}"):
+                if st.button("Batal", use_container_width=True, key=f"btn_act_save_no_{current_img_sig}"):
                     st.session_state[confirm_save_key] = False
                     st.toast("Penyimpanan riwayat dibatalkan.", icon="ℹ️")
                     st.rerun()
@@ -5260,9 +4902,9 @@ if selected_image is not None and not file_error:
         # Dialog Konfirmasi Ganti Foto
         if is_confirming_other:
             st.markdown("""
-                <div style="background: #FEF3C7; border: 2px solid #F59E0B; border-radius: 14px; padding: 14px 16px; margin: 0.9rem 0; box-shadow: 0 3px 10px rgba(245, 158, 11, 0.12);">
+                <div style="background: #FEF3C7; border: 2px solid #F59E0B; border-radius: 10px; padding: 14px 16px; margin: 0.9rem 0; box-shadow: 0 3px 10px rgba(245, 158, 11, 0.12);">
                     <div style="font-weight: 800; color: #92400E; font-size: 1.02rem; margin-bottom: 4px;">
-                        📸 Konfirmasi Ganti Foto Pemeriksaan
+                        Konfirmasi Ganti Foto Pemeriksaan
                     </div>
                     <div style="color: #78350F; font-size: 0.90rem; line-height: 1.55;">
                         Pemeriksaan foto daun saat ini akan ditutup untuk memilih atau memotret daun baru. Pastikan hasil penting sudah disimpan jika diperlukan.
@@ -5271,14 +4913,14 @@ if selected_image is not None and not file_error:
             """, unsafe_allow_html=True)
             col_cother_yes, col_cother_no = st.columns(2)
             with col_cother_yes:
-                if st.button("📸 Ya, Ganti Foto", type="primary", use_container_width=True, key=f"btn_act_other_yes_{current_img_sig}"):
+                if st.button("Ya, Ganti Foto", type="primary", use_container_width=True, key=f"btn_act_other_yes_{current_img_sig}"):
                     st.session_state[confirm_other_key] = False
                     if "has_inspected_current" in st.session_state:
                         del st.session_state["has_inspected_current"]
                     st.toast("Siap mengambil atau memilih foto baru.", icon="📸")
                     st.rerun()
             with col_cother_no:
-                if st.button("❌ Batal (Tetap di Sini)", use_container_width=True, key=f"btn_act_other_no_{current_img_sig}"):
+                if st.button("Batal", use_container_width=True, key=f"btn_act_other_no_{current_img_sig}"):
                     st.session_state[confirm_other_key] = False
                     st.rerun()
 
@@ -5288,14 +4930,14 @@ if selected_image is not None and not file_error:
             col_save, col_other = st.columns([1.0, 1.0])
             with col_save:
                 if is_already_saved:
-                    st.button("✅ Hasil Sudah Disimpan", disabled=True, use_container_width=True)
+                    st.button("Hasil Sudah Disimpan di Riwayat", disabled=True, use_container_width=True)
                 else:
-                    if st.button("💾 Simpan Hasil ke Riwayat", use_container_width=True, key=f"btn_save_top_{current_img_sig}"):
+                    if st.button("Simpan Hasil ke Riwayat", use_container_width=True, key=f"btn_save_top_{current_img_sig}"):
                         st.session_state[confirm_save_key] = True
                         st.rerun()
 
             with col_other:
-                if st.button("🔄 Pilih Foto Lain", use_container_width=True, key=f"btn_other_photo_{current_img_sig}"):
+                if st.button("Pilih Foto Lain", use_container_width=True, key=f"btn_other_photo_{current_img_sig}"):
                     st.session_state[confirm_other_key] = True
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
@@ -5363,68 +5005,68 @@ if selected_image is not None and not file_error:
             v_healthy_pct = visual_evidence.get("healthy_pct", 100.0)
             v_desc = visual_evidence.get("evidence_desc", "")
 
-            st.markdown("### 🔬 Bukti Analisis Visual Nyata dari Foto Daun")
+            st.markdown("### Bukti Analisis Visual dari Foto Daun")
             st.caption("Hasil pemindaian fitur fisik piksel langsung dari foto yang diunggah:")
 
             # Konfigurasi Nilai Kartu Secara Realistis & Anti-Ngawur
             if is_pure_healthy:
-                c1_title = "🩺 Luas Kerusakan Daun"
+                c1_title = "Luas Gejala / Lesi"
                 c1_val = "0.0%"
                 c1_delta = "Sehat Prima"
                 c1_color = "#16a34a"
 
-                c2_title = "🌿 Jaringan Daun Sehat"
+                c2_title = "Jaringan Daun Utuh"
                 c2_val = "100.0%"
                 c2_delta = "Klorofil Utuh"
                 c2_color = "#16a34a"
 
-                c3_title = "🛡️ Kondisi Tanaman"
+                c3_title = "Status Kondisi"
                 c3_val = "Bebas Patogen"
                 c3_delta = "Aman Terkendali"
                 c3_color = "#16a34a"
             elif diag_mode == "three_way":
-                c1_title = "🩺 Luas Gejala Visual"
+                c1_title = "Luas Gejala / Lesi"
                 c1_val = f"{v_sev_pct:.1f}%"
                 c1_delta = v_sev_lvl
                 c1_color = "#ea580c"
 
-                c2_title = "🌿 Jaringan Hijau Tersisa"
+                c2_title = "Jaringan Daun Utuh"
                 c2_val = f"{v_healthy_pct:.1f}%"
                 c2_delta = "Klorofil Bertahan"
                 c2_color = "#16a34a"
 
-                c3_title = "🛡️ Kondisi Tanaman"
+                c3_title = "Status Kondisi"
                 c3_val = "Waspada Gejala Awal"
                 c3_delta = "3 Penyakit Bersaing"
                 c3_color = "#ea580c"
             elif diag_mode == "two_way":
-                c1_title = "🩺 Luas Kerusakan Daun"
+                c1_title = "Luas Gejala / Lesi"
                 c1_val = f"{v_sev_pct:.1f}%"
                 c1_delta = v_sev_lvl
                 c1_color = "#dc2626"
 
-                c2_title = "🌿 Jaringan Hijau Tersisa"
+                c2_title = "Jaringan Daun Utuh"
                 c2_val = f"{v_healthy_pct:.1f}%"
                 c2_delta = "Area Sehat"
                 c2_color = "#16a34a"
 
-                c3_title = "🛡️ Kondisi Tanaman"
+                c3_title = "Status Kondisi"
                 c3_val = "Suspek Ganda"
                 c3_delta = "Konfirmasi Ciri Lapangan"
                 c3_color = "#dc2626"
             else:
-                c1_title = "🩺 Luas Kerusakan Daun"
+                c1_title = "Luas Gejala / Lesi"
                 c1_val = f"{v_sev_pct:.1f}%"
                 c1_delta = v_sev_lvl
                 c1_color = "#dc2626"
 
-                c2_title = "🌿 Jaringan Hijau Tersisa"
+                c2_title = "Jaringan Daun Utuh"
                 c2_val = f"{v_healthy_pct:.1f}%"
                 c2_delta = "Area Sehat"
                 c2_color = "#16a34a"
 
                 short_target = info['nama_id'].split('/')[0].strip()
-                c3_title = "🛡️ Kondisi Tanaman"
+                c3_title = "Status Kondisi"
                 c3_val = f"Terinfeksi {short_target}"
                 c3_delta = "Butuh Penanganan"
                 c3_color = "#dc2626"
@@ -5451,11 +5093,11 @@ if selected_image is not None and not file_error:
             """, unsafe_allow_html=True)
 
             if is_pure_healthy:
-                st.success("✅ **Daun Sehat & Normal:** Pemindaian visual mengonfirmasi helai daun segar merata, berlilin alami, dan tidak ditemukan bercak lesi patogen aktif.")
+                st.success("**Daun Sehat & Normal:** Pemindaian visual mengonfirmasi helai daun segar merata, berlilin alami, dan tidak ditemukan bercak lesi patogen aktif.")
             else:
-                st.info(f"📋 **Karakteristik Fisik Daun pada Foto:**\n\n{v_desc}")
+                st.info(f"**Karakteristik Fisik Daun pada Foto:**\n\n{v_desc}")
 
-        with st.expander("📊 Distribusi Probabilitas Model (TorchScript EfficientNet-B0 - 7 Kelas)", expanded=False):
+        with st.expander("Distribusi Probabilitas Model (7 Kelas)", expanded=False):
             st.caption("Distribusi probabilitas softmax terkalibrasi (temperature-scaled) untuk seluruh 7 kelas:")
             probs_dict = api_output.get("probabilities", {})
             sorted_probs = sorted(probs_dict.items(), key=lambda x: x[1], reverse=True)
@@ -5465,13 +5107,13 @@ if selected_image is not None and not file_error:
                 prob_pct = round(prob_val * 100.0, 1)
 
                 if rank == 1:
-                    rank_badge = "🥇 Prediksi Terpilih"
+                    rank_badge = "Prediksi Utama"
                     val_color = "#16a34a" if info_c.get("is_healthy") else "#dc2626"
                 elif rank == 2:
-                    rank_badge = "🥈 Peringkat 2"
+                    rank_badge = "Peringkat 2"
                     val_color = "#ea580c"
                 elif rank == 3:
-                    rank_badge = "🥉 Peringkat 3"
+                    rank_badge = "Peringkat 3"
                     val_color = "#0284c7"
                 else:
                     rank_badge = f"#{rank}"
@@ -5517,7 +5159,7 @@ if selected_image is not None and not file_error:
                 else f"Cocokkan tanda fisik berikut langsung pada tanaman di sawah untuk memastikan gejala penyakit <strong>{info['nama_id']}</strong>:"
             )
 
-            with st.expander("🔬 Verifikasi Karakteristik Fisik Langsung di Sawah (Standar Balitsa & BPTP)", expanded=False):
+            with st.expander("Verifikasi Karakteristik Fisik di Sawah (Standar Balitsa & BPTP)", expanded=False):
                 st.markdown(f"""
                     <div style="font-size: 0.88rem; color: #475569; margin-bottom: 0.85rem; line-height: 1.55;">
                         {phys_sub_text}
@@ -5534,23 +5176,25 @@ if selected_image is not None and not file_error:
         # ==============================================================================
         if not is_step3_open:
             st.markdown("""
-                <div style="background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%); border-radius: 16px; border: 1.5px dashed #93C5FD; padding: 1.15rem 1.4rem; margin: 1.3rem 0; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
-                    <div style="font-size: 1.8rem; margin-bottom: 0.35rem;">🩺💊</div>
-                    <div style="font-size: 1.15rem; font-weight: 800; color: #1E3A8A; margin-bottom: 0.2rem;">
-                        Langkah 3: Butuh Resep Obat Semprot & Panduan Dokter Tanaman?
+                <div style="background: #FFFFFF; border-radius: 10px; border: 1px solid #CBD5E1; padding: 1.25rem 1.4rem; margin: 1.25rem 0; text-align: center;">
+                    <div style="font-size: 1.15rem; font-weight: 800; color: #16532D; margin-bottom: 0.3rem;">
+                        Rekomendasi Pengendalian & Obat dari Dokter Tanaman
+                    </div>
+                    <div style="font-size: 0.88rem; color: #475569; margin-bottom: 0.75rem;">
+                        Panduan tindakan segera, resep obat semprot per tangki 16L, dan perawatan tanah standar Balitsa & BPTP Kementan.
                     </div>
                 </div>
             """, unsafe_allow_html=True)
             col_b1, col_b2, col_b3 = st.columns([0.5, 2.2, 0.5])
             with col_b2:
-                if st.button("🩺 KASIH DETAIL OBAT (LANGKAH 3)", type="primary", use_container_width=True, key=f"btn_open_step3_bottom_{current_img_sig}"):
+                if st.button("Buka Rekomendasi Pengendalian & Obat (Langkah 3)", type="primary", use_container_width=True, key=f"btn_open_step3_bottom_{current_img_sig}"):
                     st.session_state[step3_key] = True
                     st.rerun()
         else:
             st.markdown("""
                 <div class="step-header">
                     <div class="step-num">3</div>
-                    <div class="step-title">Petunjuk Obat & Perawatan dari Dokter Tanaman</div>
+                    <div class="step-title">Petunjuk Pengendalian & Perawatan dari Dokter Tanaman</div>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -5595,41 +5239,41 @@ if selected_image is not None and not file_error:
 
             current_angle_display = st.session_state.get('ai_angle_saved', FOCUS_ANGLES[0][0])
             current_angle_idx = st.session_state.get('ai_angle_idx', 0)
-            angle_badge_html = f"<span style='background: #E0F2FE; color: #0369A1; padding: 3px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 800; border: 1px solid #BAE6FD;'>Sudut #{current_angle_idx + 1} dari 4</span>"
+            angle_badge_html = f"<span style='background: #E0F2FE; color: #0369A1; padding: 2px 8px; border-radius: 6px; font-size: 0.78rem; font-weight: 700; border: 1px solid #BAE6FD;'>Sudut #{current_angle_idx + 1} dari 4</span>"
 
             st.markdown(f"""
                 <div style="background-color: #F1F5F9; border-left: 6px solid #0284C7; padding: 0.85rem 1.15rem; border-radius: 12px; margin-bottom: 1.2rem; font-size: 0.98rem; color: #0F172A; font-weight: 700; border: 1px solid #CBD5E1; border-left-width: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-                    <div>🎯 <strong>Fokus Rekomendasi Saat Ini:</strong> {current_angle_display}</div>
+                    <div><strong>Fokus rekomendasi saat ini:</strong> {current_angle_display}</div>
                     <div>{angle_badge_html}</div>
                 </div>
             """, unsafe_allow_html=True)
 
             # KARTU 1: TINDAKAN LANGSUNG DI KEBUN (MERAH)
-            with st.expander("🚨 Tindakan Langsung di Kebun (24 Jam Pertama di Bedengan)", expanded=False):
+            with st.expander("Tindakan Langsung di Kebun (24 Jam Pertama)", expanded=True):
                 st.markdown(f"""
                     <div class="card-ai-step card-ai-red" style="margin-top: 0.35rem;">
-                        <div class="card-ai-title" style="color: #DC2626;">🚨 Tindakan Langsung di Kebun</div>
-                        <div class="card-ai-sub">(Langkah Segera 24 Jam Pertama di Bedengan)</div>
+                        <div class="card-ai-title" style="color: #991B1B;">Tindakan Langsung di Kebun</div>
+                        <div class="card-ai-sub">(Langkah penanganan segera dalam 24 jam pertama)</div>
                         <div class="card-ai-body">{html_tindakan}</div>
                     </div>
                 """, unsafe_allow_html=True)
 
             # KARTU 2: REKOMENDASI OBAT SEMPROT (BIRU)
-            with st.expander("🧪 Rekomendasi Obat Semprot (Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)", expanded=False):
+            with st.expander("Rekomendasi Obat Semprot (Bahan Aktif, Dosis Tangki, & Waktu Semprot)", expanded=True):
                 st.markdown(f"""
                     <div class="card-ai-step card-ai-blue" style="margin-top: 0.35rem;">
-                        <div class="card-ai-title" style="color: #1D4ED8;">🧪 Rekomendasi Obat Semprot</div>
-                        <div class="card-ai-sub">(Bahan Aktif Pilihan, Takaran Tangki & Waktu Semprot)</div>
+                        <div class="card-ai-title" style="color: #0369A1;">Rekomendasi Obat Semprot</div>
+                        <div class="card-ai-sub">(Bahan aktif pilihan, takaran dosis per tangki 16L, dan waktu semprot terbaik)</div>
                         <div class="card-ai-body">{html_obat}</div>
                     </div>
                 """, unsafe_allow_html=True)
 
             # KARTU 3: PERAWATAN LAHAN & PUPUK (HIJAU)
-            with st.expander("🌾 Perawatan Lahan & Pupuk (Detail Solusi)", expanded=False):
+            with st.expander("Perawatan Lahan & Pemupukan (Pencegahan Berkelanjutan)", expanded=True):
                 st.markdown(f"""
                     <div class="card-ai-step card-ai-green" style="margin-top: 0.35rem;">
-                        <div class="card-ai-title" style="color: #15803D;">🌾 Perawatan Lahan & Pupuk (Detail Solusi)</div>
-                        <div class="card-ai-sub">(Rangkuman Riset Balitsa Lembang, BPTP Kementan & Jurnal Proteksi Tanaman)</div>
+                        <div class="card-ai-title" style="color: #15803D;">Perawatan Lahan & Pemupukan</div>
+                        <div class="card-ai-sub">(Panduan teknis pencegahan tular tanah dari Balitsa dan BPTP Kementan)</div>
                         <div class="card-ai-body">{html_lahan}</div>
                     </div>
                 """, unsafe_allow_html=True)
@@ -5638,7 +5282,7 @@ if selected_image is not None and not file_error:
             st.markdown("<div style='margin-top: 1rem;'>", unsafe_allow_html=True)
             col_sub1, col_sub2 = st.columns([1.3, 1.0])
             with col_sub1:
-                if st.button("🔄 Minta Petunjuk / Alternatif Obat Lain", key="btn_minta_alternatif", use_container_width=True):
+                if st.button("Minta Rekomendasi Alternatif", key="btn_minta_alternatif", use_container_width=True):
                     with st.spinner("🔄 Sedang meracik alternatif kombinasi obat dan panduan lain dari Balitsa/Kementan..."):
                         curr_idx = st.session_state.get("ai_angle_idx", 0)
                         next_idx = (curr_idx + 1) % len(FOCUS_ANGLES)
@@ -5673,7 +5317,7 @@ if selected_image is not None and not file_error:
                         st.rerun()
 
             with col_sub2:
-                if st.button("🔽 Tutup Detail Penjelasan (No. 3)", key=f"btn_close_step3_bottom_{current_img_sig}", use_container_width=True):
+                if st.button("Tutup Rekomendasi Langkah 3", key=f"btn_close_step3_bottom_{current_img_sig}", use_container_width=True):
                     st.session_state[step3_key] = False
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
